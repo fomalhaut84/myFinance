@@ -16,6 +16,17 @@ export function formatUSD(amount: number): string {
 export const DEFAULT_FX_RATE_USD_KRW = 1450
 
 /**
+ * PriceCache 배열에서 가장 최근 updatedAt을 반환
+ */
+export function getLastUpdatedAt(prices: { updatedAt: Date }[]): Date | null {
+  if (prices.length === 0) return null
+  return prices.reduce(
+    (latest, p) => (p.updatedAt > latest ? p.updatedAt : latest),
+    prices[0].updatedAt
+  )
+}
+
+/**
  * 수익률 포맷: 8.5 → "+8.5%", -12.0 → "-12.0%"
  */
 export function formatPercent(value: number): string {

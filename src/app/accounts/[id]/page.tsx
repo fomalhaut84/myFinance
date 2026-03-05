@@ -3,7 +3,7 @@ import { prisma } from '@/lib/prisma'
 import {
   calcCostKRW, calcCurrentValueKRW, calcProfitLoss,
   formatKRW, formatPercent, formatSignedKRW,
-  DEFAULT_FX_RATE_USD_KRW,
+  getLastUpdatedAt, DEFAULT_FX_RATE_USD_KRW,
 } from '@/lib/format'
 import Header from '@/components/layout/Header'
 import Card from '@/components/ui/Card'
@@ -54,12 +54,7 @@ export default async function AccountDetailPage({ params }: PageProps) {
   const currentFxRate = fxData?.price ?? DEFAULT_FX_RATE_USD_KRW
   const hasPriceData = prices.length > 0
 
-  const lastUpdatedAt = prices.length > 0
-    ? prices.reduce((latest, p) =>
-        p.updatedAt > latest ? p.updatedAt : latest,
-        prices[0].updatedAt
-      )
-    : null
+  const lastUpdatedAt = getLastUpdatedAt(prices)
 
   const colors = COLOR_MAP[account.name] ?? {
     color: '#9494a8',

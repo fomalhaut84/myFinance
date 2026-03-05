@@ -39,7 +39,12 @@ export async function refreshPrices(): Promise<RefreshResult> {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const quote: any = await yahooFinance.quote(ticker)
       const meta = tickerMeta.get(ticker)!
-      const price = Number(quote.regularMarketPrice ?? 0)
+      const price = Number(quote.regularMarketPrice)
+      if (!price || isNaN(price)) {
+        console.warn(`[price-fetcher] No valid price for ${ticker}, skipping upsert`)
+        failedTickers.push(ticker)
+        continue
+      }
       const change = quote.regularMarketChange != null ? Number(quote.regularMarketChange) : null
       const changePct = quote.regularMarketChangePercent != null ? Number(quote.regularMarketChangePercent) : null
 

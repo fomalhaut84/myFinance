@@ -21,9 +21,14 @@ export default function RefreshButton({ lastUpdatedAt }: RefreshButtonProps) {
     : null
 
   async function handleRefresh() {
+    if (isRefreshing) return
     setIsRefreshing(true)
     try {
-      await fetch('/api/prices/refresh', { method: 'POST' })
+      const res = await fetch('/api/prices/refresh', { method: 'POST' })
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        console.error('Price refresh failed:', data?.error ?? res.statusText)
+      }
       router.refresh()
     } catch (error) {
       console.error('Price refresh failed:', error)

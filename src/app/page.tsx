@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/prisma'
-import { calcCostKRW, calcCurrentValueKRW, DEFAULT_FX_RATE_USD_KRW } from '@/lib/format'
+import { calcCostKRW, calcCurrentValueKRW, getLastUpdatedAt, DEFAULT_FX_RATE_USD_KRW } from '@/lib/format'
 import Header from '@/components/layout/Header'
 import FamilyTotalCard from '@/components/dashboard/FamilyTotalCard'
 import AccountSummaryCard from '@/components/dashboard/AccountSummaryCard'
@@ -23,12 +23,7 @@ export default async function DashboardPage() {
   const currentFxRate = fxData?.price ?? DEFAULT_FX_RATE_USD_KRW
   const hasPriceData = prices.length > 0
 
-  const lastUpdatedAt = prices.length > 0
-    ? prices.reduce((latest, p) =>
-        p.updatedAt > latest ? p.updatedAt : latest,
-        prices[0].updatedAt
-      )
-    : null
+  const lastUpdatedAt = getLastUpdatedAt(prices)
 
   const accountSummaries = accounts.map((account) => {
     const costKRW = account.holdings.reduce(
