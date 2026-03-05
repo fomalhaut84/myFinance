@@ -48,9 +48,11 @@ module.exports = {
 
 ### Nginx 설정 개요
 
+HTTP-only로 시작, `certbot --nginx`가 HTTPS 블록을 자동 추가.
+
 ```
 server {
-    listen 443 ssl;
+    listen 80;
     server_name finance.starryjeju.net;
 
     auth_basic "myFinance";
@@ -65,6 +67,7 @@ server {
         proxy_cache_bypass $http_upgrade;
     }
 }
+# certbot --nginx 실행 후 → listen 443 ssl + 인증서 경로 자동 추가
 ```
 
 ### 배포 절차
@@ -122,20 +125,20 @@ pm2 start ecosystem.config.js
 pm2 save
 pm2 startup  # 출력되는 sudo 명령어 실행
 
-# 7. Nginx 설정
-sudo cp deploy/nginx/myfinance.conf /etc/nginx/sites-available/myfinance
-sudo ln -s /etc/nginx/sites-available/myfinance /etc/nginx/sites-enabled/
-
-# 8. Let's Encrypt SSL (Nginx 설정 후)
-sudo apt install certbot python3-certbot-nginx
-sudo certbot --nginx -d finance.starryjeju.net
-# → Nginx SSL 설정 자동 적용
-
-# 9. Basic auth 계정 생성
+# 7. Basic auth 계정 생성 (Nginx 설정보다 먼저)
 sudo apt install apache2-utils
 sudo htpasswd -c /etc/nginx/.htpasswd <username>  # -c는 최초 1회만! 추가 시 -c 생략
 
-# 10. Nginx 재시작
+# 8. Nginx 설정 (HTTP only — SSL은 아직 없음)
+sudo cp deploy/nginx/myfinance.conf /etc/nginx/sites-available/myfinance
+sudo ln -s /etc/nginx/sites-available/myfinance /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+
+# 9. Let's Encrypt SSL (certbot이 Nginx 설정에 HTTPS 블록 자동 추가)
+sudo apt install certbot python3-certbot-nginx
+sudo certbot --nginx -d finance.starryjeju.net
+
+# 10. 확인
 sudo nginx -t && sudo systemctl reload nginx
 ```
 
