@@ -21,11 +21,12 @@ export default async function DashboardPage() {
   const priceMap = new Map(prices.map((p) => [p.ticker, p]))
   const fxData = priceMap.get('USDKRW=X')
   const currentFxRate = fxData?.price ?? DEFAULT_FX_RATE_USD_KRW
-  const hasPriceData = prices.some((p) => p.ticker !== 'USDKRW=X')
 
   const lastUpdatedAt = getLastUpdatedAt(prices)
 
   const accountSummaries = accounts.map((account) => {
+    const hasPriceData = account.holdings.some((h) => priceMap.has(h.ticker))
+
     const costKRW = account.holdings.reduce(
       (sum, h) => sum + calcCostKRW(h),
       0
@@ -60,6 +61,7 @@ export default async function DashboardPage() {
       name: account.name,
       ownerAge: account.ownerAge,
       strategy: account.strategy,
+      hasPriceData,
       currentValueKRW,
       costKRW,
       returnPct,
@@ -69,6 +71,8 @@ export default async function DashboardPage() {
       krCount,
     }
   })
+
+  const anyHasPriceData = accountSummaries.some((a) => a.hasPriceData)
 
   return (
     <>
@@ -86,7 +90,7 @@ export default async function DashboardPage() {
         />
 
         <FamilyTotalCard
-          hasPriceData={hasPriceData}
+          hasPriceData={anyHasPriceData}
           accounts={accountSummaries.map((a) => ({
             name: a.name,
             currentValueKRW: a.currentValueKRW,
@@ -100,7 +104,6 @@ export default async function DashboardPage() {
           {accountSummaries.map((account) => (
             <AccountSummaryCard
               key={account.id}
-              hasPriceData={hasPriceData}
               {...account}
             />
           ))}

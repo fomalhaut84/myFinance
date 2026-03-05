@@ -52,7 +52,7 @@ export default async function AccountDetailPage({ params }: PageProps) {
   const priceMap = new Map(prices.map((p) => [p.ticker, p]))
   const fxData = priceMap.get('USDKRW=X')
   const currentFxRate = fxData?.price ?? DEFAULT_FX_RATE_USD_KRW
-  const hasPriceData = prices.some((p) => p.ticker !== 'USDKRW=X')
+  const hasPriceData = account.holdings.some((h) => priceMap.has(h.ticker))
 
   const lastUpdatedAt = getLastUpdatedAt(prices)
 
