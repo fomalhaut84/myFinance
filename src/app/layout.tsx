@@ -14,10 +14,15 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode
 }>) {
-  const accounts = await prisma.account.findMany({
-    select: { id: true, name: true, ownerAge: true },
-    orderBy: { createdAt: 'asc' },
-  })
+  let accounts: { id: string; name: string; ownerAge: number | null }[] = []
+  try {
+    accounts = await prisma.account.findMany({
+      select: { id: true, name: true, ownerAge: true },
+      orderBy: { createdAt: 'asc' },
+    })
+  } catch (error) {
+    console.error('RootLayout: failed to fetch accounts', error)
+  }
 
   return (
     <html lang="ko">

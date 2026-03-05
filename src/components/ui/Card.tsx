@@ -21,14 +21,9 @@ export default function Card({
     ? 'cursor-pointer hover:bg-card-hover hover:border-border-hover hover:-translate-y-px'
     : ''
 
-  const hoverStyle = clickable && glowColor
-    ? { '--hover-glow': `0 0 30px color-mix(in srgb, ${glowColor} 8%, transparent)` } as React.CSSProperties
-    : undefined
-
   return (
     <div
-      className={`group ${baseClasses} ${hoverClasses} ${className}`}
-      style={hoverStyle}
+      className={`${baseClasses} ${hoverClasses} ${className}`}
       onClick={onClick}
     >
       {glowColor && (

@@ -52,10 +52,14 @@ export default async function AccountDetailPage({ params }: PageProps) {
   )
   const usCount = account.holdings.filter((h) => h.market === 'US').length
   const krCount = account.holdings.filter((h) => h.market === 'KR').length
-  const usRatio = totalKRW > 0
-    ? (account.holdings.filter((h) => h.market === 'US').reduce((s, h) => s + calcCostKRW(h), 0) / totalKRW * 100)
-    : 0
-  const krRatio = 100 - usRatio
+  const usTotalKRW = account.holdings
+    .filter((h) => h.market === 'US')
+    .reduce((s, h) => s + calcCostKRW(h), 0)
+  const krTotalKRW = account.holdings
+    .filter((h) => h.market === 'KR')
+    .reduce((s, h) => s + calcCostKRW(h), 0)
+  const usRatio = totalKRW > 0 ? (usTotalKRW / totalKRW) * 100 : 0
+  const krRatio = totalKRW > 0 ? (krTotalKRW / totalKRW) * 100 : 0
 
   const depositTotal = account.deposits.reduce(
     (sum, d) => sum + d.amount,
