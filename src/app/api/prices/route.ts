@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { getLastUpdatedAt } from '@/lib/format'
 
 export async function GET() {
   try {
@@ -7,12 +8,7 @@ export async function GET() {
       orderBy: { ticker: 'asc' },
     })
 
-    const lastUpdatedAt = prices.length > 0
-      ? prices.reduce((latest, p) =>
-          p.updatedAt > latest ? p.updatedAt : latest,
-          prices[0].updatedAt
-        )
-      : null
+    const lastUpdatedAt = getLastUpdatedAt(prices)
 
     return NextResponse.json({ prices, lastUpdatedAt })
   } catch (error) {
