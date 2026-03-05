@@ -49,34 +49,24 @@ function isUSMarketOpen(): boolean {
   return false
 }
 
-let isRunning = false
-
 /**
  * 주가 갱신 스케줄러 등록.
  * 매 10분마다 실행, 장중이면 갱신, 장외에는 정각(매시 0분)에만 갱신.
+ * 중복 실행 방지는 refreshPrices() 내부 mutex에서 처리.
  */
 export function schedulePriceUpdates(): void {
   cron.schedule(
     '*/10 * * * *',
     async () => {
-      // 중복 실행 방지 (이전 호출이 아직 진행 중이면 스킵)
-      if (isRunning) {
-        console.log('[cron] 이전 갱신이 진행 중, 스킵')
-        return
-      }
-
       const { m } = getKSTTime()
       const isMarketHours = isKRMarketOpen() || isUSMarketOpen()
       const isTopOfHour = m < 10 // 매시 0~9분 구간
 
       if (isMarketHours || isTopOfHour) {
-        isRunning = true
         try {
           await refreshPrices()
         } catch (error) {
           console.error('[cron] Price refresh failed:', error)
-        } finally {
-          isRunning = false
         }
       }
     },

@@ -10,11 +10,27 @@ interface RefreshResult {
   updatedAt: Date
 }
 
+let isRefreshing = false
+
 /**
  * DB의 Holding에서 고유 ticker 목록을 가져와
  * yahoo-finance2로 현재가를 조회하고 PriceCache에 upsert한다.
+ * 프로세스 전역 mutex로 cron/API 동시 실행 방지.
  */
 export async function refreshPrices(): Promise<RefreshResult> {
+  if (isRefreshing) {
+    console.log('[price-fetcher] 이미 갱신 진행 중, 스킵')
+    return { success: 0, failed: 0, failedTickers: [], updatedAt: new Date() }
+  }
+  isRefreshing = true
+  try {
+    return await doRefreshPrices()
+  } finally {
+    isRefreshing = false
+  }
+}
+
+async function doRefreshPrices(): Promise<RefreshResult> {
   // 1. 보유 종목의 고유 ticker + 메타 정보 조회
   const holdings = await prisma.holding.findMany({
     select: { ticker: true, displayName: true, market: true, currency: true },

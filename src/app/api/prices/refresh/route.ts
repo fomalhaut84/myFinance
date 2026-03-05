@@ -5,17 +5,9 @@ import { refreshPrices } from '@/lib/price-fetcher'
 const MIN_REFRESH_INTERVAL_MS = 30_000
 
 let lastRefreshAt = 0
-let isRefreshing = false
 
 export async function POST() {
   try {
-    if (isRefreshing) {
-      return NextResponse.json(
-        { error: '갱신이 진행 중입니다. 잠시 후 다시 시도해주세요.' },
-        { status: 429 }
-      )
-    }
-
     const now = Date.now()
     if (now - lastRefreshAt < MIN_REFRESH_INTERVAL_MS) {
       return NextResponse.json(
@@ -25,13 +17,8 @@ export async function POST() {
     }
 
     lastRefreshAt = now
-    isRefreshing = true
-    try {
-      const result = await refreshPrices()
-      return NextResponse.json(result)
-    } finally {
-      isRefreshing = false
-    }
+    const result = await refreshPrices()
+    return NextResponse.json(result)
   } catch (error) {
     console.error('POST /api/prices/refresh error:', error)
     return NextResponse.json(

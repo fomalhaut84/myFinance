@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getLastUpdatedAt } from '@/lib/format'
 
+export const dynamic = 'force-dynamic'
+
 export async function GET() {
   try {
     const prices = await prisma.priceCache.findMany({
