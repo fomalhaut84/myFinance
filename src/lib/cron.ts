@@ -20,16 +20,31 @@ function isKRMarketOpen(): boolean {
   return minutes >= 540 && minutes <= 930 // 09:00 ~ 15:30
 }
 
-/** 미국 주식시장 개장 여부 (23:30~06:00 KST, 평일→익일). 서머타임 시 22:30~05:00. */
+/** 현재 미국 서머타임(EDT) 여부를 America/New_York 시간대로 판별 */
+function isUSDST(): boolean {
+  const now = new Date()
+  const et = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }))
+  const utc = new Date(now.toLocaleString('en-US', { timeZone: 'UTC' }))
+  const diffHours = (utc.getTime() - et.getTime()) / (1000 * 60 * 60)
+  return Math.round(diffHours) === 4 // EDT=UTC-4, EST=UTC-5
+}
+
+/**
+ * 미국 주식시장 개장 여부 (평일→익일, KST 기준)
+ * - 서머타임(EDT): 22:30~05:00 KST
+ * - 비서머타임(EST): 23:30~06:00 KST
+ */
 function isUSMarketOpen(): boolean {
   const { h, m, day } = getKSTTime()
   const minutes = h * 60 + m
+  const dst = isUSDST()
+  const openMin = dst ? 1350 : 1410   // 22:30 or 23:30
+  const closeMin = dst ? 300 : 360    // 05:00 or 06:00
 
-  // 22:30~23:59 (월~금)
-  if (day >= 1 && day <= 5 && minutes >= 1350) return true
-  // 00:00~06:00 (화~토 = 월~금 야간)
-  if (day >= 2 && day <= 6 && minutes <= 360) return true
-  // 일→월 야간: day=1(월) 00:00~06:00 — 일요일 밤 장 없으므로 제외 OK
+  // 저녁 세션: openMin~23:59 (월~금)
+  if (day >= 1 && day <= 5 && minutes >= openMin) return true
+  // 새벽 세션: 00:00~closeMin (화~토 = 월~금 야간)
+  if (day >= 2 && day <= 6 && minutes <= closeMin) return true
 
   return false
 }
