@@ -16,6 +16,7 @@ interface Holding {
   shares: number
   avgPrice: number
   currency: string
+  avgPriceFx: number | null
   avgFxRate: number | null
 }
 
@@ -104,7 +105,7 @@ export default function HoldingsTable({ holdings, priceMap, currentFxRate, hasPr
                   </td>
                   <td className="px-3 py-3 text-right border-b border-white/[0.025]">
                     <div className={h.currency === 'USD' ? 'text-[11px] text-sub' : 'text-[13px] text-muted font-semibold'}>
-                      {h.currency === 'USD' ? formatUSD(h.avgPrice) : formatKRW(h.avgPrice)}
+                      {h.currency === 'USD' ? formatUSD(h.avgPriceFx ?? h.avgPrice) : formatKRW(h.avgPrice)}
                     </div>
                   </td>
                   {hasPriceData && (
