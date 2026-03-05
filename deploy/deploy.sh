@@ -11,11 +11,11 @@ git pull origin main
 echo "=== 2. Install dependencies ==="
 npm ci
 
-echo "=== 3. Build ==="
-npm run build
-
-echo "=== 4. DB Migrate ==="
+echo "=== 3. DB Migrate ==="
 npx prisma migrate deploy
+
+echo "=== 4. Build ==="
+npm run build
 
 echo "=== 5. PM2 Restart ==="
 pm2 startOrReload ecosystem.config.js --only myfinance
