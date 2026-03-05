@@ -44,18 +44,12 @@ export function formatSignedKRW(amount: number): string {
 
 /**
  * Holding의 매입금(KRW)을 계산
- * USD 종목: avgPrice × shares × avgFxRate
- * KRW 종목: avgPrice × shares
+ * avgPrice는 모든 종목에서 원화 기준 평균단가 (USD 종목은 avgPriceFx × avgFxRate로 저장됨)
  */
 export function calcCostKRW(holding: {
   avgPrice: number
   shares: number
-  currency: string
-  avgFxRate?: number | null
 }): number {
-  if (holding.currency === 'USD') {
-    return Math.round(holding.avgPrice * holding.shares * (holding.avgFxRate ?? DEFAULT_FX_RATE_USD_KRW))
-  }
   return Math.round(holding.avgPrice * holding.shares)
 }
 
@@ -84,7 +78,7 @@ interface ProfitLoss {
 
 /**
  * Holding의 손익 계산
- * USD 종목: 주가분/환율분 분리
+ * USD 종목: avgPriceFx(USD 매입단가)를 사용하여 주가분/환율분 분리
  * KRW 종목: 주가분만 (fxPL = 0)
  */
 export function calcProfitLoss(
@@ -92,6 +86,7 @@ export function calcProfitLoss(
     avgPrice: number
     shares: number
     currency: string
+    avgPriceFx?: number | null
     avgFxRate?: number | null
   },
   currentPrice: number,
@@ -104,8 +99,10 @@ export function calcProfitLoss(
 
   if (holding.currency === 'USD') {
     const avgFxRate = holding.avgFxRate ?? DEFAULT_FX_RATE_USD_KRW
-    // 주가 변동분: (현재가 - 평단가) × 매수환율 × 수량
-    const pricePL = Math.round((currentPrice - holding.avgPrice) * avgFxRate * holding.shares)
+    // avgPriceFx가 없으면 avgPrice(KRW)를 avgFxRate로 역산
+    const avgPriceUSD = holding.avgPriceFx ?? (avgFxRate > 0 ? holding.avgPrice / avgFxRate : 0)
+    // 주가 변동분: (현재가USD - 매입가USD) × 매수환율 × 수량
+    const pricePL = Math.round((currentPrice - avgPriceUSD) * avgFxRate * holding.shares)
     // 환율 변동분: 총손익 - 주가분
     const fxPL = totalPL - pricePL
     return { totalPL, pricePL, fxPL, returnPct }
