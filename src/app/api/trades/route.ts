@@ -26,7 +26,12 @@ export async function GET(request: NextRequest) {
       const toDate = to ? Date.parse(to) : NaN
       where.tradedAt = {}
       if (!isNaN(fromDate)) (where.tradedAt as Record<string, unknown>).gte = new Date(fromDate)
-      if (!isNaN(toDate)) (where.tradedAt as Record<string, unknown>).lte = new Date(toDate)
+      if (!isNaN(toDate)) {
+        // to 날짜의 다음날 00:00 미만으로 설정하여 해당 날짜 장중 거래 포함
+        const nextDay = new Date(toDate)
+        nextDay.setUTCDate(nextDay.getUTCDate() + 1)
+        ;(where.tradedAt as Record<string, unknown>).lt = nextDay
+      }
       if (Object.keys(where.tradedAt as object).length === 0) delete where.tradedAt
     }
 
@@ -101,7 +106,7 @@ export async function POST(request: NextRequest) {
       // 해당 계좌+종목의 전체 거래로 Holding 재계산
       const allTrades = await tx.trade.findMany({
         where: { accountId, ticker },
-        orderBy: { tradedAt: 'asc' },
+        orderBy: [{ tradedAt: 'asc' }, { createdAt: 'asc' }],
         select: { type: true, shares: true, price: true, currency: true, fxRate: true },
       })
 
@@ -137,7 +142,7 @@ export async function POST(request: NextRequest) {
       }
 
       return { trade, holding }
-    })
+    }, { isolationLevel: 'Serializable' })
 
     return NextResponse.json(result, { status: 201 })
   } catch (error) {

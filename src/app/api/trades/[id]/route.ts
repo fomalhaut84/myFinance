@@ -19,7 +19,7 @@ async function recalcHoldingFromTrades(
 ) {
   const remainingTrades = await tx.trade.findMany({
     where: { accountId, ticker },
-    orderBy: { tradedAt: 'asc' },
+    orderBy: [{ tradedAt: 'asc' }, { createdAt: 'asc' }],
     select: { type: true, shares: true, price: true, currency: true, fxRate: true },
   })
 
@@ -100,7 +100,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       )
 
       return updated
-    })
+    }, { isolationLevel: 'Serializable' })
 
     return NextResponse.json(result)
   } catch (error) {
@@ -126,7 +126,7 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
         tx, trade.accountId, trade.ticker,
         trade.displayName, trade.market, trade.currency
       )
-    })
+    }, { isolationLevel: 'Serializable' })
 
     return NextResponse.json({ success: true })
   } catch (error) {

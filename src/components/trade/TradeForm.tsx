@@ -95,7 +95,7 @@ export default function TradeForm({ accounts }: TradeFormProps) {
     setTickerMode(acct && acct.holdings.length > 0 ? 'select' : 'manual')
   }, [accountId, accounts])
 
-  const parsedShares = parseInt(shares) || 0
+  const parsedShares = Math.floor(Number(shares)) || 0
   const parsedPrice = parseFloat(price) || 0
   const parsedFxRate = parseFloat(fxRate) || 0
 

@@ -43,11 +43,11 @@ export function formatSignedKRW(amount: number): string {
 }
 
 /**
- * 날짜 포맷: "2024.03.15"
+ * 날짜 포맷: "2024.03.15" (UTC 기준 — DB 날짜는 date-only로 저장되므로 UTC 사용)
  */
 export function formatDate(dateStr: string | Date): string {
   const d = typeof dateStr === 'string' ? new Date(dateStr) : dateStr
-  return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`
+  return `${d.getUTCFullYear()}.${String(d.getUTCMonth() + 1).padStart(2, '0')}.${String(d.getUTCDate()).padStart(2, '0')}`
 }
 
 /**

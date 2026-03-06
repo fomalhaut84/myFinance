@@ -17,12 +17,13 @@ interface TradesPageProps {
 export default async function TradesPage({ searchParams }: TradesPageProps) {
   const accountId = searchParams.accountId
   const type = searchParams.type
-  const offset = parseInt(searchParams.offset ?? '0')
+  const rawOffset = parseInt(searchParams.offset ?? '0')
+  const offset = isNaN(rawOffset) || rawOffset < 0 ? 0 : rawOffset
   const limit = 20
 
   const where: Record<string, unknown> = {}
   if (accountId) where.accountId = accountId
-  if (type) where.type = type
+  if (type && ['BUY', 'SELL'].includes(type)) where.type = type
 
   const [trades, total, accounts] = await Promise.all([
     prisma.trade.findMany({

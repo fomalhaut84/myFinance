@@ -43,7 +43,7 @@ export default function EditPanel({ trade, onClose }: EditPanelProps) {
   const [note, setNote] = useState(trade.note ?? '')
 
   const isUSD = trade.currency === 'USD'
-  const parsedShares = parseInt(shares) || 0
+  const parsedShares = Math.floor(Number(shares)) || 0
   const parsedPrice = parseFloat(price) || 0
   const parsedFxRate = parseFloat(fxRate) || 0
 
