@@ -1,6 +1,8 @@
-import { PrismaClient } from '@prisma/client'
+import { PrismaClient, Prisma } from '@prisma/client'
 
 const prisma = new PrismaClient()
+
+type TxClient = Omit<PrismaClient, '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'>
 
 const SEED_FX_RATE = 1450 // USD/KRW 시드 초기값
 
@@ -29,45 +31,43 @@ type HoldingSeed =
 /**
  * Holding + 대응 Trade를 함께 생성
  */
-async function createHoldingWithTrade(accountId: string, h: HoldingSeed) {
-  const isUSD = h.currency === 'USD'
-  const avgPrice = isUSD ? Math.round(h.avgPriceFx * SEED_FX_RATE) : h.avgPrice
-  const price = isUSD ? h.avgPriceFx : h.avgPrice
+async function createHoldingWithTrade(tx: TxClient, accountId: string, seed: HoldingSeed) {
+  const isUSD = seed.currency === 'USD'
+  const avgPrice = isUSD ? Math.round(seed.avgPriceFx * SEED_FX_RATE) : seed.avgPrice
+  const price = isUSD ? seed.avgPriceFx : seed.avgPrice
   const totalKRW = isUSD
-    ? Math.round(price * h.shares * SEED_FX_RATE)
-    : Math.round(price * h.shares)
+    ? Math.round(price * seed.shares * SEED_FX_RATE)
+    : Math.round(price * seed.shares)
 
-  await prisma.$transaction(async (tx) => {
-    await tx.holding.create({
-      data: {
-        accountId,
-        ticker: h.ticker,
-        displayName: h.displayName,
-        market: h.market,
-        shares: h.shares,
-        avgPrice,
-        currency: h.currency,
-        avgPriceFx: isUSD ? h.avgPriceFx : null,
-        avgFxRate: isUSD ? SEED_FX_RATE : null,
-      },
-    })
+  await tx.holding.create({
+    data: {
+      accountId,
+      ticker: seed.ticker,
+      displayName: seed.displayName,
+      market: seed.market,
+      shares: seed.shares,
+      avgPrice,
+      currency: seed.currency,
+      avgPriceFx: isUSD ? seed.avgPriceFx : null,
+      avgFxRate: isUSD ? SEED_FX_RATE : null,
+    },
+  })
 
-    await tx.trade.create({
-      data: {
-        accountId,
-        ticker: h.ticker,
-        displayName: h.displayName,
-        market: h.market,
-        type: 'BUY',
-        shares: h.shares,
-        price,
-        currency: h.currency,
-        fxRate: isUSD ? SEED_FX_RATE : null,
-        totalKRW,
-        note: '초기 보유분',
-        tradedAt: new Date(h.tradedAt),
-      },
-    })
+  await tx.trade.create({
+    data: {
+      accountId,
+      ticker: seed.ticker,
+      displayName: seed.displayName,
+      market: seed.market,
+      type: 'BUY',
+      shares: seed.shares,
+      price,
+      currency: seed.currency,
+      fxRate: isUSD ? SEED_FX_RATE : null,
+      totalKRW,
+      note: '초기 보유분',
+      tradedAt: new Date(seed.tradedAt),
+    },
   })
 }
 
@@ -82,20 +82,7 @@ async function main() {
     prisma.account.deleteMany(),
   ])
 
-  // === 계좌 생성 ===
-  const sejin = await prisma.account.create({
-    data: { name: '세진', strategy: 'index-focus', horizon: null },
-  })
-
-  const sodam = await prisma.account.create({
-    data: { name: '소담', ownerAge: 9, strategy: 'balanced', horizon: 10 },
-  })
-
-  const dasom = await prisma.account.create({
-    data: { name: '다솜', ownerAge: 5, strategy: 'growth', horizon: 15 },
-  })
-
-  // === 세진 보유종목 (7개) ===
+  // === 시드 데이터 정의 ===
   const sejinHoldings: HoldingSeed[] = [
     { ticker: 'AAPL', displayName: 'AAPL', market: 'US', shares: 6, avgPriceFx: 105.795, currency: 'USD', tradedAt: '2024-03-15' },
     { ticker: 'MSFT', displayName: 'MSFT', market: 'US', shares: 4, avgPriceFx: 319.611, currency: 'USD', tradedAt: '2024-02-20' },
@@ -106,11 +93,6 @@ async function main() {
     { ticker: '241560.KQ', displayName: '컨텍', market: 'KR', shares: 12, avgPrice: 22500, currency: 'KRW', tradedAt: '2025-01-15' },
   ]
 
-  for (const h of sejinHoldings) {
-    await createHoldingWithTrade(sejin.id, h)
-  }
-
-  // === 소담 보유종목 (5개) ===
   const sodamHoldings: HoldingSeed[] = [
     { ticker: 'AAPL', displayName: 'AAPL', market: 'US', shares: 11, avgPriceFx: 212.255, currency: 'USD', tradedAt: '2025-01-10' },
     { ticker: 'XAR', displayName: 'XAR', market: 'US', shares: 3, avgPriceFx: 171.445, currency: 'USD', tradedAt: '2025-06-15' },
@@ -119,11 +101,6 @@ async function main() {
     { ticker: '360750.KS', displayName: 'TIGER 미국S&P500', market: 'KR', shares: 46, avgPrice: 24494, currency: 'KRW', tradedAt: '2024-09-15' },
   ]
 
-  for (const h of sodamHoldings) {
-    await createHoldingWithTrade(sodam.id, h)
-  }
-
-  // === 다솜 보유종목 (5개) ===
   const dasomHoldings: HoldingSeed[] = [
     { ticker: 'AAPL', displayName: 'AAPL', market: 'US', shares: 3, avgPriceFx: 225.80, currency: 'USD', tradedAt: '2025-02-01' },
     { ticker: 'XAR', displayName: 'XAR', market: 'US', shares: 2, avgPriceFx: 171.50, currency: 'USD', tradedAt: '2025-06-15' },
@@ -132,78 +109,98 @@ async function main() {
     { ticker: '446720.KS', displayName: 'SOL 미국배당다우존스', market: 'KR', shares: 18, avgPrice: 13485, currency: 'KRW', tradedAt: '2025-09-01' },
   ]
 
-  for (const h of dasomHoldings) {
-    await createHoldingWithTrade(dasom.id, h)
-  }
+  // === 전체 시드를 단일 트랜잭션으로 실행 (all-or-nothing) ===
+  await prisma.$transaction(async (tx) => {
+    // 계좌 생성
+    const sejin = await tx.account.create({
+      data: { name: '세진', strategy: 'index-focus', horizon: null },
+    })
+    const sodam = await tx.account.create({
+      data: { name: '소담', ownerAge: 9, strategy: 'balanced', horizon: 10 },
+    })
+    const dasom = await tx.account.create({
+      data: { name: '다솜', ownerAge: 5, strategy: 'growth', horizon: 15 },
+    })
 
-  // === RSU 스케줄 (2건) ===
-  await prisma.rSUSchedule.createMany({
-    data: [
-      {
-        vestingDate: new Date('2026-04-09'),
-        shares: 135,
-        basisValue: 5000000,
-        status: 'pending',
-        sellShares: 70,
-        keepShares: 65,
-        note: '1차 베스팅',
-      },
-      {
-        vestingDate: new Date('2027-04-09'),
-        shares: 83,
-        basisValue: 5000000,
-        status: 'pending',
-        sellShares: 45,
-        keepShares: 38,
-        note: '2차 베스팅 (예상)',
-      },
-    ],
-  })
+    // 보유종목 + Trade 생성
+    for (const seed of sejinHoldings) {
+      await createHoldingWithTrade(tx, sejin.id, seed)
+    }
+    for (const seed of sodamHoldings) {
+      await createHoldingWithTrade(tx, sodam.id, seed)
+    }
+    for (const seed of dasomHoldings) {
+      await createHoldingWithTrade(tx, dasom.id, seed)
+    }
 
-  // === 증여 기록 ===
-  // 소담: 누적 ~740만원
-  await prisma.deposit.createMany({
-    data: [
-      {
-        accountId: sodam.id,
-        amount: 4000000,
-        source: 'gift',
-        note: '투자 시작 증여',
-        depositedAt: new Date('2024-06-01'),
-      },
-      {
-        accountId: sodam.id,
-        amount: 3400000,
-        source: 'gift',
-        note: '추가 증여',
-        depositedAt: new Date('2025-03-01'),
-      },
-    ],
-  })
+    // RSU 스케줄
+    await tx.rSUSchedule.createMany({
+      data: [
+        {
+          vestingDate: new Date('2026-04-09'),
+          shares: 135,
+          basisValue: 5000000,
+          status: 'pending',
+          sellShares: 70,
+          keepShares: 65,
+          note: '1차 베스팅',
+        },
+        {
+          vestingDate: new Date('2027-04-09'),
+          shares: 83,
+          basisValue: 5000000,
+          status: 'pending',
+          sellShares: 45,
+          keepShares: 38,
+          note: '2차 베스팅 (예상)',
+        },
+      ],
+    })
 
-  // 다솜: 누적 ~278만원
-  await prisma.deposit.createMany({
-    data: [
-      {
-        accountId: dasom.id,
-        amount: 1500000,
-        source: 'gift',
-        note: '투자 시작 증여',
-        depositedAt: new Date('2025-01-15'),
-      },
-      {
-        accountId: dasom.id,
-        amount: 1280000,
-        source: 'gift',
-        note: '추가 증여',
-        depositedAt: new Date('2025-12-01'),
-      },
-    ],
+    // 증여 기록 — 소담: 누적 ~740만원
+    await tx.deposit.createMany({
+      data: [
+        {
+          accountId: sodam.id,
+          amount: 4000000,
+          source: 'gift',
+          note: '투자 시작 증여',
+          depositedAt: new Date('2024-06-01'),
+        },
+        {
+          accountId: sodam.id,
+          amount: 3400000,
+          source: 'gift',
+          note: '추가 증여',
+          depositedAt: new Date('2025-03-01'),
+        },
+      ],
+    })
+
+    // 증여 기록 — 다솜: 누적 ~278만원
+    await tx.deposit.createMany({
+      data: [
+        {
+          accountId: dasom.id,
+          amount: 1500000,
+          source: 'gift',
+          note: '투자 시작 증여',
+          depositedAt: new Date('2025-01-15'),
+        },
+        {
+          accountId: dasom.id,
+          amount: 1280000,
+          source: 'gift',
+          note: '추가 증여',
+          depositedAt: new Date('2025-12-01'),
+        },
+      ],
+    })
   })
 
   const totalHoldings = sejinHoldings.length + sodamHoldings.length + dasomHoldings.length
   console.log('Seed completed:')
-  console.log(`  Accounts: 3 (${sejin.name}, ${sodam.name}, ${dasom.name})`)
+  console.log(`  Accounts: 3`)
   console.log(`  Holdings: ${totalHoldings}`)
   console.log(`  Trades: ${totalHoldings} (초기 보유분)`)
   console.log('  RSU Schedules: 2')
