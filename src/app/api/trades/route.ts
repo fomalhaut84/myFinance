@@ -64,13 +64,26 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: errors[0].message, errors }, { status: 400 })
     }
 
-    const { accountId, ticker, displayName, market, type, shares, price, currency, fxRate, note, tradedAt } = body
+    const { accountId, displayName, market, type, shares, price, currency, fxRate, note, tradedAt } = body
+    const ticker = (body.ticker as string).toUpperCase().trim()
     const totalKRW = calcTotalKRW(price, shares, currency, fxRate)
 
     // 계좌 존재 확인
     const account = await prisma.account.findUnique({ where: { id: accountId } })
     if (!account) {
       return NextResponse.json({ error: '계좌를 찾을 수 없습니다.' }, { status: 404 })
+    }
+
+    // 기존 거래와 market/currency 일관성 검증
+    const existingTrade = await prisma.trade.findFirst({
+      where: { accountId, ticker },
+      select: { market: true, currency: true },
+    })
+    if (existingTrade && (existingTrade.market !== market || existingTrade.currency !== currency)) {
+      return NextResponse.json(
+        { error: `${ticker}은(는) 이미 ${existingTrade.market}/${existingTrade.currency}로 등록되어 있습니다.` },
+        { status: 400 }
+      )
     }
 
     // Transaction: Trade 생성 + Holding 업데이트 (SELL 검증도 tx 내부에서)
