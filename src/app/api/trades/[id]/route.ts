@@ -1,0 +1,127 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { prisma } from '@/lib/prisma'
+import { recalcHolding } from '@/lib/trade-utils'
+
+interface RouteParams {
+  params: { id: string }
+}
+
+/**
+ * 거래의 계좌+종목에 대해 남은 전체 거래로 Holding을 재계산한다.
+ */
+async function recalcHoldingFromTrades(
+  tx: Parameters<Parameters<typeof prisma.$transaction>[0]>[0],
+  accountId: string,
+  ticker: string,
+  displayName: string,
+  market: string,
+  currency: string
+) {
+  const remainingTrades = await tx.trade.findMany({
+    where: { accountId, ticker },
+    orderBy: { tradedAt: 'asc' },
+    select: { type: true, shares: true, price: true, currency: true, fxRate: true },
+  })
+
+  const holdingState = recalcHolding(remainingTrades)
+
+  if (holdingState.shares > 0) {
+    await tx.holding.upsert({
+      where: { accountId_ticker: { accountId, ticker } },
+      update: {
+        shares: holdingState.shares,
+        avgPrice: holdingState.avgPrice,
+        avgPriceFx: holdingState.avgPriceFx,
+        avgFxRate: holdingState.avgFxRate,
+      },
+      create: {
+        accountId,
+        ticker,
+        displayName,
+        market,
+        shares: holdingState.shares,
+        avgPrice: holdingState.avgPrice,
+        currency,
+        avgPriceFx: holdingState.avgPriceFx,
+        avgFxRate: holdingState.avgFxRate,
+      },
+    })
+  } else {
+    await tx.holding.deleteMany({ where: { accountId, ticker } })
+  }
+}
+
+export async function PUT(request: NextRequest, { params }: RouteParams) {
+  try {
+    const trade = await prisma.trade.findUnique({ where: { id: params.id } })
+    if (!trade) {
+      return NextResponse.json({ error: '거래를 찾을 수 없습니다.' }, { status: 404 })
+    }
+
+    const body = await request.json()
+    const { shares, price, fxRate, note, tradedAt } = body
+
+    if (shares !== undefined && (shares <= 0 || !Number.isInteger(shares))) {
+      return NextResponse.json({ error: '수량은 1 이상의 정수여야 합니다.' }, { status: 400 })
+    }
+    if (price !== undefined && price <= 0) {
+      return NextResponse.json({ error: '단가는 0보다 커야 합니다.' }, { status: 400 })
+    }
+
+    const updatedShares = shares ?? trade.shares
+    const updatedPrice = price ?? trade.price
+    const updatedFxRate = fxRate !== undefined ? fxRate : trade.fxRate
+    const updatedTotalKRW = trade.currency === 'USD'
+      ? Math.round(updatedPrice * updatedShares * (updatedFxRate ?? 0))
+      : Math.round(updatedPrice * updatedShares)
+
+    const result = await prisma.$transaction(async (tx) => {
+      const updated = await tx.trade.update({
+        where: { id: params.id },
+        data: {
+          shares: updatedShares,
+          price: updatedPrice,
+          fxRate: updatedFxRate,
+          totalKRW: updatedTotalKRW,
+          note: note !== undefined ? (note || null) : trade.note,
+          tradedAt: tradedAt ? new Date(tradedAt) : trade.tradedAt,
+        },
+      })
+
+      await recalcHoldingFromTrades(
+        tx, trade.accountId, trade.ticker,
+        trade.displayName, trade.market, trade.currency
+      )
+
+      return updated
+    })
+
+    return NextResponse.json(result)
+  } catch (error) {
+    console.error('PUT /api/trades/[id] error:', error)
+    return NextResponse.json({ error: '거래 수정에 실패했습니다.' }, { status: 500 })
+  }
+}
+
+export async function DELETE(_request: NextRequest, { params }: RouteParams) {
+  try {
+    const trade = await prisma.trade.findUnique({ where: { id: params.id } })
+    if (!trade) {
+      return NextResponse.json({ error: '거래를 찾을 수 없습니다.' }, { status: 404 })
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.trade.delete({ where: { id: params.id } })
+
+      await recalcHoldingFromTrades(
+        tx, trade.accountId, trade.ticker,
+        trade.displayName, trade.market, trade.currency
+      )
+    })
+
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error('DELETE /api/trades/[id] error:', error)
+    return NextResponse.json({ error: '거래 삭제에 실패했습니다.' }, { status: 500 })
+  }
+}
