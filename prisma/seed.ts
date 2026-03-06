@@ -2,7 +2,7 @@ import { PrismaClient, Prisma } from '@prisma/client'
 
 const prisma = new PrismaClient()
 
-type TxClient = Omit<PrismaClient, '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'>
+type TxClient = Prisma.TransactionClient
 
 const SEED_FX_RATE = 1450 // USD/KRW 시드 초기값
 
@@ -35,9 +35,7 @@ async function createHoldingWithTrade(tx: TxClient, accountId: string, seed: Hol
   const isUSD = seed.currency === 'USD'
   const avgPrice = isUSD ? Math.round(seed.avgPriceFx * SEED_FX_RATE) : seed.avgPrice
   const price = isUSD ? seed.avgPriceFx : seed.avgPrice
-  const totalKRW = isUSD
-    ? Math.round(price * seed.shares * SEED_FX_RATE)
-    : Math.round(price * seed.shares)
+  const totalKRW = avgPrice * seed.shares
 
   await tx.holding.create({
     data: {
@@ -72,16 +70,6 @@ async function createHoldingWithTrade(tx: TxClient, accountId: string, seed: Hol
 }
 
 async function main() {
-  // 기존 데이터 정리
-  await prisma.$transaction([
-    prisma.deposit.deleteMany(),
-    prisma.trade.deleteMany(),
-    prisma.holding.deleteMany(),
-    prisma.rSUSchedule.deleteMany(),
-    prisma.priceCache.deleteMany(),
-    prisma.account.deleteMany(),
-  ])
-
   // === 시드 데이터 정의 ===
   const sejinHoldings: HoldingSeed[] = [
     { ticker: 'AAPL', displayName: 'AAPL', market: 'US', shares: 6, avgPriceFx: 105.795, currency: 'USD', tradedAt: '2024-03-15' },
@@ -109,8 +97,16 @@ async function main() {
     { ticker: '446720.KS', displayName: 'SOL 미국배당다우존스', market: 'KR', shares: 18, avgPrice: 13485, currency: 'KRW', tradedAt: '2025-09-01' },
   ]
 
-  // === 전체 시드를 단일 트랜잭션으로 실행 (all-or-nothing) ===
+  // === 삭제 + 생성을 단일 트랜잭션으로 실행 (all-or-nothing) ===
   await prisma.$transaction(async (tx) => {
+    // 기존 데이터 정리
+    await tx.deposit.deleteMany()
+    await tx.trade.deleteMany()
+    await tx.holding.deleteMany()
+    await tx.rSUSchedule.deleteMany()
+    await tx.priceCache.deleteMany()
+    await tx.account.deleteMany()
+
     // 계좌 생성
     const sejin = await tx.account.create({
       data: { name: '세진', strategy: 'index-focus', horizon: null },
