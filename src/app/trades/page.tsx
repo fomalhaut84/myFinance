@@ -8,16 +8,20 @@ export const dynamic = 'force-dynamic'
 
 interface TradesPageProps {
   searchParams: {
-    accountId?: string
-    type?: string
-    offset?: string
+    accountId?: string | string[]
+    type?: string | string[]
+    offset?: string | string[]
   }
 }
 
+function first(v: string | string[] | undefined): string | undefined {
+  return Array.isArray(v) ? v[0] : v
+}
+
 export default async function TradesPage({ searchParams }: TradesPageProps) {
-  const accountId = searchParams.accountId
-  const type = searchParams.type
-  const rawOffset = parseInt(searchParams.offset ?? '0')
+  const accountId = first(searchParams.accountId)
+  const type = first(searchParams.type)
+  const rawOffset = parseInt(first(searchParams.offset) ?? '0')
   const offset = isNaN(rawOffset) || rawOffset < 0 ? 0 : rawOffset
   const limit = 20
 

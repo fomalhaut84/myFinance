@@ -116,17 +116,17 @@ export function validateTradeInput(body: {
   if (!body.type || !['BUY', 'SELL'].includes(body.type)) {
     errors.push({ field: 'type', message: '거래 유형을 선택해주세요 (BUY/SELL).' })
   }
-  if (!body.shares || body.shares <= 0 || !Number.isInteger(body.shares)) {
+  if (typeof body.shares !== 'number' || !Number.isFinite(body.shares) || body.shares <= 0 || !Number.isInteger(body.shares)) {
     errors.push({ field: 'shares', message: '수량은 1 이상의 정수여야 합니다.' })
   }
-  if (!body.price || body.price <= 0) {
-    errors.push({ field: 'price', message: '단가는 0보다 커야 합니다.' })
+  if (typeof body.price !== 'number' || !Number.isFinite(body.price) || body.price <= 0) {
+    errors.push({ field: 'price', message: '단가는 0보다 큰 숫자여야 합니다.' })
   }
   if (!body.currency || !['USD', 'KRW'].includes(body.currency)) {
     errors.push({ field: 'currency', message: '통화를 선택해주세요 (USD/KRW).' })
   }
-  if (body.currency === 'USD' && (!body.fxRate || body.fxRate <= 0)) {
-    errors.push({ field: 'fxRate', message: 'USD 종목은 환율을 입력해야 합니다.' })
+  if (body.currency === 'USD' && (typeof body.fxRate !== 'number' || !Number.isFinite(body.fxRate) || body.fxRate <= 0)) {
+    errors.push({ field: 'fxRate', message: 'USD 종목은 유효한 환율을 입력해야 합니다.' })
   }
   if (body.market === 'US' && body.currency && body.currency !== 'USD') {
     errors.push({ field: 'currency', message: 'US 시장은 USD 통화만 가능합니다.' })
