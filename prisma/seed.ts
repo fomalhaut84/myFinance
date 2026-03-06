@@ -35,7 +35,9 @@ async function createHoldingWithTrade(tx: TxClient, accountId: string, seed: Hol
   const isUSD = seed.currency === 'USD'
   const avgPrice = isUSD ? Math.round(seed.avgPriceFx * SEED_FX_RATE) : seed.avgPrice
   const price = isUSD ? seed.avgPriceFx : seed.avgPrice
-  const totalKRW = avgPrice * seed.shares
+  const totalKRW = isUSD
+    ? Math.round(price * seed.shares * SEED_FX_RATE)
+    : Math.round(price * seed.shares)
 
   await tx.holding.create({
     data: {
