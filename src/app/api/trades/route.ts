@@ -99,6 +99,37 @@ export async function POST(request: NextRequest) {
         }
       }
 
+      // 시드 Holding 기준선 보존: 기존 Holding이 있지만 Trade가 없는 경우
+      // 기존 보유분을 대표하는 기준선 BUY 거래를 자동 생성
+      const existingTradeCount = await tx.trade.count({ where: { accountId, ticker } })
+      if (existingTradeCount === 0) {
+        const existingHolding = await tx.holding.findUnique({
+          where: { accountId_ticker: { accountId, ticker } },
+        })
+        if (existingHolding && existingHolding.shares > 0) {
+          const baselinePrice = existingHolding.currency === 'USD'
+            ? (existingHolding.avgPriceFx ?? existingHolding.avgPrice)
+            : existingHolding.avgPrice
+          const baselineTotalKRW = Math.round(existingHolding.avgPrice * existingHolding.shares)
+          await tx.trade.create({
+            data: {
+              accountId,
+              ticker: existingHolding.ticker,
+              displayName: existingHolding.displayName,
+              market: existingHolding.market,
+              type: 'BUY',
+              shares: existingHolding.shares,
+              price: baselinePrice,
+              currency: existingHolding.currency,
+              fxRate: existingHolding.avgFxRate,
+              totalKRW: baselineTotalKRW,
+              note: '시드 데이터 기준선',
+              tradedAt: new Date('2024-01-01'),
+            },
+          })
+        }
+      }
+
       const trade = await tx.trade.create({
         data: {
           accountId,

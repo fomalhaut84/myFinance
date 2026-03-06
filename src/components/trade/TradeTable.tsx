@@ -61,7 +61,7 @@ export default function TradeTable({ trades, total, limit, offset }: TradeTableP
     return currency === 'USD' ? formatUSD(price) : formatKRW(price)
   }
 
-  if (trades.length === 0) {
+  if (total === 0) {
     return (
       <div className="relative overflow-hidden rounded-[14px] border border-border bg-card p-12 text-center">
         <div className="text-[14px] text-sub mb-4">거래 기록이 없습니다</div>
