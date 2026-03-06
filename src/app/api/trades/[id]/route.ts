@@ -67,6 +67,12 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     if (price !== undefined && price <= 0) {
       return NextResponse.json({ error: '단가는 0보다 커야 합니다.' }, { status: 400 })
     }
+    if (fxRate !== undefined && trade.currency === 'USD' && (fxRate === null || fxRate <= 0)) {
+      return NextResponse.json({ error: 'USD 종목은 환율이 필요합니다.' }, { status: 400 })
+    }
+    if (tradedAt !== undefined && isNaN(Date.parse(tradedAt))) {
+      return NextResponse.json({ error: '유효한 거래일을 입력해주세요.' }, { status: 400 })
+    }
 
     const updatedShares = shares ?? trade.shares
     const updatedPrice = price ?? trade.price
@@ -98,6 +104,9 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json(result)
   } catch (error) {
+    if (error instanceof Error && error.message.startsWith('보유 수량 부족')) {
+      return NextResponse.json({ error: error.message }, { status: 400 })
+    }
     console.error('PUT /api/trades/[id] error:', error)
     return NextResponse.json({ error: '거래 수정에 실패했습니다.' }, { status: 500 })
   }
@@ -121,6 +130,9 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ success: true })
   } catch (error) {
+    if (error instanceof Error && error.message.startsWith('보유 수량 부족')) {
+      return NextResponse.json({ error: '이 거래를 삭제하면 보유 수량이 음수가 됩니다.' }, { status: 400 })
+    }
     console.error('DELETE /api/trades/[id] error:', error)
     return NextResponse.json({ error: '거래 삭제에 실패했습니다.' }, { status: 500 })
   }

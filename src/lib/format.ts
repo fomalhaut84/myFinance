@@ -43,6 +43,14 @@ export function formatSignedKRW(amount: number): string {
 }
 
 /**
+ * 날짜 포맷: "2024.03.15"
+ */
+export function formatDate(dateStr: string | Date): string {
+  const d = typeof dateStr === 'string' ? new Date(dateStr) : dateStr
+  return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`
+}
+
+/**
  * Holding의 매입금(KRW)을 계산
  * avgPrice는 모든 종목에서 원화 기준 평균단가 (USD 종목은 avgPriceFx × avgFxRate로 저장됨)
  */

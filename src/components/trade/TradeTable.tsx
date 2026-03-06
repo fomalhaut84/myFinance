@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter, useSearchParams, usePathname } from 'next/navigation'
-import { formatKRW, formatUSD } from '@/lib/format'
+import { formatKRW, formatUSD, formatDate } from '@/lib/format'
 import EditPanel from './EditPanel'
 import DeleteModal from './DeleteModal'
 
@@ -55,11 +55,6 @@ export default function TradeTable({ trades, total, limit, offset }: TradeTableP
       params.delete('offset')
     }
     router.push(`${pathname}?${params.toString()}`)
-  }
-
-  const formatDate = (dateStr: string) => {
-    const d = new Date(dateStr)
-    return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`
   }
 
   const formatPrice = (price: number, currency: string) => {

@@ -12,17 +12,22 @@ export async function GET(request: NextRequest) {
     const type = searchParams.get('type')
     const from = searchParams.get('from')
     const to = searchParams.get('to')
-    const limit = Math.min(parseInt(searchParams.get('limit') ?? '50'), 200)
-    const offset = parseInt(searchParams.get('offset') ?? '0')
+    const rawLimit = parseInt(searchParams.get('limit') ?? '50')
+    const rawOffset = parseInt(searchParams.get('offset') ?? '0')
+    const limit = Math.min(isNaN(rawLimit) || rawLimit < 1 ? 50 : rawLimit, 200)
+    const offset = isNaN(rawOffset) || rawOffset < 0 ? 0 : rawOffset
 
     const where: Record<string, unknown> = {}
     if (accountId) where.accountId = accountId
     if (ticker) where.ticker = ticker
-    if (type) where.type = type
+    if (type && ['BUY', 'SELL'].includes(type)) where.type = type
     if (from || to) {
+      const fromDate = from ? Date.parse(from) : NaN
+      const toDate = to ? Date.parse(to) : NaN
       where.tradedAt = {}
-      if (from) (where.tradedAt as Record<string, unknown>).gte = new Date(from)
-      if (to) (where.tradedAt as Record<string, unknown>).lte = new Date(to)
+      if (!isNaN(fromDate)) (where.tradedAt as Record<string, unknown>).gte = new Date(fromDate)
+      if (!isNaN(toDate)) (where.tradedAt as Record<string, unknown>).lte = new Date(toDate)
+      if (Object.keys(where.tradedAt as object).length === 0) delete where.tradedAt
     }
 
     const [trades, total] = await Promise.all([
@@ -63,22 +68,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '계좌를 찾을 수 없습니다.' }, { status: 404 })
     }
 
-    // SELL: 보유수량 확인
-    if (type === 'SELL') {
-      const holding = await prisma.holding.findUnique({
-        where: { accountId_ticker: { accountId, ticker } },
-      })
-      if (!holding || holding.shares < shares) {
-        const current = holding?.shares ?? 0
-        return NextResponse.json(
-          { error: `보유 수량(${current}주)을 초과합니다.` },
-          { status: 400 }
-        )
-      }
-    }
-
-    // Transaction: Trade 생성 + Holding 업데이트
+    // Transaction: Trade 생성 + Holding 업데이트 (SELL 검증도 tx 내부에서)
     const result = await prisma.$transaction(async (tx) => {
+      // SELL: 보유수량 확인 (트랜잭션 내부에서 동시성 안전)
+      if (type === 'SELL') {
+        const holding = await tx.holding.findUnique({
+          where: { accountId_ticker: { accountId, ticker } },
+        })
+        if (!holding || holding.shares < shares) {
+          const current = holding?.shares ?? 0
+          throw new Error(`보유 수량(${current}주)을 초과합니다.`)
+        }
+      }
+
       const trade = await tx.trade.create({
         data: {
           accountId,
@@ -139,6 +141,12 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(result, { status: 201 })
   } catch (error) {
+    if (error instanceof Error && error.message.includes('초과합니다')) {
+      return NextResponse.json({ error: error.message }, { status: 400 })
+    }
+    if (error instanceof Error && error.message.startsWith('보유 수량 부족')) {
+      return NextResponse.json({ error: error.message }, { status: 400 })
+    }
     console.error('POST /api/trades error:', error)
     return NextResponse.json(
       { error: '거래 기록에 실패했습니다.' },

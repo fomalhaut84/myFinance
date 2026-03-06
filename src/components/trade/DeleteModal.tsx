@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { formatKRW, formatUSD } from '@/lib/format'
+import { formatKRW, formatUSD, formatDate } from '@/lib/format'
 
 interface Trade {
   id: string
@@ -26,11 +26,6 @@ export default function DeleteModal({ trade, onClose }: DeleteModalProps) {
   const router = useRouter()
   const [isDeleting, setIsDeleting] = useState(false)
   const [error, setError] = useState<string | null>(null)
-
-  const formatDate = (dateStr: string) => {
-    const d = new Date(dateStr)
-    return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`
-  }
 
   // Close on Escape
   useEffect(() => {

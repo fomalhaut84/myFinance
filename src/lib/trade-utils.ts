@@ -50,7 +50,9 @@ export function recalcHolding(trades: TradeInput[]): HoldingState {
       }
     } else if (trade.type === 'SELL') {
       shares = shares - trade.shares
-      if (shares < 0) shares = 0
+      if (shares < 0) {
+        throw new Error(`보유 수량 부족: ${trade.shares}주 매도 시도, 현재 ${shares + trade.shares}주`)
+      }
       // 이동평균법: avgPrice, avgPriceFx, avgFxRate 변동 없음
     }
   }
@@ -125,6 +127,12 @@ export function validateTradeInput(body: {
   }
   if (body.currency === 'USD' && (!body.fxRate || body.fxRate <= 0)) {
     errors.push({ field: 'fxRate', message: 'USD 종목은 환율을 입력해야 합니다.' })
+  }
+  if (body.market === 'US' && body.currency && body.currency !== 'USD') {
+    errors.push({ field: 'currency', message: 'US 시장은 USD 통화만 가능합니다.' })
+  }
+  if (body.market === 'KR' && body.currency && body.currency !== 'KRW') {
+    errors.push({ field: 'currency', message: 'KR 시장은 KRW 통화만 가능합니다.' })
   }
   if (!body.tradedAt || isNaN(Date.parse(body.tradedAt))) {
     errors.push({ field: 'tradedAt', message: '유효한 거래일을 입력해주세요.' })
