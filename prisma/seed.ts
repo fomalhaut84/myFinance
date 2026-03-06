@@ -4,56 +4,70 @@ const prisma = new PrismaClient()
 
 const SEED_FX_RATE = 1450 // USD/KRW 시드 초기값
 
-interface HoldingSeed {
-  ticker: string
-  displayName: string
-  market: string
-  shares: number
-  avgPriceFx?: number
-  avgPrice?: number
-  currency: string
-  tradedAt: string  // 매수 기준일
-}
+type HoldingSeed =
+  | {
+      ticker: string
+      displayName: string
+      market: 'US'
+      shares: number
+      avgPriceFx: number
+      avgPrice?: never
+      currency: 'USD'
+      tradedAt: string
+    }
+  | {
+      ticker: string
+      displayName: string
+      market: 'KR'
+      shares: number
+      avgPriceFx?: never
+      avgPrice: number
+      currency: 'KRW'
+      tradedAt: string
+    }
 
 /**
  * Holding + 대응 Trade를 함께 생성
  */
 async function createHoldingWithTrade(accountId: string, h: HoldingSeed) {
-  const avgPrice = h.avgPriceFx ? Math.round(h.avgPriceFx * SEED_FX_RATE) : h.avgPrice!
-  const price = h.avgPriceFx ?? h.avgPrice!
-  const totalKRW = h.currency === 'USD'
+  const isUSD = h.currency === 'USD'
+  const avgPrice = isUSD ? Math.round(h.avgPriceFx * SEED_FX_RATE) : h.avgPrice
+  const price = isUSD ? h.avgPriceFx : h.avgPrice
+  const totalKRW = isUSD
     ? Math.round(price * h.shares * SEED_FX_RATE)
     : Math.round(price * h.shares)
 
-  await prisma.holding.create({
-    data: {
-      accountId,
-      ticker: h.ticker,
-      displayName: h.displayName,
-      market: h.market,
-      shares: h.shares,
-      avgPrice,
-      currency: h.currency,
-      avgPriceFx: h.avgPriceFx ?? null,
-      avgFxRate: h.avgPriceFx ? SEED_FX_RATE : null,
-    },
-  })
+  await prisma.$transaction(async (tx) => {
+    await tx.holding.create({
+      data: {
+        accountId,
+        ticker: h.ticker,
+        displayName: h.displayName,
+        market: h.market,
+        shares: h.shares,
+        avgPrice,
+        currency: h.currency,
+        avgPriceFx: isUSD ? h.avgPriceFx : null,
+        avgFxRate: isUSD ? SEED_FX_RATE : null,
+      },
+    })
 
-  await prisma.trade.create({
-    data: {
-      accountId,
-      ticker: h.ticker,
-      displayName: h.displayName,
-      market: h.market,
-      type: 'BUY',
-      shares: h.shares,
-      price,
-      currency: h.currency,
-      fxRate: h.currency === 'USD' ? SEED_FX_RATE : null,
-      totalKRW,
-      note: '초기 보유분',
-      tradedAt: new Date(h.tradedAt),
-    },
+    await tx.trade.create({
+      data: {
+        accountId,
+        ticker: h.ticker,
+        displayName: h.displayName,
+        market: h.market,
+        type: 'BUY',
+        shares: h.shares,
+        price,
+        currency: h.currency,
+        fxRate: isUSD ? SEED_FX_RATE : null,
+        totalKRW,
+        note: '초기 보유분',
+        tradedAt: new Date(h.tradedAt),
+      },
+    })
   })
 }
 
