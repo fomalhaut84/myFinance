@@ -108,8 +108,8 @@ export function validateTradeInput(body: {
   const errors: TradeValidationError[] = []
 
   if (!body.accountId) errors.push({ field: 'accountId', message: '계좌를 선택해주세요.' })
-  if (!body.ticker) errors.push({ field: 'ticker', message: '종목을 선택해주세요.' })
-  if (!body.displayName) errors.push({ field: 'displayName', message: '종목명을 입력해주세요.' })
+  if (!body.ticker?.trim()) errors.push({ field: 'ticker', message: '종목을 선택해주세요.' })
+  if (!body.displayName?.trim()) errors.push({ field: 'displayName', message: '종목명을 입력해주세요.' })
   if (!body.market || !['US', 'KR'].includes(body.market)) {
     errors.push({ field: 'market', message: '시장을 선택해주세요 (US/KR).' })
   }

@@ -43,7 +43,9 @@ export default function EditPanel({ trade, onClose }: EditPanelProps) {
   const [note, setNote] = useState(trade.note ?? '')
 
   const isUSD = trade.currency === 'USD'
-  const parsedShares = Math.floor(Number(shares)) || 0
+  const rawShares = Number(shares)
+  const parsedShares = Number.isInteger(rawShares) && rawShares > 0 ? rawShares : 0
+  const sharesError = shares !== '' && parsedShares === 0
   const parsedPrice = parseFloat(price) || 0
   const parsedFxRate = parseFloat(fxRate) || 0
 
@@ -162,6 +164,9 @@ export default function EditPanel({ trade, onClose }: EditPanelProps) {
               />
               <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[12px] text-dim">주</span>
             </div>
+            {sharesError && (
+              <p className="text-[11px] text-red-400 mt-1">1 이상의 정수를 입력해주세요.</p>
+            )}
           </div>
 
           {/* 단가 */}
