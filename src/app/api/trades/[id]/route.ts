@@ -61,16 +61,16 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     const body = await request.json()
     const { shares, price, fxRate, note, tradedAt } = body
 
-    if (shares !== undefined && (shares <= 0 || !Number.isInteger(shares))) {
+    if (shares !== undefined && (typeof shares !== 'number' || !Number.isFinite(shares) || shares <= 0 || !Number.isInteger(shares))) {
       return NextResponse.json({ error: '수량은 1 이상의 정수여야 합니다.' }, { status: 400 })
     }
-    if (price !== undefined && price <= 0) {
-      return NextResponse.json({ error: '단가는 0보다 커야 합니다.' }, { status: 400 })
+    if (price !== undefined && (typeof price !== 'number' || !Number.isFinite(price) || price <= 0)) {
+      return NextResponse.json({ error: '단가는 0보다 큰 숫자여야 합니다.' }, { status: 400 })
     }
-    if (fxRate !== undefined && trade.currency === 'USD' && (fxRate === null || fxRate <= 0)) {
-      return NextResponse.json({ error: 'USD 종목은 환율이 필요합니다.' }, { status: 400 })
+    if (fxRate !== undefined && trade.currency === 'USD' && (typeof fxRate !== 'number' || !Number.isFinite(fxRate) || fxRate <= 0)) {
+      return NextResponse.json({ error: 'USD 종목은 유효한 환율이 필요합니다.' }, { status: 400 })
     }
-    if (tradedAt !== undefined && isNaN(Date.parse(tradedAt))) {
+    if (tradedAt !== undefined && (typeof tradedAt !== 'string' || isNaN(Date.parse(tradedAt)))) {
       return NextResponse.json({ error: '유효한 거래일을 입력해주세요.' }, { status: 400 })
     }
 

@@ -28,7 +28,7 @@ export default async function TradesPage({ searchParams }: TradesPageProps) {
   const [trades, total, accounts] = await Promise.all([
     prisma.trade.findMany({
       where,
-      orderBy: { tradedAt: 'desc' },
+      orderBy: [{ tradedAt: 'desc' }, { createdAt: 'desc' }],
       take: limit,
       skip: offset,
       include: { account: { select: { name: true } } },
