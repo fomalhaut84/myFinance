@@ -138,7 +138,8 @@ export function parseFlexibleDate(value: string): string | null {
   // YYYYMMDD
   const compact = v.match(/^(\d{4})(\d{2})(\d{2})$/)
   if (compact) {
-    return `${compact[1]}-${compact[2]}-${compact[3]}`
+    const result = `${compact[1]}-${compact[2]}-${compact[3]}`
+    return isValidDate(result) ? result : null
   }
 
   // YYYY-MM-DD, YYYY/MM/DD, YYYY.MM.DD
@@ -146,7 +147,8 @@ export function parseFlexibleDate(value: string): string | null {
   if (ymd) {
     const m = ymd[2].padStart(2, '0')
     const d = ymd[3].padStart(2, '0')
-    return `${ymd[1]}-${m}-${d}`
+    const result = `${ymd[1]}-${m}-${d}`
+    return isValidDate(result) ? result : null
   }
 
   // MM/DD/YYYY
@@ -154,7 +156,8 @@ export function parseFlexibleDate(value: string): string | null {
   if (mdy) {
     const m = mdy[1].padStart(2, '0')
     const d = mdy[2].padStart(2, '0')
-    return `${mdy[3]}-${m}-${d}`
+    const result = `${mdy[3]}-${m}-${d}`
+    return isValidDate(result) ? result : null
   }
 
   // ISO 8601 with time
@@ -168,6 +171,18 @@ export function parseFlexibleDate(value: string): string | null {
   }
 
   return null
+}
+
+/** YYYY-MM-DD 문자열의 날짜 유효성 검증 (2024-02-31 같은 불가능 날짜 차단) */
+function isValidDate(dateStr: string): boolean {
+  const date = new Date(dateStr + 'T00:00:00Z')
+  if (isNaN(date.getTime())) return false
+  const [y, m, d] = dateStr.split('-').map(Number)
+  return (
+    date.getUTCFullYear() === y &&
+    date.getUTCMonth() + 1 === m &&
+    date.getUTCDate() === d
+  )
 }
 
 /** 쉼표/공백 제거 후 숫자 파싱 */
@@ -198,7 +213,7 @@ export function applyMapping(
   const parsedDate = parseFlexibleDate(rawDate)
 
   const rawShares = getValue('shares')
-  const shares = rawShares ? Math.round(parseNumber(rawShares)) : 0
+  const shares = rawShares ? parseNumber(rawShares) : 0
 
   const rawPrice = getValue('price')
   const price = rawPrice ? parseNumber(rawPrice) : 0
@@ -271,7 +286,7 @@ export function validateRows(
       return { rowIndex: i, status: 'error' as const, data, errors }
     }
 
-    const key = `${data.ticker}|${data.type}|${data.tradedAt}|${data.shares}|${data.price}`
+    const key = `${data.ticker}|${data.type}|${data.tradedAt}|${data.shares}|${Number(data.price.toFixed(4))}`
     if (existingSet.has(key) || batchSet.has(key)) {
       return { rowIndex: i, status: 'duplicate' as const, data, errors: [] }
     }

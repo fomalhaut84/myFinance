@@ -96,7 +96,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 기존 거래와 market/currency 일관성 검증 (P1-2)
+    // 기존 거래/보유와 market/currency 일관성 검증
     const tickers = Array.from(new Set(validTrades.map((t) => t.ticker)))
     const existingMeta = await prisma.trade.findMany({
       where: { accountId, ticker: { in: tickers } },
@@ -107,6 +107,19 @@ export async function POST(request: NextRequest) {
       if (meta.market !== market || meta.currency !== currency) {
         return NextResponse.json(
           { error: `${meta.ticker}은(는) 이미 ${meta.market}/${meta.currency}로 등록되어 있습니다.` },
+          { status: 400 }
+        )
+      }
+    }
+    // Holding 테이블도 검증 (Trade 없이 Holding만 있는 시드 데이터 대응)
+    const existingHoldings = await prisma.holding.findMany({
+      where: { accountId, ticker: { in: tickers } },
+      select: { ticker: true, market: true, currency: true },
+    })
+    for (const h of existingHoldings) {
+      if (h.market !== market || h.currency !== currency) {
+        return NextResponse.json(
+          { error: `${h.ticker}은(는) 이미 ${h.market}/${h.currency}로 등록되어 있습니다.` },
           { status: 400 }
         )
       }
@@ -122,7 +135,7 @@ export async function POST(request: NextRequest) {
       existingTrades.map((t) => {
         const d = t.tradedAt instanceof Date ? t.tradedAt : new Date(t.tradedAt)
         const dateStr = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`
-        return `${t.ticker}|${t.type}|${dateStr}|${t.shares}|${t.price}`
+        return `${t.ticker}|${t.type}|${dateStr}|${t.shares}|${Number(t.price.toFixed(4))}`
       })
     )
 
@@ -132,7 +145,7 @@ export async function POST(request: NextRequest) {
 
     for (const t of validTrades) {
       const dateStr = t.tradedAt.slice(0, 10) // YYYY-MM-DD
-      const key = `${t.ticker}|${t.type}|${dateStr}|${t.shares}|${t.price}`
+      const key = `${t.ticker}|${t.type}|${dateStr}|${t.shares}|${Number(t.price.toFixed(4))}`
       if (existingSet.has(key) || batchSet.has(key)) {
         if (skipDuplicates) {
           skipped++
