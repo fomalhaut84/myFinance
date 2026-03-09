@@ -2,14 +2,14 @@
 
 import { useState, useMemo } from 'react'
 import Card from '@/components/ui/Card'
-import type { ValidatedRow, ImportRequest } from '@/types/csv-import'
+import type { ValidatedRow, ImportRequest, ImportResult } from '@/types/csv-import'
 
 interface StepValidationProps {
   validatedRows: ValidatedRow[]
   accountId: string
   market: 'US' | 'KR'
   currency: 'USD' | 'KRW'
-  onNext: (result: unknown) => void
+  onNext: (result: ImportResult) => void
   onBack: () => void
 }
 
@@ -59,7 +59,7 @@ export default function StepValidation({
       .map((r) => ({
         ticker: r.data.ticker,
         displayName: r.data.displayName,
-        type: r.data.type,
+        type: r.data.type as 'BUY' | 'SELL',
         shares: r.data.shares,
         price: r.data.price,
         fxRate: r.data.fxRate,
@@ -88,7 +88,7 @@ export default function StepValidation({
         return
       }
 
-      onNext(data.result)
+      onNext(data.result as ImportResult)
     } catch {
       setSubmitError('네트워크 오류가 발생했습니다.')
     } finally {
@@ -189,8 +189,10 @@ export default function StepValidation({
                       </span>
                     </td>
                     <td className="text-muted px-2 py-2 font-mono">{row.data.ticker}</td>
-                    <td className={`px-2 py-2 font-semibold ${row.data.type === 'BUY' ? 'text-sejin' : 'text-red-400'}`}>
-                      {row.data.type === 'BUY' ? '매수' : '매도'}
+                    <td className={`px-2 py-2 font-semibold ${
+                      row.data.type === 'BUY' ? 'text-sejin' : row.data.type === 'SELL' ? 'text-red-400' : 'text-amber-400'
+                    }`}>
+                      {row.data.type === 'BUY' ? '매수' : row.data.type === 'SELL' ? '매도' : '?'}
                     </td>
                     <td className="text-muted px-2 py-2 text-right tabular-nums">
                       {row.data.shares.toLocaleString()}

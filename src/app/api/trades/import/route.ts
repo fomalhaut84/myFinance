@@ -96,18 +96,33 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 중복 감지용 기존 거래 조회
+    // 기존 거래와 market/currency 일관성 검증 (P1-2)
     const tickers = Array.from(new Set(validTrades.map((t) => t.ticker)))
+    const existingMeta = await prisma.trade.findMany({
+      where: { accountId, ticker: { in: tickers } },
+      select: { ticker: true, market: true, currency: true },
+      distinct: ['ticker'],
+    })
+    for (const meta of existingMeta) {
+      if (meta.market !== market || meta.currency !== currency) {
+        return NextResponse.json(
+          { error: `${meta.ticker}은(는) 이미 ${meta.market}/${meta.currency}로 등록되어 있습니다.` },
+          { status: 400 }
+        )
+      }
+    }
+
+    // 중복 감지용 기존 거래 조회 (P2-2: type 포함)
     const existingTrades = await prisma.trade.findMany({
       where: { accountId, ticker: { in: tickers } },
-      select: { ticker: true, tradedAt: true, shares: true, price: true },
+      select: { ticker: true, type: true, tradedAt: true, shares: true, price: true },
     })
 
     const existingSet = new Set(
       existingTrades.map((t) => {
         const d = t.tradedAt instanceof Date ? t.tradedAt : new Date(t.tradedAt)
         const dateStr = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`
-        return `${t.ticker}|${dateStr}|${t.shares}|${t.price}`
+        return `${t.ticker}|${t.type}|${dateStr}|${t.shares}|${t.price}`
       })
     )
 
@@ -116,7 +131,7 @@ export async function POST(request: NextRequest) {
 
     for (const t of validTrades) {
       const dateStr = t.tradedAt.slice(0, 10) // YYYY-MM-DD
-      const key = `${t.ticker}|${dateStr}|${t.shares}|${t.price}`
+      const key = `${t.ticker}|${t.type}|${dateStr}|${t.shares}|${t.price}`
       if (existingSet.has(key)) {
         if (skipDuplicates) {
           skipped++
@@ -139,6 +154,39 @@ export async function POST(request: NextRequest) {
 
     // Serializable 트랜잭션: 일괄 생성 + Holding 재계산
     const created = await prisma.$transaction(async (tx) => {
+      // 시드 Holding 기준선 보존 (P2-1): Trade가 없는 기존 Holding에 baseline BUY 생성
+      const affectedTickersForBaseline = Array.from(new Set(toCreate.map((t) => t.ticker)))
+      for (const ticker of affectedTickersForBaseline) {
+        const existingTradeCount = await tx.trade.count({ where: { accountId, ticker } })
+        if (existingTradeCount === 0) {
+          const existingHolding = await tx.holding.findUnique({
+            where: { accountId_ticker: { accountId, ticker } },
+          })
+          if (existingHolding && existingHolding.shares > 0) {
+            const baselinePrice = existingHolding.currency === 'USD'
+              ? (existingHolding.avgPriceFx ?? existingHolding.avgPrice)
+              : existingHolding.avgPrice
+            const baselineTotalKRW = Math.round(existingHolding.avgPrice * existingHolding.shares)
+            await tx.trade.create({
+              data: {
+                accountId,
+                ticker: existingHolding.ticker,
+                displayName: existingHolding.displayName,
+                market: existingHolding.market,
+                type: 'BUY',
+                shares: existingHolding.shares,
+                price: baselinePrice,
+                currency: existingHolding.currency,
+                fxRate: existingHolding.avgFxRate,
+                totalKRW: baselineTotalKRW,
+                note: '시드 데이터 기준선',
+                tradedAt: new Date('2024-01-01'),
+              },
+            })
+          }
+        }
+      }
+
       const createdTrades = []
 
       for (const t of toCreate) {
@@ -213,6 +261,9 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ result }, { status: 201 })
   } catch (error) {
+    if (error instanceof Error && (error.message.includes('초과합니다') || error.message.startsWith('보유 수량 부족'))) {
+      return NextResponse.json({ error: error.message }, { status: 400 })
+    }
     console.error('POST /api/trades/import error:', error)
     return NextResponse.json(
       { error: '거래 일괄 등록에 실패했습니다.' },

@@ -209,7 +209,7 @@ export function applyMapping(
   return {
     ticker: getValue('ticker').toUpperCase().replace(/\s/g, ''),
     displayName: getValue('displayName') || getValue('ticker'),
-    type: type ?? 'BUY',
+    type,
     shares,
     price,
     fxRate,
@@ -226,6 +226,7 @@ export function validateRows(
   rows: MappedRow[],
   existingTrades: Array<{
     ticker: string
+    type: string
     tradedAt: string // YYYY-MM-DD
     shares: number
     price: number
@@ -234,7 +235,7 @@ export function validateRows(
 ): ValidatedRow[] {
   const existingSet = new Set(
     existingTrades.map(
-      (t) => `${t.ticker}|${t.tradedAt}|${t.shares}|${t.price}`
+      (t) => `${t.ticker}|${t.type}|${t.tradedAt}|${t.shares}|${t.price}`
     )
   )
 
@@ -246,6 +247,9 @@ export function validateRows(
 
     if (!data.ticker) {
       errors.push({ field: 'ticker', message: '티커가 비어있습니다.' })
+    }
+    if (!data.type) {
+      errors.push({ field: 'type', message: '매수/매도 구분을 인식할 수 없습니다.' })
     }
     if (!data.tradedAt) {
       errors.push({ field: 'tradedAt', message: '거래일을 파싱할 수 없습니다.' })
@@ -267,7 +271,7 @@ export function validateRows(
       return { rowIndex: i, status: 'error' as const, data, errors }
     }
 
-    const key = `${data.ticker}|${data.tradedAt}|${data.shares}|${data.price}`
+    const key = `${data.ticker}|${data.type}|${data.tradedAt}|${data.shares}|${data.price}`
     if (existingSet.has(key) || batchSet.has(key)) {
       return { rowIndex: i, status: 'duplicate' as const, data, errors: [] }
     }

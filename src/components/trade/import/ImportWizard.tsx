@@ -5,7 +5,7 @@ import StepUpload from './StepUpload'
 import StepMapping from './StepMapping'
 import StepValidation from './StepValidation'
 import StepResult from './StepResult'
-import type { ColumnMapping, ValidatedRow, ImportResult } from '@/types/csv-import'
+import type { ValidatedRow, ImportResult } from '@/types/csv-import'
 
 interface Account {
   id: string
@@ -33,31 +33,42 @@ export default function ImportWizard({ accounts }: ImportWizardProps) {
 
   // Step 2 → 3 data
   const [validatedRows, setValidatedRows] = useState<ValidatedRow[]>([])
-  const [, setMapping] = useState<ColumnMapping>({})
 
   // Existing trades for duplicate detection
   const [existingTrades, setExistingTrades] = useState<
-    Array<{ ticker: string; tradedAt: string; shares: number; price: number }>
+    Array<{ ticker: string; type: string; tradedAt: string; shares: number; price: number }>
   >([])
 
   // Step 3 → 4 data
   const [importResult, setImportResult] = useState<ImportResult | null>(null)
 
-  // Fetch existing trades when account is selected
+  // Fetch all existing trades for account (paginated)
   const fetchExistingTrades = useCallback(async (accountId: string) => {
     try {
-      const res = await fetch(`/api/trades?accountId=${accountId}&limit=200`)
-      const data = await res.json()
-      if (data.trades) {
-        setExistingTrades(
-          data.trades.map((t: { ticker: string; tradedAt: string; shares: number; price: number }) => ({
-            ticker: t.ticker,
-            tradedAt: t.tradedAt.slice(0, 10),
-            shares: t.shares,
-            price: t.price,
-          }))
-        )
+      const allTrades: Array<{ ticker: string; type: string; tradedAt: string; shares: number; price: number }> = []
+      let offset = 0
+      const limit = 200
+      let hasMore = true
+      while (hasMore) {
+        const res = await fetch(`/api/trades?accountId=${accountId}&limit=${limit}&offset=${offset}`)
+        const data = await res.json()
+        if (data.trades && data.trades.length > 0) {
+          for (const t of data.trades as Array<{ ticker: string; type: string; tradedAt: string; shares: number; price: number }>) {
+            allTrades.push({
+              ticker: t.ticker,
+              type: t.type,
+              tradedAt: t.tradedAt.slice(0, 10),
+              shares: t.shares,
+              price: t.price,
+            })
+          }
+          offset += limit
+          hasMore = data.trades.length === limit
+        } else {
+          hasMore = false
+        }
       }
+      setExistingTrades(allTrades)
     } catch {
       setExistingTrades([])
     }
@@ -123,9 +134,8 @@ export default function ImportWizard({ accounts }: ImportWizardProps) {
           rows={uploadData.rows}
           currency={uploadData.currency}
           existingTrades={existingTrades}
-          onNext={(rows, m) => {
+          onNext={(rows) => {
             setValidatedRows(rows)
-            setMapping(m)
             setStep(2)
           }}
           onBack={() => setStep(0)}
@@ -139,7 +149,7 @@ export default function ImportWizard({ accounts }: ImportWizardProps) {
           market={uploadData.market}
           currency={uploadData.currency}
           onNext={(result) => {
-            setImportResult(result as ImportResult)
+            setImportResult(result)
             setStep(3)
           }}
           onBack={() => setStep(1)}

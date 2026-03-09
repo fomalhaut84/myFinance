@@ -19,11 +19,12 @@ interface StepMappingProps {
   currency: 'USD' | 'KRW'
   existingTrades: Array<{
     ticker: string
+    type: string
     tradedAt: string
     shares: number
     price: number
   }>
-  onNext: (validatedRows: ValidatedRow[], mapping: ColumnMapping) => void
+  onNext: (validatedRows: ValidatedRow[]) => void
   onBack: () => void
 }
 
@@ -82,7 +83,7 @@ export default function StepMapping({
   const handleNext = () => {
     const mappedRows = rows.map((row) => applyMapping(row, mapping, currency))
     const validated = validateRows(mappedRows, existingTrades, currency)
-    onNext(validated, mapping)
+    onNext(validated)
   }
 
   return (

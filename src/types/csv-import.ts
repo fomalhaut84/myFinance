@@ -16,7 +16,7 @@ export type ColumnMapping = Record<string, TradeField | null>
 export interface MappedRow {
   ticker: string
   displayName: string
-  type: 'BUY' | 'SELL'
+  type: 'BUY' | 'SELL' | null
   shares: number
   price: number
   fxRate: number | null
