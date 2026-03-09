@@ -26,6 +26,12 @@ export async function POST(
         { status: 400 }
       )
     }
+    if (typeof autoSell !== 'boolean') {
+      return NextResponse.json(
+        { error: 'autoSell은 boolean이어야 합니다.' },
+        { status: 400 }
+      )
+    }
 
     const result = await prisma.$transaction(async (tx) => {
       // 스케줄 조회 + 상태 확인
@@ -35,6 +41,11 @@ export async function POST(
       }
       if (schedule.status !== 'pending') {
         throw new Error('ALREADY_VESTED')
+      }
+
+      // sellShares 상한 검증
+      if (schedule.sellShares != null && schedule.sellShares > schedule.shares) {
+        throw new Error('INVALID_SELL_SHARES')
       }
 
       const accountId = schedule.accountId
@@ -143,6 +154,24 @@ export async function POST(
           { status: 400 }
         )
       }
+      if (error.message === 'INVALID_SELL_SHARES') {
+        return NextResponse.json(
+          { error: '매도 수량이 베스팅 수량을 초과합니다.' },
+          { status: 400 }
+        )
+      }
+    }
+    // Prisma Serializable 충돌 (P2034)
+    if (
+      error != null &&
+      typeof error === 'object' &&
+      'code' in error &&
+      (error as { code: string }).code === 'P2034'
+    ) {
+      return NextResponse.json(
+        { error: '동시 요청이 충돌했습니다. 잠시 후 다시 시도해주세요.' },
+        { status: 409 }
+      )
     }
     console.error('POST /api/rsu/[id]/vest error:', error)
     return NextResponse.json(
