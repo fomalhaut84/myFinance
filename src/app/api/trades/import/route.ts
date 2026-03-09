@@ -128,16 +128,18 @@ export async function POST(request: NextRequest) {
 
     const toCreate: typeof validTrades = []
     let skipped = 0
+    const batchSet = new Set<string>()
 
     for (const t of validTrades) {
       const dateStr = t.tradedAt.slice(0, 10) // YYYY-MM-DD
       const key = `${t.ticker}|${t.type}|${dateStr}|${t.shares}|${t.price}`
-      if (existingSet.has(key)) {
+      if (existingSet.has(key) || batchSet.has(key)) {
         if (skipDuplicates) {
           skipped++
           continue
         }
       }
+      batchSet.add(key)
       toCreate.push(t)
     }
 
@@ -167,6 +169,14 @@ export async function POST(request: NextRequest) {
               ? (existingHolding.avgPriceFx ?? existingHolding.avgPrice)
               : existingHolding.avgPrice
             const baselineTotalKRW = Math.round(existingHolding.avgPrice * existingHolding.shares)
+            // baseline 날짜: 해당 ticker 임포트 최소 날짜 - 1일
+            const tickerTrades = toCreate.filter((t) => t.ticker === ticker)
+            const earliestDate = tickerTrades.reduce((min, t) => {
+              return t.tradedAt < min ? t.tradedAt : min
+            }, tickerTrades[0].tradedAt)
+            const baselineDate = new Date(earliestDate)
+            baselineDate.setUTCDate(baselineDate.getUTCDate() - 1)
+
             await tx.trade.create({
               data: {
                 accountId,
@@ -180,7 +190,7 @@ export async function POST(request: NextRequest) {
                 fxRate: existingHolding.avgFxRate,
                 totalKRW: baselineTotalKRW,
                 note: '시드 데이터 기준선',
-                tradedAt: new Date('2024-01-01'),
+                tradedAt: baselineDate,
               },
             })
           }

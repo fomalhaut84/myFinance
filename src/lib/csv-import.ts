@@ -198,10 +198,10 @@ export function applyMapping(
   const parsedDate = parseFlexibleDate(rawDate)
 
   const rawShares = getValue('shares')
-  const shares = rawShares ? Math.abs(Math.round(parseNumber(rawShares))) : 0
+  const shares = rawShares ? Math.round(parseNumber(rawShares)) : 0
 
   const rawPrice = getValue('price')
-  const price = rawPrice ? Math.abs(parseNumber(rawPrice)) : 0
+  const price = rawPrice ? parseNumber(rawPrice) : 0
 
   const rawFxRate = getValue('fxRate')
   const fxRate = currency === 'USD' && rawFxRate ? parseNumber(rawFxRate) : null
