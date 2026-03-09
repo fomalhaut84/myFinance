@@ -13,7 +13,17 @@ export async function POST(
 ) {
   try {
     const { id } = params
-    const body = await request.json()
+
+    let body: Record<string, unknown>
+    try {
+      body = await request.json()
+    } catch {
+      return NextResponse.json(
+        { error: '유효한 JSON 요청을 보내주세요.' },
+        { status: 400 }
+      )
+    }
+
     const { vestPrice, autoSell } = body as {
       vestPrice: number
       autoSell: boolean
@@ -43,8 +53,8 @@ export async function POST(
         throw new Error('ALREADY_VESTED')
       }
 
-      // sellShares 상한 검증
-      if (schedule.sellShares != null && schedule.sellShares > schedule.shares) {
+      // sellShares 정합성 검증
+      if (schedule.sellShares != null && (schedule.sellShares < 0 || schedule.sellShares > schedule.shares)) {
         throw new Error('INVALID_SELL_SHARES')
       }
 
