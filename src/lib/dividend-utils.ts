@@ -22,13 +22,12 @@ export function validateDividendInput(body: {
   amountNet?: number
   currency?: string
   fxRate?: number | null
-  amountKRW?: number
 }): DividendValidationError[] {
   const errors: DividendValidationError[] = []
 
-  if (!body.accountId) errors.push({ field: 'accountId', message: '계좌를 선택해주세요.' })
-  if (!body.ticker?.trim()) errors.push({ field: 'ticker', message: '종목을 선택해주세요.' })
-  if (!body.displayName?.trim()) errors.push({ field: 'displayName', message: '종목명을 입력해주세요.' })
+  if (!body.accountId || typeof body.accountId !== 'string') errors.push({ field: 'accountId', message: '계좌를 선택해주세요.' })
+  if (typeof body.ticker !== 'string' || !body.ticker.trim()) errors.push({ field: 'ticker', message: '종목을 선택해주세요.' })
+  if (typeof body.displayName !== 'string' || !body.displayName.trim()) errors.push({ field: 'displayName', message: '종목명을 입력해주세요.' })
   if (!body.payDate || isNaN(Date.parse(body.payDate))) {
     errors.push({ field: 'payDate', message: '유효한 지급일을 입력해주세요.' })
   }
@@ -43,9 +42,6 @@ export function validateDividendInput(body: {
   }
   if (body.currency === 'USD' && (typeof body.fxRate !== 'number' || !Number.isFinite(body.fxRate) || body.fxRate <= 0)) {
     errors.push({ field: 'fxRate', message: 'USD 배당은 유효한 환율을 입력해야 합니다.' })
-  }
-  if (typeof body.amountKRW !== 'number' || !Number.isFinite(body.amountKRW) || body.amountKRW < 0) {
-    errors.push({ field: 'amountKRW', message: '원화 환산 금액은 0 이상이어야 합니다.' })
   }
 
   return errors

@@ -14,7 +14,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     }
 
     const body = await request.json()
-    const { exDate, payDate, amountGross, amountNet, taxAmount, fxRate, amountKRW, reinvested } = body
+    const { exDate, payDate, amountGross, amountNet, taxAmount, fxRate, reinvested } = body
 
     if (amountGross !== undefined && (typeof amountGross !== 'number' || !Number.isFinite(amountGross) || amountGross <= 0)) {
       return NextResponse.json({ error: '세전 금액은 0보다 커야 합니다.' }, { status: 400 })
@@ -34,9 +34,6 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     if (fxRate !== undefined && fxRate !== null && existing.currency === 'USD' && (typeof fxRate !== 'number' || !Number.isFinite(fxRate) || fxRate <= 0)) {
       return NextResponse.json({ error: 'USD 배당은 유효한 환율이 필요합니다.' }, { status: 400 })
     }
-    if (amountKRW !== undefined && (typeof amountKRW !== 'number' || !Number.isFinite(amountKRW) || amountKRW < 0)) {
-      return NextResponse.json({ error: '원화 환산 금액은 0 이상이어야 합니다.' }, { status: 400 })
-    }
     if (reinvested !== undefined && typeof reinvested !== 'boolean') {
       return NextResponse.json({ error: '재투자 여부는 true/false여야 합니다.' }, { status: 400 })
     }
@@ -44,6 +41,11 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     // USD fxRate: 미지정 시 기존값 유지
     const nextFxRate = fxRate !== undefined ? fxRate : existing.fxRate
     const nextAmountNet = amountNet ?? existing.amountNet
+
+    // USD는 반드시 유효한 fxRate가 있어야 함
+    if (existing.currency === 'USD' && (!nextFxRate || !Number.isFinite(nextFxRate) || nextFxRate <= 0)) {
+      return NextResponse.json({ error: 'USD 배당은 유효한 환율이 필요합니다.' }, { status: 400 })
+    }
 
     // 서버 측 amountKRW 재계산
     const serverAmountKRW = calcAmountKRW(nextAmountNet, existing.currency, nextFxRate)

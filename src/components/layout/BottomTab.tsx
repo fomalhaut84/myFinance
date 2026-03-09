@@ -56,7 +56,7 @@ export default function BottomTab({ accounts }: BottomTabProps) {
           }`}
         >
           <span className="text-lg">💰</span>
-          <span className="text-[11px] font-semibold">배당</span>
+          <span className="text-[11px] font-semibold">배당금</span>
         </Link>
 
         {accounts.map((account) => (

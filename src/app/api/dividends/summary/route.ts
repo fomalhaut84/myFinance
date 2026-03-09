@@ -8,11 +8,10 @@ export async function GET(request: NextRequest) {
     const { searchParams } = request.nextUrl
     const yearStr = searchParams.get('year')
     const accountId = searchParams.get('accountId')
-    const year = yearStr ? parseInt(yearStr) : new Date().getFullYear()
-
-    if (isNaN(year)) {
+    if (yearStr && !/^\d{4}$/.test(yearStr)) {
       return NextResponse.json({ error: '유효한 연도를 입력해주세요.' }, { status: 400 })
     }
+    const year = yearStr ? parseInt(yearStr) : new Date().getFullYear()
 
     const where: Record<string, unknown> = {
       payDate: {

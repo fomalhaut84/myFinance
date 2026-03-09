@@ -49,8 +49,10 @@ export default function DividendEditPanel({ dividend, onClose }: DividendEditPan
     setAmountNet(String(result.amountNet))
   }, [amountGross, dividend.currency])
 
-  const parsedNet = parseFloat(amountNet) || 0
-  const parsedFxRate = parseFloat(fxRate) || 0
+  const parsedNetRaw = parseFloat(amountNet)
+  const parsedNet = Number.isFinite(parsedNetRaw) ? parsedNetRaw : 0
+  const parsedFxRateRaw = parseFloat(fxRate)
+  const parsedFxRate = Number.isFinite(parsedFxRateRaw) ? parsedFxRateRaw : 0
   const amountKRW = calcAmountKRW(parsedNet, dividend.currency, parsedFxRate)
 
   const handleSubmit = async (e: React.FormEvent) => {

@@ -19,10 +19,10 @@ export async function GET(request: NextRequest) {
     if (accountId) where.accountId = accountId
     if (ticker) where.ticker = ticker
     if (year) {
-      const y = parseInt(year)
-      if (isNaN(y)) {
+      if (!/^\d{4}$/.test(year)) {
         return NextResponse.json({ error: '유효한 연도를 입력해주세요.' }, { status: 400 })
       }
+      const y = parseInt(year)
       where.payDate = {
         gte: new Date(`${y}-01-01`),
         lt: new Date(`${y + 1}-01-01`),
