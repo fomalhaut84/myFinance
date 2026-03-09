@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { validateDividendInput } from '@/lib/dividend-utils'
+import { validateDividendInput, calcAmountKRW } from '@/lib/dividend-utils'
 
 export const dynamic = 'force-dynamic'
 
@@ -20,11 +20,12 @@ export async function GET(request: NextRequest) {
     if (ticker) where.ticker = ticker
     if (year) {
       const y = parseInt(year)
-      if (!isNaN(y)) {
-        where.payDate = {
-          gte: new Date(`${y}-01-01`),
-          lt: new Date(`${y + 1}-01-01`),
-        }
+      if (isNaN(y)) {
+        return NextResponse.json({ error: '유효한 연도를 입력해주세요.' }, { status: 400 })
+      }
+      where.payDate = {
+        gte: new Date(`${y}-01-01`),
+        lt: new Date(`${y + 1}-01-01`),
       }
     }
 
@@ -57,8 +58,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: errors[0].message, errors }, { status: 400 })
     }
 
-    const { accountId, displayName, exDate, payDate, amountGross, amountNet, taxAmount, currency, fxRate, amountKRW, reinvested } = body
+    const { accountId, displayName, exDate, payDate, amountGross, amountNet, taxAmount, currency, fxRate, reinvested } = body
     const ticker = (body.ticker as string).toUpperCase().trim()
+
+    // 서버 측 amountKRW 재계산 (클라이언트 값 대신 서버 계산값 사용)
+    const serverAmountKRW = calcAmountKRW(amountNet, currency, fxRate)
 
     const account = await prisma.account.findUnique({ where: { id: accountId } })
     if (!account) {
@@ -77,7 +81,7 @@ export async function POST(request: NextRequest) {
         taxAmount: taxAmount ?? null,
         currency,
         fxRate: currency === 'USD' ? fxRate : null,
-        amountKRW,
+        amountKRW: serverAmountKRW,
         reinvested: reinvested ?? false,
       },
     })

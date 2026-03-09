@@ -39,20 +39,26 @@ export default async function DividendsPage({ searchParams }: DividendsPageProps
     }
   }
 
-  const [dividends, total, accounts] = await Promise.all([
-    prisma.dividend.findMany({
-      where,
-      orderBy: [{ payDate: 'desc' }, { createdAt: 'desc' }],
-      take: limit,
-      skip: offset,
-      include: { account: { select: { name: true } } },
-    }),
+  const [total, accounts] = await Promise.all([
     prisma.dividend.count({ where }),
     prisma.account.findMany({
       select: { id: true, name: true },
       orderBy: { createdAt: 'asc' },
     }),
   ])
+
+  // Clamp offset to valid range
+  const clampedOffset = total > 0 && offset >= total
+    ? Math.max(0, Math.floor((total - 1) / limit) * limit)
+    : offset
+
+  const dividends = await prisma.dividend.findMany({
+    where,
+    orderBy: [{ payDate: 'desc' }, { createdAt: 'desc' }],
+    take: limit,
+    skip: clampedOffset,
+    include: { account: { select: { name: true } } },
+  })
 
   // Summary for the selected year (or current year)
   const summaryYear = year ?? currentYear
@@ -121,7 +127,7 @@ export default async function DividendsPage({ searchParams }: DividendsPageProps
         dividends={serialized as Parameters<typeof DividendTable>[0]['dividends']}
         total={total}
         limit={limit}
-        offset={offset}
+        offset={clampedOffset}
       />
 
       <p className="text-[11px] text-dim mt-4">

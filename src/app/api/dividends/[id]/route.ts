@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { calcAmountKRW } from '@/lib/dividend-utils'
 
 interface RouteParams {
   params: { id: string }
@@ -40,6 +41,13 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: '재투자 여부는 true/false여야 합니다.' }, { status: 400 })
     }
 
+    // USD fxRate: 미지정 시 기존값 유지
+    const nextFxRate = fxRate !== undefined ? fxRate : existing.fxRate
+    const nextAmountNet = amountNet ?? existing.amountNet
+
+    // 서버 측 amountKRW 재계산
+    const serverAmountKRW = calcAmountKRW(nextAmountNet, existing.currency, nextFxRate)
+
     const updated = await prisma.dividend.update({
       where: { id: params.id },
       data: {
@@ -48,8 +56,8 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         amountGross: amountGross ?? undefined,
         amountNet: amountNet ?? undefined,
         taxAmount: taxAmount !== undefined ? taxAmount : undefined,
-        fxRate: fxRate !== undefined ? fxRate : undefined,
-        amountKRW: amountKRW ?? undefined,
+        fxRate: nextFxRate,
+        amountKRW: serverAmountKRW,
         reinvested: reinvested !== undefined ? reinvested : undefined,
       },
     })
