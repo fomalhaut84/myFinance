@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { formatUSD } from '@/lib/format'
 import { calcDividendTax, calcAmountKRW } from '@/lib/dividend-utils'
@@ -40,8 +40,13 @@ export default function DividendEditPanel({ dividend, onClose }: DividendEditPan
     return () => document.removeEventListener('keydown', handleKey)
   }, [onClose])
 
-  // Auto-calc tax when gross changes
+  // Auto-calc tax when gross changes (skip initial mount to preserve existing values)
+  const isFirstRender = useRef(true)
   useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false
+      return
+    }
     const gross = parseFloat(amountGross)
     if (!Number.isFinite(gross) || gross <= 0) return
     const result = calcDividendTax(gross, dividend.currency)

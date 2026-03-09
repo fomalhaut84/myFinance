@@ -61,6 +61,17 @@ export async function POST(request: NextRequest) {
     const { accountId, displayName, exDate, payDate, amountGross, amountNet, taxAmount, currency, fxRate, reinvested } = body
     const ticker = (body.ticker as string).toUpperCase().trim()
 
+    // 옵션 필드 타입 검증
+    if (exDate !== undefined && exDate !== null && (typeof exDate !== 'string' || isNaN(Date.parse(exDate)))) {
+      return NextResponse.json({ error: '유효한 기준일을 입력해주세요.' }, { status: 400 })
+    }
+    if (taxAmount !== undefined && taxAmount !== null && (typeof taxAmount !== 'number' || !Number.isFinite(taxAmount) || taxAmount < 0)) {
+      return NextResponse.json({ error: '세금은 0 이상이어야 합니다.' }, { status: 400 })
+    }
+    if (reinvested !== undefined && reinvested !== null && typeof reinvested !== 'boolean') {
+      return NextResponse.json({ error: '재투자 여부는 true/false여야 합니다.' }, { status: 400 })
+    }
+
     // 교차 검증
     if (amountNet > amountGross) {
       return NextResponse.json({ error: '세후 금액이 세전 금액을 초과할 수 없습니다.' }, { status: 400 })
