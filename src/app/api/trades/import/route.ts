@@ -64,17 +64,28 @@ export async function POST(request: NextRequest) {
 
     for (let i = 0; i < trades.length; i++) {
       const t = trades[i]
+      if (!t || typeof t !== 'object') {
+        resultErrors.push({ row: i + 1, field: 'row', message: '잘못된 데이터 형식입니다.' })
+        continue
+      }
+      const ticker = typeof t.ticker === 'string' ? t.ticker : String(t.ticker ?? '')
+      const displayName = typeof t.displayName === 'string' ? t.displayName : ticker
+      const tradeType = typeof t.type === 'string' ? t.type : String(t.type ?? '')
+      const shares = typeof t.shares === 'number' ? t.shares : Number(t.shares)
+      const price = typeof t.price === 'number' ? t.price : Number(t.price)
+      const fxRate = t.fxRate != null ? (typeof t.fxRate === 'number' ? t.fxRate : Number(t.fxRate)) : null
+      const tradedAt = typeof t.tradedAt === 'string' ? t.tradedAt : String(t.tradedAt ?? '')
       const errors = validateTradeInput({
         accountId,
-        ticker: t.ticker,
-        displayName: t.displayName || t.ticker,
+        ticker,
+        displayName: displayName || ticker,
         market,
-        type: t.type,
-        shares: t.shares,
-        price: t.price,
+        type: tradeType,
+        shares,
+        price,
         currency,
-        fxRate: currency === 'USD' ? t.fxRate : null,
-        tradedAt: t.tradedAt,
+        fxRate: currency === 'USD' ? fxRate : null,
+        tradedAt,
       })
 
       if (errors.length > 0) {
@@ -84,14 +95,14 @@ export async function POST(request: NextRequest) {
       } else {
         validTrades.push({
           index: i,
-          ticker: (t.ticker as string).toUpperCase().trim(),
-          displayName: (t.displayName || t.ticker) as string,
-          type: t.type,
-          shares: t.shares,
-          price: t.price,
-          fxRate: currency === 'USD' ? (t.fxRate ?? null) : null,
-          tradedAt: t.tradedAt,
-          note: t.note || null,
+          ticker: ticker.toUpperCase().trim(),
+          displayName: displayName || ticker,
+          type: tradeType as 'BUY' | 'SELL',
+          shares,
+          price,
+          fxRate: currency === 'USD' ? fxRate : null,
+          tradedAt,
+          note: typeof t.note === 'string' ? t.note : null,
         })
       }
     }

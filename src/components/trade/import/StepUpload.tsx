@@ -40,6 +40,8 @@ export default function StepUpload({ accounts, onNext }: StepUploadProps) {
 
   const handleFile = (file: File) => {
     setParseError(null)
+    setHeaders([])
+    setRows([])
     setFileName(file.name)
 
     Papa.parse<Record<string, string>>(file, {

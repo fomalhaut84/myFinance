@@ -143,7 +143,7 @@ export function parseFlexibleDate(value: string): string | null {
   }
 
   // YYYY-MM-DD, YYYY/MM/DD, YYYY.MM.DD
-  const ymd = v.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/)
+  const ymd = v.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/)
   if (ymd) {
     const m = ymd[2].padStart(2, '0')
     const d = ymd[3].padStart(2, '0')
@@ -250,7 +250,7 @@ export function validateRows(
 ): ValidatedRow[] {
   const existingSet = new Set(
     existingTrades.map(
-      (t) => `${t.ticker}|${t.type}|${t.tradedAt}|${t.shares}|${t.price}`
+      (t) => `${t.ticker}|${t.type}|${t.tradedAt}|${t.shares}|${Number(Number(t.price).toFixed(4))}`
     )
   )
 

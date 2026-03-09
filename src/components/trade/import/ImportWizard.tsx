@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import StepUpload from './StepUpload'
 import StepMapping from './StepMapping'
 import StepValidation from './StepValidation'
@@ -42,43 +42,54 @@ export default function ImportWizard({ accounts }: ImportWizardProps) {
   // Step 3 → 4 data
   const [importResult, setImportResult] = useState<ImportResult | null>(null)
 
-  // Fetch all existing trades for account (paginated)
-  const fetchExistingTrades = useCallback(async (accountId: string) => {
-    try {
-      const allTrades: Array<{ ticker: string; type: string; tradedAt: string; shares: number; price: number }> = []
-      let offset = 0
-      const limit = 200
-      let hasMore = true
-      while (hasMore) {
-        const res = await fetch(`/api/trades?accountId=${accountId}&limit=${limit}&offset=${offset}`)
-        const data = await res.json()
-        if (data.trades && data.trades.length > 0) {
-          for (const t of data.trades as Array<{ ticker: string; type: string; tradedAt: string; shares: number; price: number }>) {
-            allTrades.push({
-              ticker: t.ticker,
-              type: t.type,
-              tradedAt: t.tradedAt.slice(0, 10),
-              shares: t.shares,
-              price: t.price,
-            })
+  // Fetch all existing trades for account (paginated, with abort)
+  useEffect(() => {
+    if (!uploadData?.accountId) return
+
+    const controller = new AbortController()
+    const accountId = uploadData.accountId
+
+    async function fetchAll() {
+      try {
+        const allTrades: Array<{ ticker: string; type: string; tradedAt: string; shares: number; price: number }> = []
+        let offset = 0
+        const limit = 200
+        let hasMore = true
+        while (hasMore) {
+          const res = await fetch(
+            `/api/trades?accountId=${accountId}&limit=${limit}&offset=${offset}`,
+            { signal: controller.signal }
+          )
+          const data = await res.json()
+          if (data.trades && data.trades.length > 0) {
+            for (const t of data.trades as Array<{ ticker: string; type: string; tradedAt: string; shares: number; price: number }>) {
+              allTrades.push({
+                ticker: t.ticker,
+                type: t.type,
+                tradedAt: t.tradedAt.slice(0, 10),
+                shares: t.shares,
+                price: t.price,
+              })
+            }
+            offset += limit
+            hasMore = data.trades.length === limit
+          } else {
+            hasMore = false
           }
-          offset += limit
-          hasMore = data.trades.length === limit
-        } else {
-          hasMore = false
+        }
+        if (!controller.signal.aborted) {
+          setExistingTrades(allTrades)
+        }
+      } catch {
+        if (!controller.signal.aborted) {
+          setExistingTrades([])
         }
       }
-      setExistingTrades(allTrades)
-    } catch {
-      setExistingTrades([])
     }
-  }, [])
 
-  useEffect(() => {
-    if (uploadData?.accountId) {
-      fetchExistingTrades(uploadData.accountId)
-    }
-  }, [uploadData?.accountId, fetchExistingTrades])
+    fetchAll()
+    return () => controller.abort()
+  }, [uploadData?.accountId])
 
   return (
     <div className="max-w-[640px] mx-auto">
@@ -96,7 +107,7 @@ export default function ImportWizard({ accounts }: ImportWizardProps) {
                     : 'bg-white/[0.04] text-dim'
                 }`}
               >
-                {i < step ? '\u2713' : i + 1}
+                {i < step ? '\u2713' : String(i + 1)}
               </div>
               <span
                 className={`text-[11px] truncate ${

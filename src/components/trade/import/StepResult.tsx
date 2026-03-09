@@ -17,7 +17,7 @@ export default function StepResult({ result }: StepResultProps) {
       <Card>
         <div className="text-center py-4">
           <div className="text-[36px] mb-2">
-            {result.created > 0 ? '&#10004;' : '&#9888;'}
+            {result.created > 0 ? '\u2714' : '\u26A0'}
           </div>
           <h2 className="text-[16px] font-bold text-bright">
             {result.created > 0 ? '임포트 완료' : '임포트 실패'}
