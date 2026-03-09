@@ -278,8 +278,12 @@ export function validateRows(
     if (!data.price || data.price <= 0) {
       errors.push({ field: 'price', message: '단가는 0보다 커야 합니다.' })
     }
-    if (currency === 'USD' && data.fxRate != null && data.fxRate <= 0) {
-      errors.push({ field: 'fxRate', message: '환율은 0보다 커야 합니다.' })
+    if (currency === 'USD') {
+      if (data.fxRate == null) {
+        errors.push({ field: 'fxRate', message: 'USD 종목은 환율이 필요합니다.' })
+      } else if (data.fxRate <= 0) {
+        errors.push({ field: 'fxRate', message: '환율은 0보다 커야 합니다.' })
+      }
     }
 
     if (errors.length > 0) {
