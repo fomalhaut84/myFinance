@@ -24,6 +24,21 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     if (payDate !== undefined && (typeof payDate !== 'string' || isNaN(Date.parse(payDate)))) {
       return NextResponse.json({ error: '유효한 지급일을 입력해주세요.' }, { status: 400 })
     }
+    if (exDate !== undefined && exDate !== null && (typeof exDate !== 'string' || isNaN(Date.parse(exDate)))) {
+      return NextResponse.json({ error: '유효한 기준일을 입력해주세요.' }, { status: 400 })
+    }
+    if (taxAmount !== undefined && taxAmount !== null && (typeof taxAmount !== 'number' || !Number.isFinite(taxAmount) || taxAmount < 0)) {
+      return NextResponse.json({ error: '세금은 0 이상이어야 합니다.' }, { status: 400 })
+    }
+    if (fxRate !== undefined && fxRate !== null && existing.currency === 'USD' && (typeof fxRate !== 'number' || !Number.isFinite(fxRate) || fxRate <= 0)) {
+      return NextResponse.json({ error: 'USD 배당은 유효한 환율이 필요합니다.' }, { status: 400 })
+    }
+    if (amountKRW !== undefined && (typeof amountKRW !== 'number' || !Number.isFinite(amountKRW) || amountKRW < 0)) {
+      return NextResponse.json({ error: '원화 환산 금액은 0 이상이어야 합니다.' }, { status: 400 })
+    }
+    if (reinvested !== undefined && typeof reinvested !== 'boolean') {
+      return NextResponse.json({ error: '재투자 여부는 true/false여야 합니다.' }, { status: 400 })
+    }
 
     const updated = await prisma.dividend.update({
       where: { id: params.id },

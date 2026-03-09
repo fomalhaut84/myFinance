@@ -110,4 +110,7 @@ model Dividend {
   amountKRW   Float
   reinvested  Boolean   @default(false)
   createdAt   DateTime  @default(now())
+
+  @@index([accountId, payDate])
+  @@index([payDate])
 }

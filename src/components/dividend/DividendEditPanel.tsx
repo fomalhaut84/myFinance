@@ -58,6 +58,24 @@ export default function DividendEditPanel({ dividend, onClose }: DividendEditPan
     setError(null)
     setIsSubmitting(true)
 
+    const parsedGross = parseFloat(amountGross)
+    const parsedTax = parseFloat(taxAmount)
+    if (!Number.isFinite(parsedGross) || parsedGross <= 0) {
+      setError('세전 금액은 0보다 커야 합니다.')
+      setIsSubmitting(false)
+      return
+    }
+    if (!Number.isFinite(parsedNet) || parsedNet < 0) {
+      setError('세후 금액은 0 이상이어야 합니다.')
+      setIsSubmitting(false)
+      return
+    }
+    if (isUSD && (!Number.isFinite(parsedFxRate) || parsedFxRate <= 0)) {
+      setError('유효한 환율을 입력해주세요.')
+      setIsSubmitting(false)
+      return
+    }
+
     try {
       const res = await fetch(`/api/dividends/${dividend.id}`, {
         method: 'PUT',
@@ -65,9 +83,9 @@ export default function DividendEditPanel({ dividend, onClose }: DividendEditPan
         body: JSON.stringify({
           exDate: exDate || null,
           payDate,
-          amountGross: parseFloat(amountGross) || dividend.amountGross,
+          amountGross: parsedGross,
           amountNet: parsedNet,
-          taxAmount: parseFloat(taxAmount) || 0,
+          taxAmount: Number.isFinite(parsedTax) ? parsedTax : 0,
           fxRate: isUSD ? parsedFxRate : undefined,
           amountKRW,
           reinvested,
