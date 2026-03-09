@@ -28,11 +28,11 @@ export default async function DividendsPage({ searchParams }: DividendsPageProps
   const limit = 20
 
   const currentYear = new Date().getFullYear()
-  const year = yearStr ? parseInt(yearStr) : undefined
+  const year = yearStr && /^\d{4}$/.test(yearStr) ? parseInt(yearStr) : undefined
 
   const where: Record<string, unknown> = {}
   if (accountId) where.accountId = accountId
-  if (year && !isNaN(year)) {
+  if (year) {
     where.payDate = {
       gte: new Date(`${year}-01-01`),
       lt: new Date(`${year + 1}-01-01`),

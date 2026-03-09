@@ -38,9 +38,21 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: '재투자 여부는 true/false여야 합니다.' }, { status: 400 })
     }
 
-    // USD fxRate: 미지정 시 기존값 유지
-    const nextFxRate = fxRate !== undefined ? fxRate : existing.fxRate
-    const nextAmountNet = amountNet ?? existing.amountNet
+    // 최종 적용값 결정
+    const nextGross = amountGross ?? existing.amountGross
+    const nextNet = amountNet ?? existing.amountNet
+    const nextTax = taxAmount !== undefined ? taxAmount : existing.taxAmount
+    const nextFxRate = existing.currency === 'USD'
+      ? (fxRate !== undefined ? fxRate : existing.fxRate)
+      : null  // KRW는 항상 null
+
+    // 교차 검증: amountNet <= amountGross, taxAmount <= amountGross
+    if (nextNet > nextGross) {
+      return NextResponse.json({ error: '세후 금액이 세전 금액을 초과할 수 없습니다.' }, { status: 400 })
+    }
+    if (nextTax != null && nextTax > nextGross) {
+      return NextResponse.json({ error: '세금이 세전 금액을 초과할 수 없습니다.' }, { status: 400 })
+    }
 
     // USD는 반드시 유효한 fxRate가 있어야 함
     if (existing.currency === 'USD' && (!nextFxRate || !Number.isFinite(nextFxRate) || nextFxRate <= 0)) {
@@ -48,7 +60,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     }
 
     // 서버 측 amountKRW 재계산
-    const serverAmountKRW = calcAmountKRW(nextAmountNet, existing.currency, nextFxRate)
+    const serverAmountKRW = calcAmountKRW(nextNet, existing.currency, nextFxRate)
 
     const updated = await prisma.dividend.update({
       where: { id: params.id },

@@ -61,6 +61,14 @@ export async function POST(request: NextRequest) {
     const { accountId, displayName, exDate, payDate, amountGross, amountNet, taxAmount, currency, fxRate, reinvested } = body
     const ticker = (body.ticker as string).toUpperCase().trim()
 
+    // 교차 검증
+    if (amountNet > amountGross) {
+      return NextResponse.json({ error: '세후 금액이 세전 금액을 초과할 수 없습니다.' }, { status: 400 })
+    }
+    if (taxAmount != null && taxAmount > amountGross) {
+      return NextResponse.json({ error: '세금이 세전 금액을 초과할 수 없습니다.' }, { status: 400 })
+    }
+
     // 서버 측 amountKRW 재계산 (클라이언트 값 대신 서버 계산값 사용)
     const serverAmountKRW = calcAmountKRW(amountNet, currency, fxRate)
 
