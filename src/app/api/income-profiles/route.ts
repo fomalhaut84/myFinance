@@ -48,12 +48,12 @@ export async function POST(request: NextRequest) {
     let taxableIncome: number
 
     if (inputType === 'gross') {
-      grossSalary = (body as IncomeProfileInput).grossSalary!
+      grossSalary = Math.round((body as IncomeProfileInput).grossSalary!)
       const calc = calcTaxableFromGross(grossSalary)
       earnedDeduction = calc.earnedDeduction
       taxableIncome = calc.taxableIncome
     } else {
-      taxableIncome = (body as IncomeProfileInput).taxableIncome!
+      taxableIncome = Math.round((body as IncomeProfileInput).taxableIncome!)
     }
 
     const profile = await prisma.incomeProfile.create({
@@ -63,8 +63,8 @@ export async function POST(request: NextRequest) {
         grossSalary,
         earnedDeduction,
         taxableIncome,
-        prepaidTax: prepaidTax ?? 0,
-        note: note ?? null,
+        prepaidTax: Math.round(prepaidTax ?? 0),
+        note: typeof note === 'string' ? note.trim() || null : null,
       },
     })
 

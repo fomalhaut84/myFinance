@@ -98,5 +98,9 @@ export function validateIncomeProfileInput(input: any): ValidationError[] {
     errors.push({ field: 'prepaidTax', message: '기납부 세액은 0 이상의 숫자여야 합니다.' })
   }
 
+  if (input.note != null && typeof input.note !== 'string') {
+    errors.push({ field: 'note', message: '메모는 문자열이어야 합니다.' })
+  }
+
   return errors
 }
