@@ -177,24 +177,25 @@ export default async function TaxPage({ searchParams }: TaxPageProps) {
   // 통합 세금 시뮬레이션 데이터
   const yearProfile = incomeProfiles.find((p) => p.year === year) ?? null
 
-  // 스톡옵션 행사 가능분 이익 (현재가 기준)
-  const stockOptions = await prisma.stockOption.findMany({
-    include: { vestings: true },
-  })
-  const kakaoPrice = await prisma.priceCache.findUnique({
-    where: { ticker: '035720.KS' },
-    select: { price: true },
-  })
-  const currentKakaoPrice = kakaoPrice?.price ?? null
+  // 스톡옵션 행사 가능분 이익 (현재가 기준, 현재 연도만)
+  let stockOptionGain = 0
+  let hasPriceData = true
+  if (year === currentYear) {
+    const stockOptions = await prisma.stockOption.findMany({
+      where: { ticker: '035720.KS' },
+      include: { vestings: true },
+    })
+    const kakaoPrice = await prisma.priceCache.findUnique({
+      where: { ticker: '035720.KS' },
+      select: { price: true },
+    })
+    const currentKakaoPrice = kakaoPrice?.price ?? null
+    hasPriceData = currentKakaoPrice != null
 
-  // 현재 행사 가능한 스톡옵션 이익 계산 (현재가 기준, 만료 제외)
-  const todayUTC = Date.UTC(
-    new Date().getUTCFullYear(),
-    new Date().getUTCMonth(),
-    new Date().getUTCDate(),
-  )
-  const stockOptionGain = currentKakaoPrice != null
-    ? stockOptions.reduce((total, so) => {
+    if (currentKakaoPrice != null) {
+      const now = new Date()
+      const todayUTC = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
+      stockOptionGain = stockOptions.reduce((total, so) => {
         const expiryUTC = Date.UTC(
           so.expiryDate.getUTCFullYear(),
           so.expiryDate.getUTCMonth(),
@@ -202,14 +203,19 @@ export default async function TaxPage({ searchParams }: TaxPageProps) {
         )
         if (expiryUTC < todayUTC) return total
 
-        const exercisableShares = so.vestings
-          .filter((v) => v.status === 'exercisable')
-          .reduce((s, v) => s + v.shares, 0)
+        const safeRemaining = Math.max(0, so.remainingShares)
+        const exercisableShares = Math.min(
+          so.vestings
+            .filter((v) => v.status === 'exercisable')
+            .reduce((s, v) => s + Math.max(0, v.shares), 0),
+          safeRemaining,
+        )
 
         const perShareGain = Math.max(0, currentKakaoPrice - so.strikePrice)
-        return total + perShareGain * Math.min(exercisableShares, so.remainingShares)
+        return total + perShareGain * exercisableShares
       }, 0)
-    : 0
+    }
+  }
 
   // 연도 선택 옵션
   const years = [currentYear, currentYear - 1, currentYear - 2]
@@ -276,7 +282,7 @@ export default async function TaxPage({ searchParams }: TaxPageProps) {
           rsuIncome={rsuTaxSummary.totalGrossIncome}
           stockOptionGain={year === currentYear ? stockOptionGain : 0}
           hasProfile={yearProfile != null}
-          hasPriceData={currentKakaoPrice != null}
+          hasPriceData={hasPriceData}
         />
       </div>
 

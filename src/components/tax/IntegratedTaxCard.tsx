@@ -187,8 +187,8 @@ export default function IntegratedTaxCard({
         </div>
       </div>
 
-      {/* 주가 데이터 없음 경고 */}
-      {!hasPriceData && (
+      {/* 주가 데이터 없음 경고 (현재 연도만 의미 있음) */}
+      {!hasPriceData && stockOptionGain === 0 && (
         <div className="bg-white/[0.02] border border-white/[0.06] rounded-lg px-3 py-2">
           <span className="text-[11px] text-dim">
             카카오 주가 데이터가 없어 스톡옵션 행사 이익이 미반영되었습니다. 주가 갱신 후 다시 확인하세요.
