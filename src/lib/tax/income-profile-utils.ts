@@ -83,13 +83,13 @@ export function validateIncomeProfileInput(input: any): ValidationError[] {
   }
 
   if (input.inputType === 'gross') {
-    if (input.grossSalary == null || !Number.isFinite(input.grossSalary) || input.grossSalary < 0) {
+    if (input.grossSalary == null || typeof input.grossSalary !== 'number' || !Number.isFinite(input.grossSalary) || input.grossSalary < 0) {
       errors.push({ field: 'grossSalary', message: '세전 총급여는 0 이상의 숫자여야 합니다.' })
     }
   }
 
   if (input.inputType === 'taxable') {
-    if (input.taxableIncome == null || !Number.isFinite(input.taxableIncome) || input.taxableIncome < 0) {
+    if (input.taxableIncome == null || typeof input.taxableIncome !== 'number' || !Number.isFinite(input.taxableIncome) || input.taxableIncome < 0) {
       errors.push({ field: 'taxableIncome', message: '과세표준은 0 이상의 숫자여야 합니다.' })
     }
   }

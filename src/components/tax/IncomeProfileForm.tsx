@@ -77,8 +77,16 @@ export default function IncomeProfileForm({ initial, onCancel }: IncomeProfileFo
       }
 
       if (inputType === 'gross') {
+        if (!grossSalary.trim()) {
+          setError('세전 총급여를 입력해주세요.')
+          return
+        }
         payload.grossSalary = Number(grossSalary)
       } else {
+        if (!taxableIncome.trim()) {
+          setError('과세표준을 입력해주세요.')
+          return
+        }
         payload.taxableIncome = Number(taxableIncome)
       }
 
