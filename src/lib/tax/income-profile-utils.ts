@@ -68,6 +68,11 @@ interface ValidationError {
 export function validateIncomeProfileInput(input: any): ValidationError[] {
   const errors: ValidationError[] = []
 
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) {
+    errors.push({ field: '_', message: '유효한 객체 형식이 아닙니다.' })
+    return errors
+  }
+
   const maxYear = new Date().getFullYear() + 1
   if (!Number.isInteger(input.year) || input.year < 2020 || input.year > maxYear) {
     errors.push({ field: 'year', message: `연도는 2020~${maxYear} 사이여야 합니다.` })

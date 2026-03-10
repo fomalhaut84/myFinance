@@ -7,6 +7,19 @@ import {
   type IncomeProfileInput,
 } from '@/lib/tax/income-profile-utils'
 
+function handlePrismaError(error: unknown, context: string) {
+  if (error instanceof Prisma.PrismaClientKnownRequestError) {
+    if (error.code === 'P2025') {
+      return NextResponse.json({ error: '프로필을 찾을 수 없습니다.' }, { status: 404 })
+    }
+    if (error.code === 'P2002') {
+      return NextResponse.json({ error: '해당 연도 프로필이 이미 존재합니다.' }, { status: 409 })
+    }
+  }
+  console.error(`${context} error:`, error)
+  return NextResponse.json({ error: `${context}에 실패했습니다.` }, { status: 500 })
+}
+
 /** PUT /api/income-profiles/[id] — 수정 */
 export async function PUT(
   request: NextRequest,
@@ -20,11 +33,6 @@ export async function PUT(
       body = await request.json()
     } catch {
       return NextResponse.json({ error: '잘못된 요청 형식입니다.' }, { status: 400 })
-    }
-
-    const existing = await prisma.incomeProfile.findUnique({ where: { id } })
-    if (!existing) {
-      return NextResponse.json({ error: '프로필을 찾을 수 없습니다.' }, { status: 404 })
     }
 
     const errors = validateIncomeProfileInput(body)
@@ -62,17 +70,7 @@ export async function PUT(
 
     return NextResponse.json(profile)
   } catch (error) {
-    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-      return NextResponse.json(
-        { error: '해당 연도 프로필이 이미 존재합니다.' },
-        { status: 409 },
-      )
-    }
-    console.error('PUT /api/income-profiles error:', error)
-    return NextResponse.json(
-      { error: '근로소득 프로필 수정에 실패했습니다.' },
-      { status: 500 },
-    )
+    return handlePrismaError(error, '근로소득 프로필 수정')
   }
 }
 
@@ -83,20 +81,9 @@ export async function DELETE(
 ) {
   try {
     const { id } = params
-
-    const existing = await prisma.incomeProfile.findUnique({ where: { id } })
-    if (!existing) {
-      return NextResponse.json({ error: '프로필을 찾을 수 없습니다.' }, { status: 404 })
-    }
-
     await prisma.incomeProfile.delete({ where: { id } })
-
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error('DELETE /api/income-profiles error:', error)
-    return NextResponse.json(
-      { error: '근로소득 프로필 삭제에 실패했습니다.' },
-      { status: 500 },
-    )
+    return handlePrismaError(error, '근로소득 프로필 삭제')
   }
 }
