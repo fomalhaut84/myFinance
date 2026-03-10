@@ -90,6 +90,7 @@ export function calcStockOptionOverview(
   const todayStart = startOfDayUTC(now)
 
   const options: StockOptionSummary[] = stockOptions.map((so) => {
+    const safeRemaining = Math.max(0, so.remainingShares)
     const expiryStart = startOfDayUTC(new Date(so.expiryDate))
     const daysToExpiry = Math.max(0, Math.ceil((expiryStart - todayStart) / (1000 * 60 * 60 * 24)))
     const expired = expiryStart < todayStart
@@ -101,20 +102,20 @@ export function calcStockOptionOverview(
     const vestingSummaries = so.vestings.map((v) => ({
       ...v,
       intrinsicValue: inTheMoney && activeStatuses.includes(v.status)
-        ? perShareValue * v.shares
+        ? perShareValue * Math.max(0, v.shares)
         : 0,
     }))
 
     const exercisableShares = Math.min(
       so.vestings
         .filter((v) => v.status === 'exercisable')
-        .reduce((s, v) => s + v.shares, 0),
-      so.remainingShares,
+        .reduce((s, v) => s + Math.max(0, v.shares), 0),
+      safeRemaining,
     )
 
     const pendingShares = so.vestings
       .filter((v) => v.status === 'pending')
-      .reduce((s, v) => s + v.shares, 0)
+      .reduce((s, v) => s + Math.max(0, v.shares), 0)
 
     return {
       id: so.id,
@@ -122,10 +123,10 @@ export function calcStockOptionOverview(
       grantDate: so.grantDate,
       expiryDate: so.expiryDate,
       strikePrice: so.strikePrice,
-      remainingShares: so.remainingShares,
+      remainingShares: safeRemaining,
       exercisableShares,
       pendingShares,
-      intrinsicValue: perShareValue * so.remainingShares,
+      intrinsicValue: perShareValue * safeRemaining,
       exercisableValue: perShareValue * exercisableShares,
       perShareValue,
       inTheMoney,
@@ -171,11 +172,12 @@ export function simulateExercise(
   const gains = stockOptions
     .filter((so) => startOfDayUTC(new Date(so.expiryDate)) >= todayStart)
     .map((so) => {
+    const safeRemaining = Math.max(0, so.remainingShares)
     const exercisableShares = Math.min(
       so.vestings
         .filter((v) => v.status === 'exercisable')
-        .reduce((s, v) => s + v.shares, 0),
-      so.remainingShares,
+        .reduce((s, v) => s + Math.max(0, v.shares), 0),
+      safeRemaining,
     )
 
     const perShareGain = Math.max(0, targetPrice - so.strikePrice)
