@@ -7,6 +7,7 @@ import RSUTaxCard from '@/components/tax/RSUTaxCard'
 import SellTaxSimulator from '@/components/tax/SellTaxSimulator'
 import DividendTaxCard from '@/components/tax/DividendTaxCard'
 import IncomeProfileCard from '@/components/tax/IncomeProfileCard'
+import IntegratedTaxCard from '@/components/tax/IntegratedTaxCard'
 import { calcGiftTaxSummary, GIFT_SOURCES } from '@/lib/tax/gift-tax'
 import { calcRealizedGains, calcCapitalGainsSummary } from '@/lib/tax/capital-gains-tax'
 import { calcRSUTaxSummary } from '@/lib/tax/income-tax'
@@ -173,12 +174,39 @@ export default async function TaxPage({ searchParams }: TaxPageProps) {
     orderBy: { year: 'desc' },
   })
 
+  // 통합 세금 시뮬레이션 데이터
+  const yearProfile = incomeProfiles.find((p) => p.year === year) ?? null
+
+  // 스톡옵션 행사 가능분 이익 (현재가 기준)
+  const stockOptions = await prisma.stockOption.findMany({
+    include: { vestings: true },
+  })
+  const kakaoPrice = await prisma.priceCache.findUnique({
+    where: { ticker: '035720.KS' },
+    select: { price: true },
+  })
+  const currentKakaoPrice = kakaoPrice?.price ?? 0
+
+  // 행사 가능한 스톡옵션 이익 계산 (해당 연도 내 행사 가능분)
+  const now = new Date()
+  const stockOptionGain = stockOptions.reduce((total, so) => {
+    const expiryDate = new Date(so.expiryDate)
+    if (expiryDate < now) return total // 만료된 건 제외
+
+    const exercisableShares = so.vestings
+      .filter((v) => v.status === 'exercisable')
+      .reduce((s, v) => s + v.shares, 0)
+
+    const perShareGain = Math.max(0, currentKakaoPrice - so.strikePrice)
+    return total + perShareGain * Math.min(exercisableShares, so.remainingShares)
+  }, 0)
+
   // 연도 선택 옵션
   const years = [currentYear, currentYear - 1, currentYear - 2]
 
   return (
     <div className="px-8 py-7 max-w-[960px]">
-      <Header title="세금 센터" sub="양도세 · RSU 근로소득세 · 증여세 · 배당소득세" />
+      <Header title="세금 센터" sub="양도세 · 근로소득세 통합 시뮬레이션 · 증여세 · 배당소득세" />
 
       {/* 연도 선택 */}
       <div className="mt-5 mb-6 flex items-center gap-1 bg-white/[0.02] rounded-lg p-1 border border-white/[0.04] w-fit">
@@ -225,6 +253,19 @@ export default async function TaxPage({ searchParams }: TaxPageProps) {
           estimates={rsuTaxSummary.estimates}
           totalGrossIncome={rsuTaxSummary.totalGrossIncome}
           totalTax={rsuTaxSummary.totalTax}
+        />
+      </div>
+
+      {/* 통합 근로소득세 시뮬레이션 */}
+      <div className="mb-8">
+        <h2 className="text-[14px] font-bold text-bright mb-3">통합 근로소득세 시뮬레이션 ({year}년)</h2>
+        <IntegratedTaxCard
+          year={year}
+          baseTaxableIncome={yearProfile?.taxableIncome ?? null}
+          prepaidTax={yearProfile?.prepaidTax ?? 0}
+          rsuIncome={rsuTaxSummary.totalGrossIncome}
+          stockOptionGain={year === currentYear ? stockOptionGain : 0}
+          hasProfile={yearProfile != null}
         />
       </div>
 
