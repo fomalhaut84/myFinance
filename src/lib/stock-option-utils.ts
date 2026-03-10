@@ -214,11 +214,12 @@ export interface ExerciseTaxEstimate {
  * Phase 5-D에서 연봉 합산 정확 계산으로 대체 예정
  */
 export function calcIncomeTaxOnExercise(exerciseGain: number): ExerciseTaxEstimate {
-  const incomeTax = calcIncomeTax(exerciseGain)
+  const safeGain = Number.isFinite(exerciseGain) && exerciseGain > 0 ? exerciseGain : 0
+  const incomeTax = calcIncomeTax(safeGain)
   const localTax = Math.round(incomeTax * 0.10)
 
   return {
-    exerciseGain,
+    exerciseGain: safeGain,
     incomeTax,
     localTax,
     totalTax: incomeTax + localTax,
