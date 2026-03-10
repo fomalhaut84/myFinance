@@ -97,14 +97,20 @@ export function calcStockOptionOverview(
     const perShareValue = expired ? 0 : Math.max(0, currentPrice - so.strikePrice)
     const inTheMoney = !expired && currentPrice > so.strikePrice
 
+    const activeStatuses = ['pending', 'exercisable']
     const vestingSummaries = so.vestings.map((v) => ({
       ...v,
-      intrinsicValue: inTheMoney ? perShareValue * v.shares : 0,
+      intrinsicValue: inTheMoney && activeStatuses.includes(v.status)
+        ? perShareValue * v.shares
+        : 0,
     }))
 
-    const exercisableShares = so.vestings
-      .filter((v) => v.status === 'exercisable')
-      .reduce((s, v) => s + v.shares, 0)
+    const exercisableShares = Math.min(
+      so.vestings
+        .filter((v) => v.status === 'exercisable')
+        .reduce((s, v) => s + v.shares, 0),
+      so.remainingShares,
+    )
 
     const pendingShares = so.vestings
       .filter((v) => v.status === 'pending')
@@ -165,9 +171,12 @@ export function simulateExercise(
   const gains = stockOptions
     .filter((so) => startOfDayUTC(new Date(so.expiryDate)) >= todayStart)
     .map((so) => {
-    const exercisableShares = so.vestings
-      .filter((v) => v.status === 'exercisable')
-      .reduce((s, v) => s + v.shares, 0)
+    const exercisableShares = Math.min(
+      so.vestings
+        .filter((v) => v.status === 'exercisable')
+        .reduce((s, v) => s + v.shares, 0),
+      so.remainingShares,
+    )
 
     const perShareGain = Math.max(0, targetPrice - so.strikePrice)
 
