@@ -17,6 +17,8 @@ interface IntegratedTaxCardProps {
   stockOptionGain: number
   /** 프로필 존재 여부 */
   hasProfile: boolean
+  /** 주가 데이터 존재 여부 */
+  hasPriceData: boolean
 }
 
 export default function IntegratedTaxCard({
@@ -26,6 +28,7 @@ export default function IntegratedTaxCard({
   rsuIncome,
   stockOptionGain,
   hasProfile,
+  hasPriceData,
 }: IntegratedTaxCardProps) {
   const result = useMemo(() => {
     if (baseTaxableIncome == null) return null
@@ -135,29 +138,31 @@ export default function IntegratedTaxCard({
             </div>
           </div>
 
+          <div className="h-px bg-white/[0.04]" />
           {result.prepaidTax > 0 && (
-            <>
-              <div className="h-px bg-white/[0.04]" />
-              <div className="flex items-center justify-between">
-                <span className="text-[12px] text-sub">기납부 세액</span>
-                <span className="text-[12px] text-muted tabular-nums">
-                  -{formatKRW(result.prepaidTax)}
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-[13px] font-bold text-sub">
-                  {result.additionalTax >= 0 ? '추가 납부 예상' : '환급 예상'}
-                </span>
-                <span className={`text-[17px] font-bold tabular-nums ${
-                  result.additionalTax > 0 ? 'text-red-400' : 'text-green-400'
-                }`}>
-                  {result.additionalTax >= 0
-                    ? formatKRW(result.additionalTax)
-                    : `-${formatKRW(Math.abs(result.additionalTax))}`}
-                </span>
-              </div>
-            </>
+            <div className="flex items-center justify-between">
+              <span className="text-[12px] text-sub">기납부 세액</span>
+              <span className="text-[12px] text-muted tabular-nums">
+                -{formatKRW(result.prepaidTax)}
+              </span>
+            </div>
           )}
+          <div className="flex items-center justify-between">
+            <span className="text-[13px] font-bold text-sub">
+              {result.prepaidTax > 0
+                ? (result.additionalTax >= 0 ? '추가 납부 예상' : '환급 예상')
+                : '총 납부 예상'}
+            </span>
+            <span className={`text-[17px] font-bold tabular-nums ${
+              result.prepaidTax > 0 && result.additionalTax < 0
+                ? 'text-green-400'
+                : 'text-bright'
+            }`}>
+              {result.prepaidTax > 0 && result.additionalTax < 0
+                ? `-${formatKRW(Math.abs(result.additionalTax))}`
+                : formatKRW(result.prepaidTax > 0 ? result.additionalTax : result.totalTax)}
+            </span>
+          </div>
 
           {/* 증분 세금 (연봉 대비 추가 부담) */}
           {hasAdditionalIncome && (
@@ -181,6 +186,15 @@ export default function IntegratedTaxCard({
           )}
         </div>
       </div>
+
+      {/* 주가 데이터 없음 경고 */}
+      {!hasPriceData && (
+        <div className="bg-white/[0.02] border border-white/[0.06] rounded-lg px-3 py-2">
+          <span className="text-[11px] text-dim">
+            카카오 주가 데이터가 없어 스톡옵션 행사 이익이 미반영되었습니다. 주가 갱신 후 다시 확인하세요.
+          </span>
+        </div>
+      )}
 
       {/* 안내 */}
       <div className="bg-yellow-500/5 border border-yellow-500/10 rounded-lg px-3 py-2">

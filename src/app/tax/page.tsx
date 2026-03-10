@@ -185,21 +185,31 @@ export default async function TaxPage({ searchParams }: TaxPageProps) {
     where: { ticker: '035720.KS' },
     select: { price: true },
   })
-  const currentKakaoPrice = kakaoPrice?.price ?? 0
+  const currentKakaoPrice = kakaoPrice?.price ?? null
 
-  // 행사 가능한 스톡옵션 이익 계산 (해당 연도 내 행사 가능분)
-  const now = new Date()
-  const stockOptionGain = stockOptions.reduce((total, so) => {
-    const expiryDate = new Date(so.expiryDate)
-    if (expiryDate < now) return total // 만료된 건 제외
+  // 현재 행사 가능한 스톡옵션 이익 계산 (현재가 기준, 만료 제외)
+  const todayUTC = Date.UTC(
+    new Date().getUTCFullYear(),
+    new Date().getUTCMonth(),
+    new Date().getUTCDate(),
+  )
+  const stockOptionGain = currentKakaoPrice != null
+    ? stockOptions.reduce((total, so) => {
+        const expiryUTC = Date.UTC(
+          so.expiryDate.getUTCFullYear(),
+          so.expiryDate.getUTCMonth(),
+          so.expiryDate.getUTCDate(),
+        )
+        if (expiryUTC < todayUTC) return total
 
-    const exercisableShares = so.vestings
-      .filter((v) => v.status === 'exercisable')
-      .reduce((s, v) => s + v.shares, 0)
+        const exercisableShares = so.vestings
+          .filter((v) => v.status === 'exercisable')
+          .reduce((s, v) => s + v.shares, 0)
 
-    const perShareGain = Math.max(0, currentKakaoPrice - so.strikePrice)
-    return total + perShareGain * Math.min(exercisableShares, so.remainingShares)
-  }, 0)
+        const perShareGain = Math.max(0, currentKakaoPrice - so.strikePrice)
+        return total + perShareGain * Math.min(exercisableShares, so.remainingShares)
+      }, 0)
+    : 0
 
   // 연도 선택 옵션
   const years = [currentYear, currentYear - 1, currentYear - 2]
@@ -266,6 +276,7 @@ export default async function TaxPage({ searchParams }: TaxPageProps) {
           rsuIncome={rsuTaxSummary.totalGrossIncome}
           stockOptionGain={year === currentYear ? stockOptionGain : 0}
           hasProfile={yearProfile != null}
+          hasPriceData={currentKakaoPrice != null}
         />
       </div>
 
