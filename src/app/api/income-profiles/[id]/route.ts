@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import {
   validateIncomeProfileInput,
   calcTaxableFromGross,
+  type IncomeProfileInput,
 } from '@/lib/tax/income-profile-utils'
 
 /** PUT /api/income-profiles/[id] — 수정 */
@@ -12,7 +14,13 @@ export async function PUT(
 ) {
   try {
     const { id } = params
-    const body = await request.json()
+
+    let body: unknown
+    try {
+      body = await request.json()
+    } catch {
+      return NextResponse.json({ error: '잘못된 요청 형식입니다.' }, { status: 400 })
+    }
 
     const existing = await prisma.incomeProfile.findUnique({ where: { id } })
     if (!existing) {
@@ -24,30 +32,19 @@ export async function PUT(
       return NextResponse.json({ error: errors[0].message, errors }, { status: 400 })
     }
 
-    const { year, inputType, prepaidTax, note } = body
-
-    // 연도 변경 시 중복 확인
-    if (year !== existing.year) {
-      const duplicate = await prisma.incomeProfile.findUnique({ where: { year } })
-      if (duplicate) {
-        return NextResponse.json(
-          { error: `${year}년 프로필이 이미 존재합니다.` },
-          { status: 409 },
-        )
-      }
-    }
+    const { year, inputType, prepaidTax, note } = body as IncomeProfileInput
 
     let grossSalary: number | null = null
     let earnedDeduction: number | null = null
     let taxableIncome: number
 
     if (inputType === 'gross') {
-      grossSalary = body.grossSalary
-      const calc = calcTaxableFromGross(grossSalary!)
+      grossSalary = (body as IncomeProfileInput).grossSalary!
+      const calc = calcTaxableFromGross(grossSalary)
       earnedDeduction = calc.earnedDeduction
       taxableIncome = calc.taxableIncome
     } else {
-      taxableIncome = body.taxableIncome
+      taxableIncome = (body as IncomeProfileInput).taxableIncome!
     }
 
     const profile = await prisma.incomeProfile.update({
@@ -65,6 +62,12 @@ export async function PUT(
 
     return NextResponse.json(profile)
   } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      return NextResponse.json(
+        { error: '해당 연도 프로필이 이미 존재합니다.' },
+        { status: 409 },
+      )
+    }
     console.error('PUT /api/income-profiles error:', error)
     return NextResponse.json(
       { error: '근로소득 프로필 수정에 실패했습니다.' },

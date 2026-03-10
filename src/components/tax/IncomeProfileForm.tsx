@@ -124,7 +124,7 @@ export default function IncomeProfileForm({ initial, onCancel }: IncomeProfileFo
           value={year}
           onChange={(e) => setYear(e.target.value)}
           min={2020}
-          max={2030}
+          max={new Date().getFullYear() + 1}
           className={inputClasses}
           disabled={isSubmitting}
         />

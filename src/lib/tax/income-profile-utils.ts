@@ -64,11 +64,13 @@ interface ValidationError {
   message: string
 }
 
-export function validateIncomeProfileInput(input: IncomeProfileInput): ValidationError[] {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function validateIncomeProfileInput(input: any): ValidationError[] {
   const errors: ValidationError[] = []
 
-  if (!Number.isInteger(input.year) || input.year < 2020 || input.year > 2030) {
-    errors.push({ field: 'year', message: '연도는 2020~2030 사이여야 합니다.' })
+  const maxYear = new Date().getFullYear() + 1
+  if (!Number.isInteger(input.year) || input.year < 2020 || input.year > maxYear) {
+    errors.push({ field: 'year', message: `연도는 2020~${maxYear} 사이여야 합니다.` })
   }
 
   if (input.inputType !== 'gross' && input.inputType !== 'taxable') {
