@@ -36,7 +36,9 @@ if [ ! -f "$BACKUP_FILE" ]; then
     exit 1
 fi
 
-echo "경고: $DB_NAME 데이터베이스의 모든 데이터가 백업 파일로 교체됩니다."
+echo "경고: $DB_NAME 데이터베이스에 백업 SQL을 적용합니다."
+echo "  - 빈 DB 또는 사전 초기화된 DB에서 실행하세요."
+echo "  - 기존 테이블이 있으면 충돌로 실패할 수 있습니다."
 read -r -p "계속하시겠습니까? (y/N): " confirm
 if [ "$confirm" != "y" ] && [ "$confirm" != "Y" ]; then
     echo "취소되었습니다."
