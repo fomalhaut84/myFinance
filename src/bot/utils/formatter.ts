@@ -41,3 +41,25 @@ export function profitEmoji(returnPct: number): string {
 export function formatUSD(amount: number): string {
   return `$${amount.toFixed(2)}`
 }
+
+const TELEGRAM_MAX_LENGTH = 4096
+
+export function splitMessage(text: string, maxLength = TELEGRAM_MAX_LENGTH): string[] {
+  if (text.length <= maxLength) return [text]
+
+  const lines = text.split('\n')
+  const chunks: string[] = []
+  let current = ''
+
+  for (const line of lines) {
+    if (current.length + line.length + 1 > maxLength) {
+      if (current) chunks.push(current)
+      current = line
+    } else {
+      current = current ? `${current}\n${line}` : line
+    }
+  }
+  if (current) chunks.push(current)
+
+  return chunks
+}

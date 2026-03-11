@@ -13,6 +13,7 @@ import {
   formatSignedKRW,
   formatUSD,
   profitEmoji,
+  splitMessage,
 } from '../utils/formatter'
 
 interface AccountSummary {
@@ -83,7 +84,9 @@ async function handlePortfolioSummary(ctx: Context): Promise<void> {
     lines.push(`\n환율: $1 = ₩${fxPrice.toFixed(2)}`)
   }
 
-  await ctx.reply(lines.join('\n'))
+  for (const chunk of splitMessage(lines.join('\n'))) {
+    await ctx.reply(chunk)
+  }
 }
 
 async function handleAccountDetail(ctx: Context): Promise<void> {
@@ -98,15 +101,25 @@ async function handleAccountDetail(ctx: Context): Promise<void> {
 
   const { accounts, priceMap, currentFxRate } = await fetchPortfolioData()
 
-  const account = accounts.find(
-    (a) => a.name === accountName || a.name.includes(accountName)
-  )
+  // 정확 일치 우선, 없으면 부분 매칭
+  const exactMatch = accounts.find((a) => a.name === accountName)
+  const candidates = exactMatch
+    ? [exactMatch]
+    : accounts.filter((a) => a.name.includes(accountName))
 
-  if (!account) {
+  if (candidates.length === 0) {
     const names = accounts.map((a) => a.name).join(', ')
     await ctx.reply(`계좌를 찾을 수 없습니다: ${accountName}\n사용 가능: ${names}`)
     return
   }
+
+  if (candidates.length > 1) {
+    const names = candidates.map((a) => a.name).join(', ')
+    await ctx.reply(`여러 계좌가 매칭됩니다: ${names}\n정확한 이름을 입력해주세요.`)
+    return
+  }
+
+  const account = candidates[0]
 
   const summary = buildAccountSummary(account, priceMap, currentFxRate)
 
@@ -132,7 +145,9 @@ async function handleAccountDetail(ctx: Context): Promise<void> {
   lines.push(`총 평가액: ${formatKRWFull(summary.currentValueKRW)}`)
   lines.push(`총 수익률: ${formatPercent(summary.returnPct)}`)
 
-  await ctx.reply(lines.join('\n'))
+  for (const chunk of splitMessage(lines.join('\n'))) {
+    await ctx.reply(chunk)
+  }
 }
 
 export function registerPortfolioCommands(bot: Bot): void {
