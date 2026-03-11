@@ -22,6 +22,7 @@ export default function ThemeToggle() {
       type="button"
       onClick={() => setTheme(isDark ? 'light' : 'dark')}
       className="p-2 rounded-lg text-sub hover:text-bright hover:bg-surface transition-colors"
+      aria-label={isDark ? '라이트 모드로 전환' : '다크 모드로 전환'}
       title={isDark ? '라이트 모드' : '다크 모드'}
     >
       {isDark ? (
