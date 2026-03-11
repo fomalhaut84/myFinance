@@ -19,7 +19,6 @@ const MORE_ITEMS = [
   { href: '/dividends', icon: '💰', label: '배당금' },
   { href: '/deposits', icon: '🎁', label: '입금/증여' },
   { href: '/stock-options', icon: '📊', label: '스톡옵션' },
-  { href: '/tax', icon: '🧾', label: '세금' },
   { href: '/simulator', icon: '🔮', label: '시뮬레이터' },
   { href: '/performance', icon: '📈', label: '수익률 분석' },
 ]
@@ -28,8 +27,11 @@ export default function BottomTab({ accounts }: BottomTabProps) {
   const pathname = usePathname()
   const [moreOpen, setMoreOpen] = useState(false)
 
-  const isMoreActive = MORE_ITEMS.some((item) => pathname.startsWith(item.href))
+  const FIXED_TAB_PATHS = ['/', '/trades', '/tax']
+  const isMoreActive = (
+    MORE_ITEMS.some((item) => pathname.startsWith(item.href))
     || accounts.some((a) => pathname === `/accounts/${a.id}`)
+  ) && !FIXED_TAB_PATHS.some((p) => p === '/' ? pathname === '/' : pathname.startsWith(p))
 
   return (
     <>
