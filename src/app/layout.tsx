@@ -1,4 +1,4 @@
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import './globals.css'
 import Sidebar from '@/components/layout/Sidebar'
 import BottomTab from '@/components/layout/BottomTab'
@@ -12,19 +12,20 @@ export const metadata: Metadata = {
   title: 'myFinance - 가족 자산관리',
   description: '가족 투자 포트폴리오 통합 관리 시스템',
   manifest: '/manifest.json',
-  themeColor: '#07080c',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'black-translucent',
     title: 'myFinance',
   },
-  viewport: {
-    width: 'device-width',
-    initialScale: 1,
-    maximumScale: 1,
-    userScalable: false,
-    viewportFit: 'cover',
-  },
+}
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: 'cover',
+  themeColor: '#07080c',
 }
 
 export default async function RootLayout({
@@ -44,9 +45,6 @@ export default async function RootLayout({
 
   return (
     <html lang="ko" suppressHydrationWarning>
-      <head>
-        <link rel="apple-touch-icon" href="/icons/icon.svg" />
-      </head>
       <body className="antialiased">
         <ServiceWorkerRegister />
         <ThemeProvider>

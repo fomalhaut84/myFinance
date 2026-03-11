@@ -3,7 +3,11 @@ const OFFLINE_URL = '/offline'
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll([OFFLINE_URL]))
+    caches.open(CACHE_NAME).then((cache) =>
+      cache.add(OFFLINE_URL).catch(() => {
+        // 오프라인 페이지 캐싱 실패해도 SW 설치는 진행
+      })
+    )
   )
   self.skipWaiting()
 })
@@ -26,7 +30,12 @@ self.addEventListener('fetch', (event) => {
 
   event.respondWith(
     fetch(event.request).catch(() =>
-      caches.match(OFFLINE_URL).then((response) => response || new Response('오프라인 상태입니다', { status: 503 }))
+      caches.match(OFFLINE_URL).then((response) =>
+        response || new Response('오프라인 상태입니다', {
+          status: 503,
+          headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+        })
+      )
     )
   )
 })
