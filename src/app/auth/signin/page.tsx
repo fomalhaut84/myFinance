@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { FormEvent, useState } from 'react'
 
 function safeCallbackUrl(raw: string | null): string {
-  if (!raw || !raw.startsWith('/') || raw.startsWith('//')) return '/'
+  if (!raw || !raw.startsWith('/') || raw.startsWith('//') || raw.startsWith('/auth')) return '/'
   return raw
 }
 
