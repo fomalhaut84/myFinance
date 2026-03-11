@@ -39,6 +39,9 @@ fi
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] 복원 시작: $BACKUP_FILE → $DB_NAME"
 
-gunzip -c "$BACKUP_FILE" | psql "$DB_NAME"
+if ! gunzip -c "$BACKUP_FILE" | psql --no-password -v ON_ERROR_STOP=1 --single-transaction "$DB_NAME"; then
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: 복원 실패!" >&2
+    exit 1
+fi
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] 복원 완료"
