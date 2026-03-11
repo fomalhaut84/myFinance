@@ -36,7 +36,9 @@ function CustomTooltip({ active, payload, label }: any) {
   return (
     <div className="bg-[#1a1a2e] border border-white/[0.08] rounded-lg px-3 py-2 shadow-xl">
       <div className="text-[11px] text-dim mb-1.5">{label}</div>
-      {payload.map((entry: { name: string; value: number; color: string }) => (
+      {payload
+        .filter((entry: { value: unknown }) => typeof entry.value === 'number')
+        .map((entry: { name: string; value: number; color: string }) => (
         <div key={entry.name} className="flex items-center gap-2 text-[11px]">
           <div
             className="w-2 h-2 rounded-full flex-shrink-0"

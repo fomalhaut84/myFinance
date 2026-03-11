@@ -14,8 +14,9 @@ interface SnapshotResult {
  * 이미 해당일 스냅샷이 있으면 upsert (갱신).
  */
 export async function takeAllSnapshots(): Promise<SnapshotResult[]> {
-  const today = new Date()
-  today.setUTCHours(0, 0, 0, 0)
+  // KST 기준 오늘 날짜 → UTC midnight으로 저장
+  const kstNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }))
+  const today = new Date(Date.UTC(kstNow.getFullYear(), kstNow.getMonth(), kstNow.getDate()))
 
   const accounts = await prisma.account.findMany({
     include: { holdings: true },

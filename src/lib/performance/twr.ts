@@ -78,22 +78,14 @@ export async function calculateTWR(
     }),
   ])
 
-  // 날짜별 현금흐름 집계
-  const cashFlowByDate = new Map<string, number>()
+  // 현금흐름을 { timestamp, amount } 배열로 정리
+  const cashFlows: { time: number; amount: number }[] = []
   for (const trade of trades) {
-    const dateKey = trade.tradedAt.toISOString().slice(0, 10)
     const cf = trade.type === 'BUY' ? trade.totalKRW : -trade.totalKRW
-    cashFlowByDate.set(dateKey, (cashFlowByDate.get(dateKey) ?? 0) + cf)
+    cashFlows.push({ time: trade.tradedAt.getTime(), amount: cf })
   }
   for (const deposit of deposits) {
-    const dateKey = deposit.depositedAt.toISOString().slice(0, 10)
-    cashFlowByDate.set(dateKey, (cashFlowByDate.get(dateKey) ?? 0) + deposit.amount)
-  }
-
-  // 스냅샷을 날짜별로 매핑
-  const snapshotByDate = new Map<string, number>()
-  for (const s of snapshots) {
-    snapshotByDate.set(s.snapshotDate.toISOString().slice(0, 10), s.totalValueKRW)
+    cashFlows.push({ time: deposit.depositedAt.getTime(), amount: deposit.amount })
   }
 
   // TWR 계산: sub-period 분할
@@ -103,16 +95,16 @@ export async function calculateTWR(
     const vStart = snapshots[i - 1].totalValueKRW
     const vEnd = snapshots[i].totalValueKRW
 
-    // 이 sub-period 내 현금흐름 합산
-    const startDateKey = snapshots[i - 1].snapshotDate.toISOString().slice(0, 10)
-    const endDateKey = snapshots[i].snapshotDate.toISOString().slice(0, 10)
+    // 이 sub-period (prevSnapshot, currSnapshot] 내 현금흐름 합산
+    const tStart = snapshots[i - 1].snapshotDate.getTime()
+    const tEnd = snapshots[i].snapshotDate.getTime()
 
     let cf = 0
-    cashFlowByDate.forEach((amount, dateKey) => {
-      if (dateKey > startDateKey && dateKey <= endDateKey) {
-        cf += amount
+    for (const flow of cashFlows) {
+      if (flow.time > tStart && flow.time <= tEnd) {
+        cf += flow.amount
       }
-    })
+    }
 
     if (vStart === 0) {
       // 시작 가치 0이면 sub-period 스킵

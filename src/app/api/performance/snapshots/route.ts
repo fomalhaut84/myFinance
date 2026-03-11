@@ -24,8 +24,20 @@ export async function GET(request: NextRequest) {
     const where: Record<string, unknown> = { accountId }
     if (from || to) {
       const dateFilter: Record<string, Date> = {}
-      if (from) dateFilter.gte = new Date(from)
-      if (to) dateFilter.lte = new Date(to)
+      if (from) {
+        const d = new Date(from)
+        if (isNaN(d.getTime())) {
+          return NextResponse.json({ error: '유효한 시작일을 입력해주세요.' }, { status: 400 })
+        }
+        dateFilter.gte = d
+      }
+      if (to) {
+        const d = new Date(to)
+        if (isNaN(d.getTime())) {
+          return NextResponse.json({ error: '유효한 종료일을 입력해주세요.' }, { status: 400 })
+        }
+        dateFilter.lte = d
+      }
       where.snapshotDate = dateFilter
     }
 
