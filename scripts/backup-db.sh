@@ -42,7 +42,7 @@ echo "[$(date '+%Y-%m-%d %H:%M:%S')] 백업 시작: $DB_NAME"
 
 # pg_dump 실행 (gzip 압축, --no-password로 비대화형 보장)
 # 참고: 다른 환경 복원 시 role 불일치 가능. 필요 시 --no-owner --no-privileges 추가.
-if pg_dump --no-password --clean --if-exists --dbname="$DB_NAME" | gzip > "$BACKUP_FILE"; then
+if pg_dump --no-password --dbname="$DB_NAME" | gzip > "$BACKUP_FILE"; then
     FILESIZE=$(du -h "$BACKUP_FILE" | cut -f1)
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] 백업 완료: $BACKUP_FILE ($FILESIZE)"
 else
