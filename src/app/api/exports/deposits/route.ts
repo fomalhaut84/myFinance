@@ -28,6 +28,7 @@ export async function GET(request: NextRequest) {
     const deposits = await prisma.deposit.findMany({
       where,
       orderBy: [{ depositedAt: 'desc' }],
+      take: 10000,
       include: { account: { select: { name: true } } },
     })
 

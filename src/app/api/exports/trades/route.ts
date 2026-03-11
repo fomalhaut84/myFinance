@@ -13,10 +13,12 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = request.nextUrl
     const accountId = searchParams.get('accountId')
+    const type = searchParams.get('type')
     const year = searchParams.get('year')
 
     const where: Record<string, unknown> = {}
     if (accountId) where.accountId = accountId
+    if (type && ['BUY', 'SELL'].includes(type)) where.type = type
     if (year && /^\d{4}$/.test(year)) {
       const y = parseInt(year)
       where.tradedAt = {
@@ -28,6 +30,7 @@ export async function GET(request: NextRequest) {
     const trades = await prisma.trade.findMany({
       where,
       orderBy: [{ tradedAt: 'desc' }],
+      take: 10000,
       include: { account: { select: { name: true } } },
     })
 

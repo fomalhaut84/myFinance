@@ -5,10 +5,15 @@
 export function toCSV(headers: string[], rows: string[][]): string {
   const BOM = '\uFEFF'
   const escape = (v: string) => {
-    if (v.includes(',') || v.includes('"') || v.includes('\n')) {
-      return `"${v.replace(/"/g, '""')}"`
+    // OWASP: 수식 주입 방어 — 위험 문자로 시작하면 앞에 ' 추가
+    let safe = v
+    if (/^[=+\-@\t\r]/.test(safe)) {
+      safe = `'${safe}`
     }
-    return v
+    if (safe.includes(',') || safe.includes('"') || safe.includes('\n')) {
+      return `"${safe.replace(/"/g, '""')}"`
+    }
+    return safe
   }
 
   const lines = [

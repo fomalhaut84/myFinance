@@ -28,6 +28,7 @@ export async function GET(request: NextRequest) {
     const dividends = await prisma.dividend.findMany({
       where,
       orderBy: [{ payDate: 'desc' }],
+      take: 10000,
       include: { account: { select: { name: true } } },
     })
 
