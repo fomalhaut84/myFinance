@@ -80,7 +80,7 @@ async function main() {
     { ticker: 'RKLB', displayName: 'RKLB', market: 'US', shares: 16, avgPriceFx: 6.05, currency: 'USD', tradedAt: '2024-01-10' },
     { ticker: '035720.KS', displayName: '카카오', market: 'KR', shares: 1, avgPrice: 45000, currency: 'KRW', tradedAt: '2025-02-01' },
     { ticker: '454910.KS', displayName: '두산로보틱스', market: 'KR', shares: 2, avgPrice: 26000, currency: 'KRW', tradedAt: '2025-03-01' },
-    { ticker: '241560.KQ', displayName: '컨텍', market: 'KR', shares: 12, avgPrice: 22500, currency: 'KRW', tradedAt: '2025-01-15' },
+    { ticker: '451760.KQ', displayName: '컨텍', market: 'KR', shares: 12, avgPrice: 22500, currency: 'KRW', tradedAt: '2025-01-15' },
   ]
 
   const sodamHoldings: HoldingSeed[] = [
