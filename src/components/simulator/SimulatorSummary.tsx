@@ -90,8 +90,8 @@ export default function SimulatorSummary({ simulations, years }: SimulatorSummar
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-[12px] text-sub">예상 수익</span>
-                  <span className="text-[12px] text-green-400 tabular-nums">
-                    +{formatKRW(base.totalGrowth)}
+                  <span className={`text-[12px] tabular-nums ${base.totalGrowth >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                    {base.totalGrowth >= 0 ? '+' : ''}{formatKRW(base.totalGrowth)}
                   </span>
                 </div>
 
@@ -124,7 +124,7 @@ export default function SimulatorSummary({ simulations, years }: SimulatorSummar
                     ) : (
                       <div className="bg-yellow-500/5 border border-yellow-500/10 rounded-lg px-3 py-1.5">
                         <span className="text-[11px] text-yellow-400/70">
-                          현재 적립 속도 기준 약 {Math.ceil(sim.giftLimitMonth / 12)}년{' '}
+                          현재 적립 속도 기준 약 {Math.floor(sim.giftLimitMonth / 12)}년{' '}
                           {sim.giftLimitMonth % 12 > 0 ? `${sim.giftLimitMonth % 12}개월` : ''} 후
                           증여세 비과세 한도 도달 예상
                         </span>

@@ -201,7 +201,9 @@ export function simulateAccount(params: {
     }
   }
 
-  // 증여세 한도 도달 시점 (미성년 10년간 2,000만원)
+  // 증여세 한도 도달 예상 시점 (근사치)
+  // 미성년 2,000만원 / 성인 5,000만원 (10년간 비과세)
+  // 단순 계산: 잔여 한도 / 월 적립금. 10년 rolling window 미반영 (참고용)
   let giftLimitMonth: number | null = null
   if (params.ownerAge != null && params.ownerAge < 19 && params.giftTotal != null) {
     const giftExempt = 20_000_000

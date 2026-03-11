@@ -14,7 +14,7 @@ export default async function SimulatorPage() {
       deposits: {
         where: {
           source: { in: GIFT_SOURCES },
-          depositedAt: { gte: new Date(Date.now() - 10 * 365.25 * 24 * 60 * 60 * 1000) },
+          depositedAt: { gte: (() => { const d = new Date(); d.setFullYear(d.getFullYear() - 10); return d })() },
         },
         select: { amount: true },
       },
@@ -50,16 +50,16 @@ export default async function SimulatorPage() {
 
     const giftTotal = account.deposits.reduce((sum, d) => sum + d.amount, 0)
 
-    // RSU 이벤트 (pending, 월 단위 오프셋)
+    // RSU 이벤트 (pending, 월 단위 오프셋, 최소 1개월)
     const now = new Date()
     const rsuEvents = account.rsuSchedules
       .filter((r) => new Date(r.vestingDate) > now)
       .map((r) => {
         const vestDate = new Date(r.vestingDate)
-        const monthOffset = (vestDate.getFullYear() - now.getFullYear()) * 12
+        const rawMonths = (vestDate.getFullYear() - now.getFullYear()) * 12
           + (vestDate.getMonth() - now.getMonth())
         return {
-          monthOffset: Math.max(1, monthOffset),
+          monthOffset: Math.max(1, rawMonths),
           amount: Math.round(r.basisValue),
           label: 'RSU 베스팅',
         }
