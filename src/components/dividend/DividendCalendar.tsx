@@ -27,7 +27,7 @@ export default function DividendCalendar({ byMonth, year }: DividendCalendarProp
           return (
             <div
               key={i}
-              className="rounded-lg border border-white/[0.04] p-3 transition-all"
+              className="rounded-lg border border-border p-3 transition-all"
               style={{
                 backgroundColor: intensity > 0 ? `rgba(96, 165, 250, ${intensity * 0.15})` : 'rgba(255,255,255,0.01)',
               }}

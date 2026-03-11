@@ -34,7 +34,7 @@ function CustomTooltip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null
 
   return (
-    <div className="bg-[#1a1a2e] border border-white/[0.08] rounded-lg px-3 py-2 shadow-xl">
+    <div className="bg-bg-raised border border-border rounded-lg px-3 py-2 shadow-xl">
       <div className="text-[11px] text-dim mb-1.5">{label}</div>
       {payload
         .filter((entry: { value: unknown }) => typeof entry.value === 'number')
