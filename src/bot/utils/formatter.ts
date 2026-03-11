@@ -52,6 +52,14 @@ export function splitMessage(text: string, maxLength = TELEGRAM_MAX_LENGTH): str
   let current = ''
 
   for (const line of lines) {
+    if (line.length > maxLength) {
+      if (current) chunks.push(current)
+      for (let i = 0; i < line.length; i += maxLength) {
+        chunks.push(line.slice(i, i + maxLength))
+      }
+      current = ''
+      continue
+    }
     if (current.length + line.length + 1 > maxLength) {
       if (current) chunks.push(current)
       current = line
