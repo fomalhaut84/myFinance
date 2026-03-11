@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import './globals.css'
 import Sidebar from '@/components/layout/Sidebar'
 import BottomTab from '@/components/layout/BottomTab'
+import MainContent from '@/components/layout/MainContent'
 import AuthProvider from '@/components/auth/AuthProvider'
 import { prisma } from '@/lib/prisma'
 
@@ -31,9 +32,9 @@ export default async function RootLayout({
         <AuthProvider>
           <Sidebar accounts={accounts} />
           <BottomTab accounts={accounts} />
-          <main className="lg:ml-[220px] min-h-screen pb-20 lg:pb-0">
+          <MainContent>
             {children}
-          </main>
+          </MainContent>
         </AuthProvider>
       </body>
     </html>

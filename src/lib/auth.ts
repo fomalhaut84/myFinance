@@ -10,11 +10,24 @@ const failedAttempts = new Map<string, { count: number; lastAttempt: number }>()
 function pruneExpired(): void {
   if (failedAttempts.size <= MAX_ENTRIES) return
   const now = Date.now()
+  // 만료된 엔트리 정리
   failedAttempts.forEach((record, key) => {
     if (now - record.lastAttempt > LOCKOUT_MS) {
       failedAttempts.delete(key)
     }
   })
+  // 하드 캡: 여전히 초과 시 가장 오래된 엔트리 제거
+  if (failedAttempts.size > MAX_ENTRIES) {
+    let oldestKey: string | null = null
+    let oldestTime = Infinity
+    failedAttempts.forEach((record, key) => {
+      if (record.lastAttempt < oldestTime) {
+        oldestTime = record.lastAttempt
+        oldestKey = key
+      }
+    })
+    if (oldestKey) failedAttempts.delete(oldestKey)
+  }
 }
 
 function checkRateLimit(key: string): boolean {
