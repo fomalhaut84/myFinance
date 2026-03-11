@@ -5,11 +5,26 @@ import BottomTab from '@/components/layout/BottomTab'
 import MainContent from '@/components/layout/MainContent'
 import AuthProvider from '@/components/auth/AuthProvider'
 import ThemeProvider from '@/components/theme/ThemeProvider'
+import ServiceWorkerRegister from '@/components/pwa/ServiceWorkerRegister'
 import { prisma } from '@/lib/prisma'
 
 export const metadata: Metadata = {
   title: 'myFinance - 가족 자산관리',
   description: '가족 투자 포트폴리오 통합 관리 시스템',
+  manifest: '/manifest.json',
+  themeColor: '#07080c',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'black-translucent',
+    title: 'myFinance',
+  },
+  viewport: {
+    width: 'device-width',
+    initialScale: 1,
+    maximumScale: 1,
+    userScalable: false,
+    viewportFit: 'cover',
+  },
 }
 
 export default async function RootLayout({
@@ -29,7 +44,11 @@ export default async function RootLayout({
 
   return (
     <html lang="ko" suppressHydrationWarning>
+      <head>
+        <link rel="apple-touch-icon" href="/icons/icon.svg" />
+      </head>
       <body className="antialiased">
+        <ServiceWorkerRegister />
         <ThemeProvider>
           <AuthProvider>
             <Sidebar accounts={accounts} />

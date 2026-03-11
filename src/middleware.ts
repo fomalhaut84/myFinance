@@ -28,6 +28,6 @@ export const config = {
      * - /_next/ (Next.js 내부)
      * - /favicon.ico, /icons/, /manifest.json (정적 리소스)
      */
-    '/((?!auth/|api/auth/|_next/|favicon\\.ico|icons/|manifest\\.json).*)',
+    '/((?!auth/|api/auth/|_next/|favicon\\.ico|icons/|manifest\\.json|sw\\.js|offline).*)',
   ],
 }
