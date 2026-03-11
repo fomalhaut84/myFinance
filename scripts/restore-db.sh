@@ -10,6 +10,12 @@ set -euo pipefail
 BACKUP_FILE="${1:-}"
 DB_NAME="${DB_NAME:-myfinance}"
 
+# DB_NAME 검증 (글롭/conninfo 방지)
+if ! [[ "$DB_NAME" =~ ^[A-Za-z0-9_]+$ ]]; then
+    echo "ERROR: DB_NAME 값이 올바르지 않습니다: $DB_NAME" >&2
+    exit 1
+fi
+
 if [ -z "$BACKUP_FILE" ]; then
     echo "사용법: $0 <백업파일경로>"
     echo ""
