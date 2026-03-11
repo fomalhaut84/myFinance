@@ -115,7 +115,7 @@ export default function SimulatorChart({
   const displayNameMap = new Map<string, string>()
 
   for (const sim of simulations) {
-    const color = ACCOUNT_COLORS[sim.accountName] ?? '#9494a8'
+    const color = ACCOUNT_COLORS[sim.accountName] ?? 'var(--sub)'
     const scenarios = selectedScenario
       ? sim.scenarios.filter((s) => s.scenarioName === selectedScenario)
       : sim.scenarios
@@ -189,7 +189,7 @@ export default function SimulatorChart({
                 label={{
                   value: m.label,
                   position: 'top',
-                  fill: '#9494a8',
+                  fill: 'var(--sub)',
                   fontSize: 10,
                 }}
               />

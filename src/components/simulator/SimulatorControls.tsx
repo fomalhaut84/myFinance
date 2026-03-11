@@ -99,7 +99,7 @@ export default function SimulatorControls({
           <div className="flex items-center gap-2 mb-3">
             <div
               className="w-2.5 h-2.5 rounded-full"
-              style={{ background: ACCOUNT_COLORS[account.accountName] ?? '#9494a8' }}
+              style={{ background: ACCOUNT_COLORS[account.accountName] ?? 'var(--sub)' }}
             />
             <span className="text-[13px] font-bold text-bright">{account.accountName}</span>
             <span className="text-[11px] text-dim ml-auto tabular-nums">

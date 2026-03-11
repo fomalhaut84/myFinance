@@ -58,7 +58,7 @@ export default function TWRSummaryCard({ data, loading }: TWRSummaryCardProps) {
             >
               <div
                 className="w-2.5 h-2.5 rounded-full flex-shrink-0"
-                style={{ background: ACCOUNT_COLORS[item.accountName] ?? '#9494a8' }}
+                style={{ background: ACCOUNT_COLORS[item.accountName] ?? 'var(--sub)' }}
               />
               <div className="flex-1 min-w-0">
                 <div className="text-[12px] font-semibold text-bright">{item.accountName}</div>

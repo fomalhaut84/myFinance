@@ -137,7 +137,7 @@ export default function PerformanceClient({ accounts, hasSnapshots }: Performanc
   }
 
   const selectedAccountName = accounts.find((a) => a.id === selectedAccount)?.name ?? ''
-  const accountColor = ACCOUNT_COLORS[selectedAccountName] ?? '#9494a8'
+  const accountColor = ACCOUNT_COLORS[selectedAccountName] ?? 'var(--sub)'
 
   if (!hasSnapshots) {
     return (
@@ -191,7 +191,7 @@ export default function PerformanceClient({ accounts, hasSnapshots }: Performanc
             >
               <span
                 className="w-1.5 h-1.5 rounded-full"
-                style={{ background: ACCOUNT_COLORS[a.name] ?? '#9494a8' }}
+                style={{ background: ACCOUNT_COLORS[a.name] ?? 'var(--sub)' }}
               />
               {a.name}
             </button>

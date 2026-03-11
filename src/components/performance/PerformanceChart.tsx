@@ -100,7 +100,7 @@ export default function PerformanceChart({
             />
             <Tooltip content={<CustomTooltip />} />
             <Legend
-              wrapperStyle={{ fontSize: 11, color: '#9494a8' }}
+              wrapperStyle={{ fontSize: 11, color: 'var(--sub)' }}
             />
             <Line
               name="포트폴리오"

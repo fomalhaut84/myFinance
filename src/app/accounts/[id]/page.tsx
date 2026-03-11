@@ -57,7 +57,7 @@ export default async function AccountDetailPage({ params }: PageProps) {
   const lastUpdatedAt = getLastUpdatedAt(prices)
 
   const colors = COLOR_MAP[account.name] ?? {
-    color: '#9494a8',
+    color: 'var(--sub)',
     text: 'text-sub',
     tagBg: 'rgba(148,148,168,0.1)',
   }

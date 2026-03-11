@@ -26,7 +26,7 @@ export default function SimulatorSummary({ simulations, years }: SimulatorSummar
 
         if (!base) return null
 
-        const color = ACCOUNT_COLORS[sim.accountName] ?? '#9494a8'
+        const color = ACCOUNT_COLORS[sim.accountName] ?? 'var(--sub)'
 
         return (
           <div
