@@ -12,6 +12,7 @@
 #
 
 set -euo pipefail
+umask 077
 
 # 설정
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -29,12 +30,12 @@ if ! [[ "$RETENTION_DAYS" =~ ^[0-9]+$ ]]; then
 fi
 
 # 백업 디렉토리 생성
-mkdir -p "$BACKUP_DIR"
+mkdir -p -m 700 "$BACKUP_DIR"
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] 백업 시작: $DB_NAME"
 
 # pg_dump 실행 (gzip 압축, --no-password로 비대화형 보장)
-if pg_dump --no-password "$DB_NAME" | gzip > "$BACKUP_FILE"; then
+if pg_dump --no-password --clean --if-exists --dbname="$DB_NAME" | gzip > "$BACKUP_FILE"; then
     FILESIZE=$(du -h "$BACKUP_FILE" | cut -f1)
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] 백업 완료: $BACKUP_FILE ($FILESIZE)"
 else
