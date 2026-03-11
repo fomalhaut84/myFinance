@@ -23,6 +23,12 @@ DB_NAME="${DB_NAME:-myfinance}"
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
 BACKUP_FILE="$BACKUP_DIR/${DB_NAME}_${TIMESTAMP}.sql.gz"
 
+# DB_NAME 검증 (글롭 문자 방지)
+if ! [[ "$DB_NAME" =~ ^[A-Za-z0-9_]+$ ]]; then
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: DB_NAME 값이 올바르지 않습니다: $DB_NAME" >&2
+    exit 1
+fi
+
 # RETENTION_DAYS 검증
 if ! [[ "$RETENTION_DAYS" =~ ^[0-9]+$ ]]; then
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: RETENTION_DAYS 값이 올바르지 않습니다: $RETENTION_DAYS" >&2
@@ -35,6 +41,7 @@ mkdir -p -m 700 "$BACKUP_DIR"
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] 백업 시작: $DB_NAME"
 
 # pg_dump 실행 (gzip 압축, --no-password로 비대화형 보장)
+# 참고: 다른 환경 복원 시 role 불일치 가능. 필요 시 --no-owner --no-privileges 추가.
 if pg_dump --no-password --clean --if-exists --dbname="$DB_NAME" | gzip > "$BACKUP_FILE"; then
     FILESIZE=$(du -h "$BACKUP_FILE" | cut -f1)
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] 백업 완료: $BACKUP_FILE ($FILESIZE)"
@@ -50,13 +57,13 @@ while IFS= read -r old_file; do
     rm -f "$old_file"
     DELETED_COUNT=$((DELETED_COUNT + 1))
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] 삭제: $old_file"
-done < <(find "$BACKUP_DIR" -name "${DB_NAME}_*.sql.gz" -type f -mtime +"$RETENTION_DAYS")
+done < <(find "$BACKUP_DIR" -maxdepth 1 -name "${DB_NAME}_*.sql.gz" -type f -mtime +"$RETENTION_DAYS")
 
 if [ "$DELETED_COUNT" -gt 0 ]; then
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] ${DELETED_COUNT}개 오래된 백업 삭제 (${RETENTION_DAYS}일 초과)"
 fi
 
 # 현재 백업 현황
-TOTAL_COUNT=$(find "$BACKUP_DIR" -name "${DB_NAME}_*.sql.gz" -type f | wc -l | tr -d ' ')
+TOTAL_COUNT=$(find "$BACKUP_DIR" -maxdepth 1 -name "${DB_NAME}_*.sql.gz" -type f | wc -l | tr -d ' ')
 TOTAL_SIZE=$(du -sh "$BACKUP_DIR" 2>/dev/null | cut -f1)
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] 백업 현황: ${TOTAL_COUNT}개, 총 ${TOTAL_SIZE}"
