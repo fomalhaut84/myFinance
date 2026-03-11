@@ -22,6 +22,7 @@ interface SimulatorClientProps {
 
 export default function SimulatorClient({ accounts }: SimulatorClientProps) {
   const [years, setYears] = useState(() => {
+    if (accounts.length === 0) return 15
     const maxHorizon = Math.max(...accounts.map((a) => a.horizon ?? 15))
     return Math.min(maxHorizon, 20)
   })

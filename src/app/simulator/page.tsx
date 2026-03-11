@@ -2,6 +2,7 @@ import { prisma } from '@/lib/prisma'
 import Header from '@/components/layout/Header'
 import SimulatorClient from './SimulatorClient'
 import { GIFT_SOURCES } from '@/lib/tax/gift-tax'
+import { DEFAULT_FX_RATE_USD_KRW } from '@/lib/format'
 
 export const dynamic = 'force-dynamic'
 
@@ -11,7 +12,10 @@ export default async function SimulatorPage() {
     include: {
       holdings: true,
       deposits: {
-        where: { source: { in: GIFT_SOURCES } },
+        where: {
+          source: { in: GIFT_SOURCES },
+          depositedAt: { gte: new Date(Date.now() - 10 * 365.25 * 24 * 60 * 60 * 1000) },
+        },
         select: { amount: true },
       },
       rsuSchedules: {
@@ -31,16 +35,17 @@ export default async function SimulatorPage() {
     select: { ticker: true, price: true },
   })
   const priceMap = new Map(priceCaches.map((p) => [p.ticker, p.price]))
-  const fxRate = priceMap.get('USDKRW=X') ?? 1450
+  const fxRate = priceMap.get('USDKRW=X') ?? DEFAULT_FX_RATE_USD_KRW
 
   // 계좌별 데이터 구성
   const accountData = accounts.map((account) => {
     const currentValue = account.holdings.reduce((sum, h) => {
-      const price = priceMap.get(h.ticker) ?? 0
-      if (h.currency === 'USD') {
-        return sum + price * h.shares * fxRate
+      const price = priceMap.get(h.ticker)
+      if (price != null) {
+        return sum + price * h.shares * (h.currency === 'USD' ? fxRate : 1)
       }
-      return sum + price * h.shares
+      // 가격 캐시 없으면 매입가 기준 (원화 환산)
+      return sum + h.avgPrice * h.shares
     }, 0)
 
     const giftTotal = account.deposits.reduce((sum, d) => sum + d.amount, 0)
