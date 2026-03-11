@@ -67,7 +67,7 @@ export default function TWRSummaryCard({ data, loading }: TWRSummaryCardProps) {
                 )}
               </div>
 
-              {item.twr !== null ? (
+              {typeof item.twr === 'number' ? (
                 <div className="flex items-center gap-4 text-right">
                   <div>
                     <div className="text-[10px] text-dim">TWR</div>
@@ -75,7 +75,7 @@ export default function TWRSummaryCard({ data, loading }: TWRSummaryCardProps) {
                       {formatPercent(item.twr)}
                     </div>
                   </div>
-                  {item.benchmarkReturn !== null && (
+                  {typeof item.benchmarkReturn === 'number' && (
                     <div>
                       <div className="text-[10px] text-dim">벤치마크</div>
                       <div className={`text-[14px] font-bold tabular-nums ${returnColor(item.benchmarkReturn)}`}>
@@ -83,7 +83,7 @@ export default function TWRSummaryCard({ data, loading }: TWRSummaryCardProps) {
                       </div>
                     </div>
                   )}
-                  {item.alpha !== null && (
+                  {typeof item.alpha === 'number' && (
                     <div>
                       <div className="text-[10px] text-dim">알파</div>
                       <div className={`text-[14px] font-bold tabular-nums ${returnColor(item.alpha)}`}>

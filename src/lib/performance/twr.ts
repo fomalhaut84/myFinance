@@ -58,32 +58,17 @@ export async function calculateTWR(
   const periodStart = snapshots[0].snapshotDate
   const periodEnd = snapshots[snapshots.length - 1].snapshotDate
 
-  // 현금흐름 조회
-  const [trades, deposits] = await Promise.all([
-    prisma.trade.findMany({
-      where: {
-        accountId,
-        tradedAt: { gte: periodStart, lte: periodEnd },
-      },
-      select: { tradedAt: true, type: true, totalKRW: true },
-      orderBy: { tradedAt: 'asc' },
-    }),
-    prisma.deposit.findMany({
-      where: {
-        accountId,
-        depositedAt: { gte: periodStart, lte: periodEnd },
-      },
-      select: { depositedAt: true, amount: true },
-      orderBy: { depositedAt: 'asc' },
-    }),
-  ])
+  // 외부 현금흐름 = Deposit(입금)만. Trade는 포트폴리오 내부 거래이므로 TWR에서 제외.
+  const deposits = await prisma.deposit.findMany({
+    where: {
+      accountId,
+      depositedAt: { gte: periodStart, lte: periodEnd },
+    },
+    select: { depositedAt: true, amount: true },
+    orderBy: { depositedAt: 'asc' },
+  })
 
-  // 현금흐름을 { timestamp, amount } 배열로 정리
   const cashFlows: { time: number; amount: number }[] = []
-  for (const trade of trades) {
-    const cf = trade.type === 'BUY' ? trade.totalKRW : -trade.totalKRW
-    cashFlows.push({ time: trade.tradedAt.getTime(), amount: cf })
-  }
   for (const deposit of deposits) {
     cashFlows.push({ time: deposit.depositedAt.getTime(), amount: deposit.amount })
   }

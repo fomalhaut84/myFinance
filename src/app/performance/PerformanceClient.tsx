@@ -67,6 +67,17 @@ export default function PerformanceClient({ accounts, hasSnapshots }: Performanc
       const results = await Promise.all(
         accounts.map(async (a) => {
           const res = await fetch(`/api/performance/twr?accountId=${a.id}&period=${period}`)
+          if (!res.ok) {
+            return {
+              accountId: a.id,
+              accountName: a.name,
+              twr: null,
+              benchmarkReturn: null,
+              alpha: null,
+              benchmarkTicker: null,
+              snapshotCount: 0,
+            }
+          }
           return res.json()
         })
       )
@@ -93,13 +104,9 @@ export default function PerformanceClient({ accounts, hasSnapshots }: Performanc
   }, [selectedAccount, period])
 
   useEffect(() => {
-    let cancelled = false
-    if (!cancelled) {
-      fetchSnapshots()
-      fetchTWR()
-      fetchContribution()
-    }
-    return () => { cancelled = true }
+    fetchSnapshots()
+    fetchTWR()
+    fetchContribution()
   }, [fetchSnapshots, fetchTWR, fetchContribution])
 
   const handleTriggerSnapshot = async () => {
@@ -121,6 +128,7 @@ export default function PerformanceClient({ accounts, hasSnapshots }: Performanc
     try {
       await fetch('/api/performance/benchmark/backfill', { method: 'POST' })
       fetchSnapshots()
+      fetchTWR()
     } catch (error) {
       console.error('Failed to backfill:', error)
     } finally {
