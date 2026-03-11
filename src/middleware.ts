@@ -6,7 +6,8 @@ export async function middleware(request: NextRequest) {
 
   if (!token) {
     const signInUrl = new URL('/auth/signin', request.url)
-    signInUrl.searchParams.set('callbackUrl', request.nextUrl.pathname)
+    const returnUrl = request.nextUrl.pathname + request.nextUrl.search
+    signInUrl.searchParams.set('callbackUrl', returnUrl)
     return NextResponse.redirect(signInUrl)
   }
 
@@ -17,11 +18,11 @@ export const config = {
   matcher: [
     /*
      * 아래 경로를 제외한 모든 요청에 미들웨어 적용:
-     * - /auth/* (로그인 페이지)
-     * - /api/auth/* (NextAuth API)
-     * - /_next/* (Next.js 내부)
-     * - /favicon.ico, /icons/*, /manifest.json (정적 리소스)
+     * - /auth/ (로그인 페이지)
+     * - /api/auth/ (NextAuth API)
+     * - /_next/ (Next.js 내부)
+     * - /favicon.ico, /icons/, /manifest.json (정적 리소스)
      */
-    '/((?!auth|api/auth|_next|favicon\\.ico|icons|manifest\\.json).*)',
+    '/((?!auth/|api/auth/|_next/|favicon\\.ico|icons/|manifest\\.json).*)',
   ],
 }

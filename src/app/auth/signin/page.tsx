@@ -4,10 +4,15 @@ import { signIn } from 'next-auth/react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { FormEvent, useState } from 'react'
 
+function safeCallbackUrl(raw: string | null): string {
+  if (!raw || !raw.startsWith('/') || raw.startsWith('//')) return '/'
+  return raw
+}
+
 export default function SignInPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const callbackUrl = searchParams.get('callbackUrl') || '/'
+  const callbackUrl = safeCallbackUrl(searchParams.get('callbackUrl'))
   const [pin, setPin] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -25,7 +30,7 @@ export default function SignInPage() {
 
     setLoading(false)
 
-    if (result?.error) {
+    if (!result || result.error || !result.ok) {
       setError('PIN이 올바르지 않습니다')
       setPin('')
       return
