@@ -14,7 +14,7 @@ export default async function SimulatorPage() {
       deposits: {
         where: {
           source: { in: GIFT_SOURCES },
-          depositedAt: { gte: (() => { const d = new Date(); d.setFullYear(d.getFullYear() - 10); return d })() },
+          depositedAt: { gte: (() => { const d = new Date(); d.setUTCHours(0, 0, 0, 0); d.setFullYear(d.getFullYear() - 10); return d })() },
         },
         select: { amount: true },
       },

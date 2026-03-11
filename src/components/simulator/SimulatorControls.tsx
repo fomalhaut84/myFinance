@@ -112,7 +112,10 @@ export default function SimulatorControls({
             <input
               type="number"
               value={account.monthlyContribution || ''}
-              onChange={(e) => onMonthlyChange(account.accountId, Number(e.target.value) || 0)}
+              onChange={(e) => {
+                const parsed = Number(e.target.value)
+                onMonthlyChange(account.accountId, Number.isFinite(parsed) ? Math.max(0, Math.min(parsed, 100_000_000)) : 0)
+              }}
               placeholder="0"
               min={0}
               step={10000}

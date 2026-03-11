@@ -58,8 +58,8 @@ function buildChartData(simulations: AccountSimulation[], selectedScenario: stri
         const dp = sc.dataPoints[m]
         if (dp) {
           const key = selectedScenario
-            ? sim.accountName
-            : `${sim.accountName}_${sc.scenarioName}`
+            ? sim.accountId
+            : `${sim.accountId}_${sc.scenarioName}`
           point[key] = dp.value
         }
       }
@@ -78,7 +78,7 @@ function formatAxisValue(value: number): string {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function CustomTooltip({ active, payload, label }: any) {
+function CustomTooltip({ active, payload, label, displayNameMap }: any) {
   if (!active || !payload?.length) return null
 
   return (
@@ -90,7 +90,7 @@ function CustomTooltip({ active, payload, label }: any) {
             className="w-2 h-2 rounded-full flex-shrink-0"
             style={{ background: entry.color }}
           />
-          <span className="text-sub">{entry.name.replace('_', ' ')}</span>
+          <span className="text-sub">{displayNameMap?.get(entry.name) ?? entry.name}</span>
           <span className="text-bright font-semibold tabular-nums ml-auto">
             {formatKRW(entry.value)}
           </span>
@@ -109,7 +109,10 @@ export default function SimulatorChart({
   if (data.length === 0) return null
 
   // 라인 구성
-  const lines: { key: string; color: string; dash?: string; opacity: number }[] = []
+  const lines: { key: string; color: string; dash?: string; opacity: number; displayName: string }[] = []
+
+  // dataKey → 표시이름 매핑 (툴팁용)
+  const displayNameMap = new Map<string, string>()
 
   for (const sim of simulations) {
     const color = ACCOUNT_COLORS[sim.accountName] ?? '#9494a8'
@@ -119,11 +122,18 @@ export default function SimulatorChart({
 
     for (const sc of scenarios) {
       const key = selectedScenario
+        ? sim.accountId
+        : `${sim.accountId}_${sc.scenarioName}`
+      const displayName = selectedScenario
         ? sim.accountName
-        : `${sim.accountName}_${sc.scenarioName}`
+        : `${sim.accountName} ${sc.scenarioName}`
       const style = SCENARIO_STYLES[sc.scenarioName] ?? { opacity: 1 }
-      lines.push({ key, color, dash: style.dash, opacity: style.opacity })
+      lines.push({ key, color, dash: style.dash, opacity: style.opacity, displayName })
     }
+  }
+
+  for (const line of lines) {
+    displayNameMap.set(line.key, line.displayName)
   }
 
   // 마일스톤 참조선 (년 단위)
@@ -154,7 +164,7 @@ export default function SimulatorChart({
               tickFormatter={formatAxisValue}
               width={50}
             />
-            <Tooltip content={<CustomTooltip />} />
+            <Tooltip content={<CustomTooltip displayNameMap={displayNameMap} />} />
 
             {lines.map((line) => (
               <Line

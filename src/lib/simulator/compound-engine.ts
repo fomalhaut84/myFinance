@@ -156,6 +156,17 @@ export function simulateAccount(params: {
 }): AccountSimulation {
   const scenarios = params.scenarios ?? DEFAULT_SCENARIOS
 
+  if (scenarios.length === 0) {
+    return {
+      accountId: params.accountId,
+      accountName: params.accountName,
+      initialValue: params.initialValue,
+      scenarios: [],
+      giftLimitMonth: null,
+      milestones: [],
+    }
+  }
+
   const results: SimulationResult[] = scenarios.map((scenario) => {
     const result = simulateCompoundGrowth({
       initialValue: params.initialValue,
