@@ -22,22 +22,30 @@ export default function SignInPage() {
     setError('')
     setLoading(true)
 
-    const result = await signIn('credentials', {
-      pin,
-      redirect: false,
-      callbackUrl,
-    })
+    try {
+      const result = await signIn('credentials', {
+        pin,
+        redirect: false,
+        callbackUrl,
+      })
 
-    setLoading(false)
+      if (!result || result.error || !result.ok) {
+        setError(
+          result?.error?.includes('너무 많은 시도')
+            ? '너무 많은 시도입니다. 5분 후 다시 시도하세요.'
+            : 'PIN이 올바르지 않습니다',
+        )
+        setPin('')
+        return
+      }
 
-    if (!result || result.error || !result.ok) {
-      setError('PIN이 올바르지 않습니다')
-      setPin('')
-      return
+      router.push(callbackUrl)
+      router.refresh()
+    } catch {
+      setError('네트워크 오류가 발생했습니다. 다시 시도하세요.')
+    } finally {
+      setLoading(false)
     }
-
-    router.push(callbackUrl)
-    router.refresh()
   }
 
   return (

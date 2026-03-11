@@ -3,8 +3,19 @@ import CredentialsProvider from 'next-auth/providers/credentials'
 
 const MAX_ATTEMPTS = 5
 const LOCKOUT_MS = 5 * 60 * 1000 // 5분
+const MAX_ENTRIES = 1000
 
 const failedAttempts = new Map<string, { count: number; lastAttempt: number }>()
+
+function pruneExpired(): void {
+  if (failedAttempts.size <= MAX_ENTRIES) return
+  const now = Date.now()
+  failedAttempts.forEach((record, key) => {
+    if (now - record.lastAttempt > LOCKOUT_MS) {
+      failedAttempts.delete(key)
+    }
+  })
+}
 
 function checkRateLimit(key: string): boolean {
   const now = Date.now()
@@ -29,6 +40,8 @@ function recordFailure(key: string): void {
   } else {
     failedAttempts.set(key, { count: record.count + 1, lastAttempt: now })
   }
+
+  pruneExpired()
 }
 
 function clearFailures(key: string): void {
@@ -48,8 +61,9 @@ export const authOptions: NextAuthOptions = {
           throw new Error('AUTH_PIN 환경변수가 설정되지 않았습니다')
         }
 
-        const clientIp = req?.headers?.['x-forwarded-for'] ?? 'unknown'
-        const rateLimitKey = Array.isArray(clientIp) ? clientIp[0] : clientIp
+        const forwarded = req?.headers?.['x-forwarded-for']
+        const raw = Array.isArray(forwarded) ? forwarded[0] : forwarded
+        const rateLimitKey = raw?.split(',')[0]?.trim() || 'unknown'
 
         if (!checkRateLimit(rateLimitKey)) {
           throw new Error('너무 많은 시도입니다. 5분 후 다시 시도하세요.')

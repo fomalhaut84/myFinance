@@ -5,6 +5,11 @@ export async function middleware(request: NextRequest) {
   const token = await getToken({ req: request })
 
   if (!token) {
+    // API 요청은 401 JSON 반환 (리다이렉트하면 클라이언트 파싱 에러)
+    if (request.nextUrl.pathname.startsWith('/api/')) {
+      return NextResponse.json({ error: '인증이 필요합니다' }, { status: 401 })
+    }
+
     const signInUrl = new URL('/auth/signin', request.url)
     const returnUrl = request.nextUrl.pathname + request.nextUrl.search
     signInUrl.searchParams.set('callbackUrl', returnUrl)
