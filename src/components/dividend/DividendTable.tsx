@@ -166,7 +166,7 @@ export default function DividendTable({ dividends, total, limit, offset }: Divid
         </div>
 
         {/* Mobile card view */}
-        <div className="sm:hidden divide-y divide-white/[0.025]">
+        <div className="sm:hidden divide-y divide-border">
           {dividends.map((d) => (
             <div key={d.id} className="px-4 py-3.5 hover:bg-card">
               <div className="flex items-center justify-between mb-2">

@@ -149,16 +149,16 @@ export default function SimulatorChart({
       <div className="h-[320px]">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={data} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
             <XAxis
               dataKey="year"
-              tick={{ fontSize: 11, fill: '#6e6e82' }}
+              tick={{ fontSize: 11, fill: 'var(--dim)' }}
               tickLine={false}
-              axisLine={{ stroke: 'rgba(255,255,255,0.06)' }}
+              axisLine={{ stroke: 'var(--border)' }}
               unit="년"
             />
             <YAxis
-              tick={{ fontSize: 11, fill: '#6e6e82' }}
+              tick={{ fontSize: 11, fill: 'var(--dim)' }}
               tickLine={false}
               axisLine={false}
               tickFormatter={formatAxisValue}
@@ -184,7 +184,7 @@ export default function SimulatorChart({
               <ReferenceLine
                 key={`${m.label}-${i}`}
                 x={m.year}
-                stroke="rgba(255,255,255,0.15)"
+                stroke="var(--border-hover)"
                 strokeDasharray="3 3"
                 label={{
                   value: m.label,

@@ -141,7 +141,7 @@ export default function DepositTable({ deposits, total, limit, offset }: Deposit
         </div>
 
         {/* Mobile card view */}
-        <div className="sm:hidden divide-y divide-white/[0.025]">
+        <div className="sm:hidden divide-y divide-border">
           {deposits.map((d) => (
             <div key={d.id} className="px-4 py-3.5 hover:bg-card">
               <div className="flex items-center justify-between mb-2">

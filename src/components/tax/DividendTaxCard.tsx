@@ -100,7 +100,7 @@ export default function DividendTaxCard({ summary, year }: DividendTaxCardProps)
             <div className="text-[12px] text-sub">{summary.totalCount}건</div>
           </div>
 
-          <div className="divide-y divide-white/[0.025]">
+          <div className="divide-y divide-border">
             {summary.byTicker.map((t) => (
               <div key={`${t.ticker}:${t.currency}`} className="px-5 py-3 hover:bg-card">
                 <div className="flex items-center justify-between mb-1">

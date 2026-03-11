@@ -59,7 +59,7 @@ export default function SimulatorControls({
                 max={30}
                 value={years}
                 onChange={(e) => onYearsChange(Number(e.target.value))}
-                className="flex-1 accent-white/60"
+                className="flex-1 accent-sodam"
               />
               <span className="text-[13px] font-bold text-bright tabular-nums w-12 text-right">
                 {years}년

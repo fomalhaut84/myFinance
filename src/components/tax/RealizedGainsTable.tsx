@@ -80,7 +80,7 @@ export default function RealizedGainsTable({ gains }: RealizedGainsTableProps) {
       </div>
 
       {/* Mobile card view */}
-      <div className="sm:hidden divide-y divide-white/[0.025]">
+      <div className="sm:hidden divide-y divide-border">
         {gains.map((g) => (
           <div key={g.tradeId} className="px-4 py-3.5 hover:bg-card">
             <div className="flex items-center justify-between mb-1.5">

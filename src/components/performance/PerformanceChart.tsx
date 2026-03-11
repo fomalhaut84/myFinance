@@ -83,16 +83,16 @@ export default function PerformanceChart({
       <div className="h-[320px]">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={chartData} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
             <XAxis
               dataKey="date"
-              tick={{ fontSize: 11, fill: '#6e6e82' }}
+              tick={{ fontSize: 11, fill: 'var(--dim)' }}
               tickLine={false}
-              axisLine={{ stroke: 'rgba(255,255,255,0.06)' }}
+              axisLine={{ stroke: 'var(--border)' }}
               interval="preserveStartEnd"
             />
             <YAxis
-              tick={{ fontSize: 11, fill: '#6e6e82' }}
+              tick={{ fontSize: 11, fill: 'var(--dim)' }}
               tickLine={false}
               axisLine={false}
               width={45}
@@ -116,7 +116,7 @@ export default function PerformanceChart({
                 name={benchmarkName}
                 type="monotone"
                 dataKey="benchmark"
-                stroke="#9494a8"
+                stroke="var(--sub)"
                 strokeWidth={1.5}
                 strokeDasharray="4 4"
                 dot={false}
