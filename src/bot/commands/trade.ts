@@ -32,7 +32,7 @@ function cleanExpired(): void {
   })
 }
 
-function formatTradePreview(type: string, pending: PendingTrade): string {
+function formatTradePreview(type: 'BUY' | 'SELL', pending: PendingTrade): string {
   const typeLabel = type === 'BUY' ? '📥 매수' : '📤 매도'
   const priceStr = pending.currency === 'USD'
     ? formatUSD(pending.price)
@@ -93,15 +93,20 @@ async function handleTrade(ctx: Context, type: 'BUY' | 'SELL'): Promise<void> {
   const accountName = parts[0]
   const tickerOrName = parts.slice(1, parts.length - 2).join(' ')
 
-  // 수량/가격 검증
-  const shares = parseInt(sharesStr, 10)
-  const price = parseFloat(priceStr)
-
-  if (!Number.isInteger(shares) || shares <= 0) {
+  // 수량/가격 엄격 검증 (숫자만 허용, 단위 문자 혼입 방지)
+  if (!/^[1-9]\d*$/.test(sharesStr)) {
     await ctx.reply(`⚠️ 수량은 1 이상의 정수여야 합니다: ${sharesStr}`)
     return
   }
-  if (!Number.isFinite(price) || price <= 0) {
+  if (!/^\d+(\.\d+)?$/.test(priceStr)) {
+    await ctx.reply(`⚠️ 가격은 0보다 큰 숫자여야 합니다: ${priceStr}`)
+    return
+  }
+
+  const shares = parseInt(sharesStr, 10)
+  const price = parseFloat(priceStr)
+
+  if (price <= 0) {
     await ctx.reply(`⚠️ 가격은 0보다 큰 숫자여야 합니다: ${priceStr}`)
     return
   }
@@ -118,7 +123,7 @@ async function handleTrade(ctx: Context, type: 'BUY' | 'SELL'): Promise<void> {
   // 종목 조회 (PriceCache 또는 Holding에서)
   const upperQuery = tickerOrName.toUpperCase()
 
-  // PriceCache에서 검색
+  // PriceCache에서 ticker 정확 일치
   const priceByTicker = await prisma.priceCache.findUnique({
     where: { ticker: upperQuery },
   })
@@ -134,15 +139,24 @@ async function handleTrade(ctx: Context, type: 'BUY' | 'SELL'): Promise<void> {
     market = priceByTicker.market
     currency = priceByTicker.currency
   } else {
-    // displayName으로 검색
-    const priceByName = await prisma.priceCache.findFirst({
+    // displayName으로 검색 (다건 가능성 처리)
+    const priceByName = await prisma.priceCache.findMany({
       where: { displayName: { equals: tickerOrName, mode: 'insensitive' } },
+      take: 2,
     })
-    if (priceByName) {
-      ticker = priceByName.ticker
-      displayName = priceByName.displayName
-      market = priceByName.market
-      currency = priceByName.currency
+    if (priceByName.length === 1) {
+      ticker = priceByName[0].ticker
+      displayName = priceByName[0].displayName
+      market = priceByName[0].market
+      currency = priceByName[0].currency
+    } else if (priceByName.length > 1) {
+      const candidates = priceByName
+        .map((p) => `${p.displayName} (${p.ticker})`)
+        .join('\n  ')
+      await ctx.reply(
+        `여러 종목이 매칭됩니다:\n  ${candidates}\n\n티커를 입력해주세요.`
+      )
+      return
     } else {
       // Holding에서 검색 (PriceCache에 없는 종목)
       const holding = await prisma.holding.findFirst({
@@ -208,16 +222,17 @@ async function handleTrade(ctx: Context, type: 'BUY' | 'SELL'): Promise<void> {
     expiresAt: Date.now() + PENDING_TTL_MS,
   }
 
+  const tradeId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
   const keyboard = new InlineKeyboard()
-    .text('✅ 확인', `trade:confirm`)
-    .text('❌ 취소', `trade:cancel`)
+    .text('✅ 확인', `trade:confirm:${tradeId}`)
+    .text('❌ 취소', `trade:cancel:${tradeId}`)
 
   const sent = await ctx.reply(formatTradePreview(type, pending), {
     reply_markup: keyboard,
   })
 
-  // chatId:messageId 키로 저장
-  const key = `${sent.chat.id}:${sent.message_id}`
+  // tradeId 키로 저장 (chatId:messageId도 함께 매핑)
+  const key = `${sent.chat.id}:${sent.message_id}:${tradeId}`
   pendingTrades.set(key, pending)
 }
 
@@ -225,14 +240,16 @@ async function handleTradeCallback(ctx: Context): Promise<void> {
   const data = ctx.callbackQuery?.data
   if (!data?.startsWith('trade:')) return
 
-  const action = data.split(':')[1]
+  const parts = data.split(':')
+  const action = parts[1]
+  const tradeId = parts[2]
   const message = ctx.callbackQuery?.message
-  if (!message) {
+  if (!message || !tradeId) {
     await ctx.answerCallbackQuery({ text: '⚠️ 메시지를 찾을 수 없습니다.' })
     return
   }
 
-  const key = `${message.chat.id}:${message.message_id}`
+  const key = `${message.chat.id}:${message.message_id}:${tradeId}`
   const pending = pendingTrades.get(key)
 
   if (!pending) {
@@ -288,10 +305,10 @@ async function handleTradeCallback(ctx: Context): Promise<void> {
         `${holdingInfo}`
       )
     } catch (error) {
-      const message = error instanceof Error ? error.message : '거래 기록에 실패했습니다.'
-      await ctx.answerCallbackQuery({ text: `⚠️ ${message}` })
+      const errMsg = error instanceof Error ? error.message : '거래 기록에 실패했습니다.'
+      await ctx.answerCallbackQuery({ text: `⚠️ ${errMsg}` })
       await ctx.editMessageReplyMarkup({ reply_markup: undefined })
-      await ctx.editMessageText(`⚠️ 거래 실패: ${message}`)
+      await ctx.editMessageText(`⚠️ 거래 실패: ${errMsg}`)
     }
   }
 }

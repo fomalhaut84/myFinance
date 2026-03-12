@@ -48,6 +48,15 @@ export async function createTrade(input: CreateTradeInput): Promise<CreateTradeR
   const { accountId, ticker, displayName, market, type, shares, price, currency, fxRate, note, tradedAt } = input
   const totalKRW = calcTotalKRW(price, shares, currency, fxRate)
 
+  // 기존 거래와 market/currency 일관성 검증
+  const existingTrade = await prisma.trade.findFirst({
+    where: { accountId, ticker },
+    select: { market: true, currency: true },
+  })
+  if (existingTrade && (existingTrade.market !== market || existingTrade.currency !== currency)) {
+    throw new Error(`${ticker}은(는) 이미 ${existingTrade.market}/${existingTrade.currency}로 등록되어 있습니다.`)
+  }
+
   const result = await prisma.$transaction(async (tx) => {
     // SELL: 보유수량 확인
     if (type === 'SELL') {

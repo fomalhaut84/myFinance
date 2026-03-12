@@ -74,18 +74,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '계좌를 찾을 수 없습니다.' }, { status: 404 })
     }
 
-    // 기존 거래와 market/currency 일관성 검증
-    const existingTrade = await prisma.trade.findFirst({
-      where: { accountId, ticker },
-      select: { market: true, currency: true },
-    })
-    if (existingTrade && (existingTrade.market !== market || existingTrade.currency !== currency)) {
-      return NextResponse.json(
-        { error: `${ticker}은(는) 이미 ${existingTrade.market}/${existingTrade.currency}로 등록되어 있습니다.` },
-        { status: 400 }
-      )
-    }
-
     const result = await createTrade({
       accountId,
       ticker,
@@ -102,10 +90,11 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(result, { status: 201 })
   } catch (error) {
-    if (error instanceof Error && error.message.includes('초과합니다')) {
-      return NextResponse.json({ error: error.message }, { status: 400 })
-    }
-    if (error instanceof Error && error.message.startsWith('보유 수량 부족')) {
+    if (error instanceof Error && (
+      error.message.includes('초과합니다') ||
+      error.message.startsWith('보유 수량 부족') ||
+      error.message.includes('이미')
+    )) {
       return NextResponse.json({ error: error.message }, { status: 400 })
     }
     console.error('POST /api/trades error:', error)
