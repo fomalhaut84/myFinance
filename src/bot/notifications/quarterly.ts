@@ -10,10 +10,11 @@ import {
   calcCurrentValueKRW,
   DEFAULT_FX_RATE_USD_KRW,
 } from '@/lib/format'
-import { GIFT_SOURCES } from '@/lib/tax/gift-tax'
+import { calcGiftTaxSummary } from '@/lib/tax/gift-tax'
 import {
   accountEmoji,
   formatKRWFull,
+  formatKRWCompact,
   splitMessage,
 } from '@/bot/utils/formatter'
 
@@ -27,17 +28,15 @@ function getQuarterLabel(month: number): string {
 export async function sendQuarterlyReminder(chatIds: number[]): Promise<void> {
   const bot = getBot()
 
-  const [accounts, prices, giftDeposits] = await Promise.all([
+  const [accounts, prices] = await Promise.all([
     prisma.account.findMany({
-      include: { holdings: true },
+      include: {
+        holdings: true,
+        deposits: true,
+      },
       orderBy: { createdAt: 'asc' },
     }),
     prisma.priceCache.findMany(),
-    prisma.deposit.findMany({
-      where: { source: { in: GIFT_SOURCES } },
-      select: { amount: true, accountId: true },
-      orderBy: { depositedAt: 'asc' },
-    }),
   ])
 
   const priceMap = new Map(prices.map((p) => [p.ticker, p]))
@@ -52,9 +51,7 @@ export async function sendQuarterlyReminder(chatIds: number[]): Promise<void> {
   const lines = [`📋 ${year}년 ${quarter} 분기 점검 리마인더\n`]
 
   let totalValue = 0
-  const accountNameMap = new Map<string, string>()
   for (const account of accounts) {
-    accountNameMap.set(account.id, account.name)
     const value = account.holdings.reduce((sum, h) => {
       const price = priceMap.get(h.ticker)
       if (!price) return sum + calcCostKRW(h)
@@ -70,20 +67,22 @@ export async function sendQuarterlyReminder(chatIds: number[]): Promise<void> {
     lines.push(`💱 환율: $1 = ₩${fxData.price.toFixed(2)}`)
   }
 
-  // 증여 현황 요약
-  const giftByAccount = new Map<string, number>()
-  for (const d of giftDeposits) {
-    const name = accountNameMap.get(d.accountId) ?? '미상'
-    const prev = giftByAccount.get(name) ?? 0
-    giftByAccount.set(name, prev + d.amount)
+  // 증여 현황 요약 (10년 윈도우 + 성인/미성년 한도)
+  const giftLines: string[] = []
+  for (const account of accounts) {
+    const isMinor = account.ownerAge != null && account.ownerAge < 19
+    const summary = calcGiftTaxSummary(account.deposits, isMinor)
+    if (summary.totalGifted > 0) {
+      const pct = (summary.usageRate * 100).toFixed(1)
+      giftLines.push(
+        `  ${account.name}: ${formatKRWFull(summary.totalGifted)} (${pct}% / ${formatKRWCompact(summary.exemptLimit)})`
+      )
+    }
   }
 
-  if (giftByAccount.size > 0) {
-    lines.push('\n🎁 증여 누적:')
-    giftByAccount.forEach((amount, name) => {
-      const pct = (amount / 20_000_000) * 100
-      lines.push(`  ${name}: ${formatKRWFull(amount)} (${pct.toFixed(1)}% / 2,000만원)`)
-    })
+  if (giftLines.length > 0) {
+    lines.push('\n🎁 증여 누적 (10년 기준):')
+    lines.push(...giftLines)
   }
 
   lines.push('\n📌 점검 사항:')
