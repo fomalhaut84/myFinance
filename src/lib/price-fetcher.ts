@@ -42,7 +42,7 @@ export async function fetchQuote(ticker: string): Promise<QuoteResult> {
     quote = await yahooFinance.quote(ticker)
   } catch (error) {
     const message = error instanceof Error ? error.message.toLowerCase() : ''
-    if (message.includes('not found') || message.includes('no data') || message.includes('invalid')) {
+    if (message.includes('not found') || message.includes('no data') || message.includes('invalid symbol') || message.includes('delisted')) {
       throw new InvalidTickerError(ticker)
     }
     throw error
