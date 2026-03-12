@@ -4,6 +4,7 @@ import { createTrade } from '@/lib/trade-service'
 import { formatKRWFull, formatUSD } from '../utils/formatter'
 
 interface PendingTrade {
+  requestedByUserId: number
   accountId: string
   accountName: string
   ticker: string
@@ -111,14 +112,22 @@ async function handleTrade(ctx: Context, type: 'BUY' | 'SELL'): Promise<void> {
     return
   }
 
-  // 계좌 조회
-  const accounts = await prisma.account.findMany()
-  const account = accounts.find((a) => a.name === accountName)
-  if (!account) {
-    const names = accounts.map((a) => a.name).join(', ')
+  // 계좌 조회 (정확 일치, 다건 방어)
+  const matchedAccounts = await prisma.account.findMany({
+    where: { name: accountName },
+    take: 2,
+  })
+  if (matchedAccounts.length === 0) {
+    const allAccounts = await prisma.account.findMany({ select: { name: true } })
+    const names = allAccounts.map((a) => a.name).join(', ')
     await ctx.reply(`⚠️ 계좌를 찾을 수 없습니다: ${accountName}\n사용 가능: ${names}`)
     return
   }
+  if (matchedAccounts.length > 1) {
+    await ctx.reply(`⚠️ 동일 이름의 계좌가 여러 개 있습니다. 관리자에게 문의해주세요.`)
+    return
+  }
+  const account = matchedAccounts[0]
 
   // 종목 조회 (PriceCache 또는 Holding에서)
   const upperQuery = tickerOrName.toUpperCase()
@@ -209,6 +218,7 @@ async function handleTrade(ctx: Context, type: 'BUY' | 'SELL'): Promise<void> {
   cleanExpired()
 
   const pending: PendingTrade = {
+    requestedByUserId: ctx.from?.id ?? 0,
     accountId: account.id,
     accountName: account.name,
     ticker,
@@ -251,6 +261,12 @@ async function handleTradeCallback(ctx: Context): Promise<void> {
 
   const key = `${message.chat.id}:${message.message_id}:${tradeId}`
   const pending = pendingTrades.get(key)
+
+  // 요청자 검증
+  if (pending && ctx.from?.id !== pending.requestedByUserId) {
+    await ctx.answerCallbackQuery({ text: '⚠️ 본인만 확인/취소할 수 있습니다.' })
+    return
+  }
 
   if (!pending) {
     await ctx.answerCallbackQuery({ text: '⚠️ 만료된 거래입니다.' })
