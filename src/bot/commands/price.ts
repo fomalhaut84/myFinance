@@ -1,9 +1,7 @@
 import { Bot, Context } from 'grammy'
-import { Prisma } from '@prisma/client'
+import type { PriceCache } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { formatUSD, splitMessage } from '../utils/formatter'
-
-type PriceRow = Prisma.PriceCacheGetPayload<object>
 
 function formatChange(change: number, currency: string): string {
   const sign = change >= 0 ? '+' : ''
@@ -38,23 +36,24 @@ async function handlePrice(ctx: Context): Promise<void> {
     return
   }
 
-  // 2. 정확 일치 (displayName)
+  // 2. 정확 일치 (displayName, case-insensitive)
   const exactByName = await prisma.priceCache.findFirst({
-    where: { displayName: query },
+    where: { displayName: { equals: query, mode: 'insensitive' } },
   })
   if (exactByName) {
     await replyPrice(ctx, exactByName)
     return
   }
 
-  // 3. 부분 일치 (displayName contains 또는 ticker contains)
+  // 3. 부분 일치 (displayName contains 또는 ticker contains, case-insensitive)
   const partialMatches = await prisma.priceCache.findMany({
     where: {
       OR: [
-        { displayName: { contains: query } },
-        { ticker: { contains: upperQuery } },
+        { displayName: { contains: query, mode: 'insensitive' } },
+        { ticker: { contains: upperQuery, mode: 'insensitive' } },
       ],
     },
+    orderBy: { ticker: 'asc' },
     take: 11,
   })
 
@@ -75,24 +74,29 @@ async function handlePrice(ctx: Context): Promise<void> {
     return
   }
 
-  // 4. 미매칭 시 조회 가능 종목 안내
-  const allPrices = await prisma.priceCache.findMany({
-    where: { ticker: { not: 'USDKRW=X' } },
-    select: { displayName: true, ticker: true },
-    orderBy: { ticker: 'asc' },
-  })
-  const tickerList = allPrices
-    .slice(0, 20)
+  // 4. 미매칭 시 조회 가능 종목 안내 (상위 20개 + 총 개수)
+  const [topPrices, totalCount] = await prisma.$transaction([
+    prisma.priceCache.findMany({
+      where: { ticker: { not: 'USDKRW=X' } },
+      select: { displayName: true, ticker: true },
+      orderBy: { ticker: 'asc' },
+      take: 20,
+    }),
+    prisma.priceCache.count({
+      where: { ticker: { not: 'USDKRW=X' } },
+    }),
+  ])
+  const tickerList = topPrices
     .map((p) => `${p.displayName} (${p.ticker})`)
     .join('\n  ')
-  const suffix = allPrices.length > 20 ? `\n  외 ${allPrices.length - 20}개` : ''
+  const suffix = totalCount > 20 ? `\n  외 ${totalCount - 20}개` : ''
   const message = `종목을 찾을 수 없습니다: ${query}\n\n조회 가능한 종목:\n  ${tickerList}${suffix}`
   for (const chunk of splitMessage(message)) {
     await ctx.reply(chunk)
   }
 }
 
-async function replyPrice(ctx: Context, matchedPrice: PriceRow): Promise<void> {
+async function replyPrice(ctx: Context, matchedPrice: PriceCache): Promise<void> {
   const changeStr = matchedPrice.change != null ? formatChange(matchedPrice.change, matchedPrice.currency) : ''
   const changePctStr = matchedPrice.changePercent != null ? formatChangePercent(matchedPrice.changePercent) : ''
   const emoji = matchedPrice.changePercent != null ? (matchedPrice.changePercent >= 0 ? '🟢' : '🔴') : ''
