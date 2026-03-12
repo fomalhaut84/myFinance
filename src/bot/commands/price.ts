@@ -41,7 +41,11 @@ async function handlePrice(ctx: Context): Promise<void> {
     return
   }
 
-  // 2. PriceCache 미매칭 → 입력값을 ticker로 간주하여 yahoo-finance2 직접 조회
+  // 2. PriceCache 미매칭 → ticker 포맷 검증 후 yahoo-finance2 직접 조회
+  if (!/^[A-Z0-9.\-=^]+$/.test(upperQuery)) {
+    await ctx.reply(`⚠️ 종목을 찾을 수 없습니다: ${query}\n\n영문 티커를 입력해주세요.\n예: AAPL, 005930.KS, TSLA`)
+    return
+  }
   await fetchAndReply(ctx, upperQuery)
 }
 
@@ -119,6 +123,7 @@ async function fetchAndReplyWithFallback(ctx: Context, ticker: string): Promise<
     console.error(`[bot] 실시간 조회 실패, 캐시 fallback (${ticker}):`, error)
     const cached = await prisma.priceCache.findUnique({ where: { ticker } })
     if (cached) {
+      const updatedAt = cached.updatedAt.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })
       await replyQuote(ctx, {
         ticker: cached.ticker,
         displayName: cached.displayName,
@@ -127,7 +132,7 @@ async function fetchAndReplyWithFallback(ctx: Context, ticker: string): Promise<
         market: cached.market,
         change: cached.change,
         changePercent: cached.changePercent,
-      })
+      }, `⚠️ 실시간 조회 실패, 캐시 데이터 표시 (${updatedAt})`)
     } else {
       await ctx.reply(`⚠️ 주가 조회 중 일시적 오류가 발생했습니다. 잠시 후 다시 시도해주세요.`)
     }
@@ -157,17 +162,18 @@ function formatPrice(price: number, currency: string): string {
   return `${price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`
 }
 
-async function replyQuote(ctx: Context, quote: QuoteResult): Promise<void> {
+async function replyQuote(ctx: Context, quote: QuoteResult, suffix?: string): Promise<void> {
   const changeStr = quote.change != null ? formatChange(quote.change, quote.currency) : ''
   const changePctStr = quote.changePercent != null ? formatChangePercent(quote.changePercent) : ''
   const emoji = quote.changePercent != null ? (quote.changePercent >= 0 ? '🟢' : '🔴') : ''
 
   const priceStr = formatPrice(quote.price, quote.currency)
+  const suffixLine = suffix ? `\n\n${suffix}` : ''
 
   await ctx.reply(
     `📈 ${quote.displayName} (${quote.ticker})\n\n` +
       `현재가: ${priceStr} ${emoji}\n` +
-      `변동: ${changeStr}${changePctStr}`
+      `변동: ${changeStr}${changePctStr}${suffixLine}`
   )
 }
 

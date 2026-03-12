@@ -37,8 +37,17 @@ export interface QuoteResult {
  */
 export async function fetchQuote(ticker: string): Promise<QuoteResult> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const quote: any = await yahooFinance.quote(ticker)
-  const price = Number(quote.regularMarketPrice)
+  let quote: any
+  try {
+    quote = await yahooFinance.quote(ticker)
+  } catch (error) {
+    const message = error instanceof Error ? error.message.toLowerCase() : ''
+    if (message.includes('not found') || message.includes('no data') || message.includes('invalid')) {
+      throw new InvalidTickerError(ticker)
+    }
+    throw error
+  }
+  const price = Number(quote?.regularMarketPrice)
   if (!Number.isFinite(price)) {
     throw new InvalidTickerError(ticker)
   }
