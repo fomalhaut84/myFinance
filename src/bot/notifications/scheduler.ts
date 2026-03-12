@@ -17,7 +17,12 @@ function getAllowedChatIds(): number[] {
     .filter((n) => !isNaN(n))
 }
 
+let scheduled = false
+
 export function scheduleNotifications(): void {
+  if (scheduled) return
+  scheduled = true
+
   const chatIds = getAllowedChatIds()
   if (chatIds.length === 0) {
     console.log('[notification] TELEGRAM_ALLOWED_CHAT_IDS 미설정, 알림 스케줄 건너뜀')

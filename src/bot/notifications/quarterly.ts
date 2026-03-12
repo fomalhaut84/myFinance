@@ -32,7 +32,7 @@ export async function sendQuarterlyReminder(chatIds: number[]): Promise<void> {
     prisma.account.findMany({
       include: {
         holdings: true,
-        deposits: true,
+        deposits: { select: { amount: true, source: true, depositedAt: true } },
       },
       orderBy: { createdAt: 'asc' },
     }),

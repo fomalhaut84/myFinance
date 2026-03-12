@@ -30,9 +30,9 @@ export async function sendMonthlyReminder(chatIds: number[]): Promise<void> {
     lines.push(`${accountEmoji(account.name)} ${account.name}: ${holdingCount}개 종목 보유`)
   }
 
-  // 이번 달 입금/증여 현황
-  const startOfMonth = new Date(Date.UTC(year, month - 1, 1))
-  const endOfMonth = new Date(Date.UTC(year, month, 1))
+  // 이번 달 입금/증여 현황 (KST 월 경계 → UTC 변환)
+  const startOfMonth = new Date(Date.UTC(year, month - 1, 1, -9)) // KST 00:00 → UTC
+  const endOfMonth = new Date(Date.UTC(year, month, 1, -9))
 
   const monthDeposits = await prisma.deposit.findMany({
     where: {
