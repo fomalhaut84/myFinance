@@ -12,6 +12,47 @@ interface RefreshResult {
   updatedAt: Date
 }
 
+/** 단일 종목 실시간 시세 조회 결과 */
+export interface QuoteResult {
+  ticker: string
+  displayName: string
+  price: number
+  currency: string
+  market: string
+  change: number | null
+  changePercent: number | null
+}
+
+/**
+ * yahoo-finance2로 단일 종목 실시간 시세 조회.
+ * 보유 종목이면 PriceCache도 갱신한다.
+ */
+export async function fetchQuote(ticker: string): Promise<QuoteResult> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const quote: any = await yahooFinance.quote(ticker)
+  const price = Number(quote.regularMarketPrice)
+  if (!price || isNaN(price)) {
+    throw new Error(`유효한 시세를 가져올 수 없습니다: ${ticker}`)
+  }
+
+  const change = quote.regularMarketChange != null ? Number(quote.regularMarketChange) : null
+  const changePct = quote.regularMarketChangePercent != null ? Number(quote.regularMarketChangePercent) : null
+  const currency = quote.currency ?? 'USD'
+  const market = quote.exchange ?? 'unknown'
+  const displayName = quote.shortName ?? quote.longName ?? ticker
+
+  // 보유 종목(PriceCache에 존재)이면 캐시 갱신
+  const existing = await prisma.priceCache.findUnique({ where: { ticker } })
+  if (existing) {
+    await prisma.priceCache.update({
+      where: { ticker },
+      data: { price, change, changePercent: changePct },
+    })
+  }
+
+  return { ticker, displayName, price, currency, market, change, changePercent: changePct }
+}
+
 let isRefreshing = false
 
 /**
