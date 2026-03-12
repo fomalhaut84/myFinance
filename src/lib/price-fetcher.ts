@@ -58,11 +58,15 @@ export async function fetchQuote(ticker: string): Promise<QuoteResult> {
   const market = quote.exchange ?? 'unknown'
   const displayName = quote.shortName ?? quote.longName ?? ticker
 
-  // 보유 종목(PriceCache에 존재)이면 캐시 갱신 (TOCTOU 방지: updateMany)
-  await prisma.priceCache.updateMany({
-    where: { ticker },
-    data: { price, change, changePercent: changePct },
-  })
+  // 보유 종목(PriceCache에 존재)이면 캐시 갱신 (실패해도 조회 결과는 반환)
+  try {
+    await prisma.priceCache.updateMany({
+      where: { ticker },
+      data: { price, change, changePercent: changePct },
+    })
+  } catch (error) {
+    console.error(`[price-fetcher] 캐시 갱신 실패 (${ticker}):`, error)
+  }
 
   return { ticker, displayName, price, currency, market, change, changePercent: changePct }
 }
