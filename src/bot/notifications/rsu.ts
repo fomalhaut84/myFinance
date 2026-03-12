@@ -5,7 +5,7 @@
 
 import { prisma } from '@/lib/prisma'
 import { getBot } from '@/bot/index'
-import { formatKRWFull } from '@/bot/utils/formatter'
+import { formatKRWFull, splitMessage } from '@/bot/utils/formatter'
 
 function formatDate(date: Date): string {
   return date.toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul' })
@@ -52,7 +52,7 @@ export async function sendRSUReminders(chatIds: number[]): Promise<void> {
     where: { status: 'pending' },
     include: {
       stockOption: {
-        select: { displayName: true, strikePrice: true, ticker: true },
+        select: { displayName: true, strikePrice: true },
       },
     },
     orderBy: { vestingDate: 'asc' },
@@ -73,11 +73,13 @@ export async function sendRSUReminders(chatIds: number[]): Promise<void> {
 
   if (lines.length === 0) return
 
-  const message = `🔔 RSU/스톡옵션 리마인더\n\n${lines.join('\n\n')}`
+  const fullMessage = `🔔 RSU/스톡옵션 리마인더\n\n${lines.join('\n\n')}`
 
   for (const chatId of chatIds) {
     try {
-      await bot.api.sendMessage(chatId, message)
+      for (const chunk of splitMessage(fullMessage)) {
+        await bot.api.sendMessage(chatId, chunk)
+      }
     } catch (error) {
       console.error(`[notification] RSU 리마인더 발송 실패 (chatId: ${chatId}):`, error)
     }

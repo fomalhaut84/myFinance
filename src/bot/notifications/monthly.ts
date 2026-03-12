@@ -5,7 +5,8 @@
 
 import { prisma } from '@/lib/prisma'
 import { getBot } from '@/bot/index'
-import { accountEmoji, formatKRWFull } from '@/bot/utils/formatter'
+import { GIFT_SOURCES } from '@/lib/tax/gift-tax'
+import { accountEmoji, formatKRWFull, splitMessage } from '@/bot/utils/formatter'
 
 export async function sendMonthlyReminder(chatIds: number[]): Promise<void> {
   const bot = getBot()
@@ -29,7 +30,7 @@ export async function sendMonthlyReminder(chatIds: number[]): Promise<void> {
     lines.push(`${accountEmoji(account.name)} ${account.name}: ${holdingCount}개 종목 보유`)
   }
 
-  // 이번 달 증여 현황
+  // 이번 달 입금/증여 현황
   const startOfMonth = new Date(Date.UTC(year, month - 1, 1))
   const endOfMonth = new Date(Date.UTC(year, month, 1))
 
@@ -43,7 +44,8 @@ export async function sendMonthlyReminder(chatIds: number[]): Promise<void> {
   if (monthDeposits.length > 0) {
     lines.push('\n📊 이번 달 입금/증여:')
     for (const d of monthDeposits) {
-      const sourceLabel = d.source === 'gift' ? '증여' : '입금'
+      const isGift = GIFT_SOURCES.includes(d.source)
+      const sourceLabel = isGift ? '증여' : '입금'
       lines.push(`  ${d.account.name}: ${formatKRWFull(d.amount)} (${sourceLabel})`)
     }
   }
@@ -53,11 +55,13 @@ export async function sendMonthlyReminder(chatIds: number[]): Promise<void> {
   lines.push('  • 적립식 ETF 매수')
   lines.push('  • 증여 기록 확인')
 
-  const message = lines.join('\n')
+  const fullMessage = lines.join('\n')
 
   for (const chatId of chatIds) {
     try {
-      await bot.api.sendMessage(chatId, message)
+      for (const chunk of splitMessage(fullMessage)) {
+        await bot.api.sendMessage(chatId, chunk)
+      }
     } catch (error) {
       console.error(`[notification] 월 적립 리마인더 발송 실패 (chatId: ${chatId}):`, error)
     }

@@ -6,13 +6,15 @@
 import { prisma } from '@/lib/prisma'
 import { getBot } from '@/bot/index'
 import {
+  calcCostKRW,
   calcCurrentValueKRW,
   DEFAULT_FX_RATE_USD_KRW,
 } from '@/lib/format'
+import { GIFT_SOURCES } from '@/lib/tax/gift-tax'
 import {
   accountEmoji,
   formatKRWFull,
-  formatPercent,
+  splitMessage,
 } from '@/bot/utils/formatter'
 
 function getQuarterLabel(month: number): string {
@@ -25,12 +27,17 @@ function getQuarterLabel(month: number): string {
 export async function sendQuarterlyReminder(chatIds: number[]): Promise<void> {
   const bot = getBot()
 
-  const [accounts, prices] = await Promise.all([
+  const [accounts, prices, giftDeposits] = await Promise.all([
     prisma.account.findMany({
       include: { holdings: true },
       orderBy: { createdAt: 'asc' },
     }),
     prisma.priceCache.findMany(),
+    prisma.deposit.findMany({
+      where: { source: { in: GIFT_SOURCES } },
+      select: { amount: true, accountId: true },
+      orderBy: { depositedAt: 'asc' },
+    }),
   ])
 
   const priceMap = new Map(prices.map((p) => [p.ticker, p]))
@@ -45,10 +52,12 @@ export async function sendQuarterlyReminder(chatIds: number[]): Promise<void> {
   const lines = [`📋 ${year}년 ${quarter} 분기 점검 리마인더\n`]
 
   let totalValue = 0
+  const accountNameMap = new Map<string, string>()
   for (const account of accounts) {
+    accountNameMap.set(account.id, account.name)
     const value = account.holdings.reduce((sum, h) => {
       const price = priceMap.get(h.ticker)
-      if (!price) return sum
+      if (!price) return sum + calcCostKRW(h)
       return sum + calcCurrentValueKRW(h, price.price, currentFxRate)
     }, 0)
     totalValue += value
@@ -62,23 +71,18 @@ export async function sendQuarterlyReminder(chatIds: number[]): Promise<void> {
   }
 
   // 증여 현황 요약
-  const deposits = await prisma.deposit.findMany({
-    include: { account: { select: { name: true } } },
-  })
-
   const giftByAccount = new Map<string, number>()
-  for (const d of deposits) {
-    if (d.source === 'gift') {
-      const prev = giftByAccount.get(d.account.name) ?? 0
-      giftByAccount.set(d.account.name, prev + d.amount)
-    }
+  for (const d of giftDeposits) {
+    const name = accountNameMap.get(d.accountId) ?? '미상'
+    const prev = giftByAccount.get(name) ?? 0
+    giftByAccount.set(name, prev + d.amount)
   }
 
   if (giftByAccount.size > 0) {
     lines.push('\n🎁 증여 누적:')
     giftByAccount.forEach((amount, name) => {
       const pct = (amount / 20_000_000) * 100
-      lines.push(`  ${name}: ${formatKRWFull(amount)} (${formatPercent(pct - 100 > 0 ? pct : pct).replace('+', '')} / 2,000만원)`)
+      lines.push(`  ${name}: ${formatKRWFull(amount)} (${pct.toFixed(1)}% / 2,000만원)`)
     })
   }
 
@@ -88,11 +92,13 @@ export async function sendQuarterlyReminder(chatIds: number[]): Promise<void> {
   lines.push('  • 증여 한도 확인')
   lines.push('  • 세금 이벤트 점검')
 
-  const message = lines.join('\n')
+  const fullMessage = lines.join('\n')
 
   for (const chatId of chatIds) {
     try {
-      await bot.api.sendMessage(chatId, message)
+      for (const chunk of splitMessage(fullMessage)) {
+        await bot.api.sendMessage(chatId, chunk)
+      }
     } catch (error) {
       console.error(`[notification] 분기 점검 발송 실패 (chatId: ${chatId}):`, error)
     }
