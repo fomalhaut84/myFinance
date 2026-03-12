@@ -37,11 +37,21 @@ async function handlePrice(ctx: Context): Promise<void> {
   }
 
   // 2. 정확 일치 (displayName, case-insensitive)
-  const exactByName = await prisma.priceCache.findFirst({
+  const exactByName = await prisma.priceCache.findMany({
     where: { displayName: { equals: query, mode: 'insensitive' } },
+    take: 2,
   })
-  if (exactByName) {
-    await replyPrice(ctx, exactByName)
+  if (exactByName.length === 1) {
+    await replyPrice(ctx, exactByName[0])
+    return
+  }
+  if (exactByName.length > 1) {
+    const candidates = exactByName
+      .map((p) => `${p.displayName} (${p.ticker})`)
+      .join('\n  ')
+    await ctx.reply(
+      `여러 종목이 매칭됩니다:\n  ${candidates}\n\n티커를 입력해주세요.`
+    )
     return
   }
 
