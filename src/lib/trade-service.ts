@@ -46,6 +46,12 @@ export interface CreateTradeResult {
 
 export async function createTrade(input: CreateTradeInput): Promise<CreateTradeResult> {
   const { accountId, ticker, displayName, market, type, shares, price, currency, fxRate, note, tradedAt } = input
+
+  // USD 거래 시 환율 유효성 검증
+  if (currency === 'USD' && (typeof fxRate !== 'number' || !Number.isFinite(fxRate) || fxRate <= 0)) {
+    throw new Error('USD 거래에는 유효한 환율이 필요합니다.')
+  }
+
   const totalKRW = calcTotalKRW(price, shares, currency, fxRate)
 
   // 기존 거래와 market/currency 일관성 검증

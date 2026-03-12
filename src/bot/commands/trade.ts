@@ -212,6 +212,10 @@ async function handleTrade(ctx: Context, type: 'BUY' | 'SELL'): Promise<void> {
       return
     }
     fxRate = fxData.price
+    if (!Number.isFinite(fxRate) || fxRate <= 0) {
+      await ctx.reply('⚠️ 환율 데이터가 비정상입니다. 주가 갱신을 확인해주세요.')
+      return
+    }
   }
 
   // 확인 키보드 표시
