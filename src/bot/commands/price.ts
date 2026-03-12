@@ -1,6 +1,6 @@
 import { Bot, Context } from 'grammy'
 import { prisma } from '@/lib/prisma'
-import { fetchQuote, type QuoteResult } from '@/lib/price-fetcher'
+import { fetchQuote, InvalidTickerError, type QuoteResult } from '@/lib/price-fetcher'
 import { formatUSD, splitMessage } from '../utils/formatter'
 
 function formatChange(change: number, currency: string): string {
@@ -117,8 +117,7 @@ async function fetchAndReply(ctx: Context, ticker: string): Promise<void> {
     const quote = await fetchQuote(ticker)
     await replyQuote(ctx, quote)
   } catch (error) {
-    const message = error instanceof Error ? error.message : ''
-    if (message.includes('유효한 시세')) {
+    if (error instanceof InvalidTickerError) {
       await ctx.reply(`⚠️ 종목을 찾을 수 없습니다: ${ticker}\n\n티커를 정확히 입력해주세요.\n예: AAPL, 005930.KS, TSLA`)
     } else {
       console.error(`[bot] 실시간 주가 조회 실패 (${ticker}):`, error)
