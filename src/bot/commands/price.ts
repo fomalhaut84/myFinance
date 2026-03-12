@@ -49,9 +49,10 @@ async function handlePrice(ctx: Context): Promise<void> {
     const candidates = exactByName
       .map((p) => `${p.displayName} (${p.ticker})`)
       .join('\n  ')
-    await ctx.reply(
-      `여러 종목이 매칭됩니다:\n  ${candidates}\n\n티커를 입력해주세요.`
-    )
+    const message = `여러 종목이 매칭됩니다:\n  ${candidates}\n\n티커를 입력해주세요.`
+    for (const chunk of splitMessage(message)) {
+      await ctx.reply(chunk)
+    }
     return
   }
 
@@ -78,9 +79,10 @@ async function handlePrice(ctx: Context): Promise<void> {
       .map((p) => `${p.displayName} (${p.ticker})`)
       .join('\n  ')
     const suffix = partialMatches.length > 10 ? '\n  외 다수' : ''
-    await ctx.reply(
-      `여러 종목이 매칭됩니다:\n  ${candidates}${suffix}\n\n정확한 종목명 또는 티커를 입력해주세요.`
-    )
+    const message = `여러 종목이 매칭됩니다:\n  ${candidates}${suffix}\n\n정확한 종목명 또는 티커를 입력해주세요.`
+    for (const chunk of splitMessage(message)) {
+      await ctx.reply(chunk)
+    }
     return
   }
 
@@ -159,7 +161,7 @@ export function registerPriceCommands(bot: Bot): void {
     }
   })
 
-  bot.hears(/^환율$/, async (ctx) => {
+  bot.hears(/^환율\s*$/, async (ctx) => {
     try {
       await handleFxRate(ctx)
     } catch (error) {
