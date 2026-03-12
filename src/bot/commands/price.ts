@@ -1,6 +1,6 @@
 import { Bot, Context } from 'grammy'
 import { prisma } from '@/lib/prisma'
-import { fetchQuote, QuoteResult } from '@/lib/price-fetcher'
+import { fetchQuote, type QuoteResult } from '@/lib/price-fetcher'
 import { formatUSD, splitMessage } from '../utils/formatter'
 
 function formatChange(change: number, currency: string): string {
@@ -116,26 +116,35 @@ async function fetchAndReply(ctx: Context, ticker: string): Promise<void> {
   try {
     const quote = await fetchQuote(ticker)
     await replyQuote(ctx, quote)
-  } catch {
-    await ctx.reply(`⚠️ 종목을 찾을 수 없습니다: ${ticker}\n\n티커를 정확히 입력해주세요.\n예: AAPL, 005930.KS, TSLA`)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : ''
+    if (message.includes('유효한 시세')) {
+      await ctx.reply(`⚠️ 종목을 찾을 수 없습니다: ${ticker}\n\n티커를 정확히 입력해주세요.\n예: AAPL, 005930.KS, TSLA`)
+    } else {
+      console.error(`[bot] 실시간 주가 조회 실패 (${ticker}):`, error)
+      await ctx.reply(`⚠️ 주가 조회 중 일시적 오류가 발생했습니다. 잠시 후 다시 시도해주세요.`)
+    }
   }
 }
 
-function replyQuote(ctx: Context, quote: QuoteResult): Promise<void> {
+function formatPrice(price: number, currency: string): string {
+  if (currency === 'USD') return formatUSD(price)
+  if (currency === 'KRW') return `₩${Math.round(price).toLocaleString('ko-KR')}`
+  return `${price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`
+}
+
+async function replyQuote(ctx: Context, quote: QuoteResult): Promise<void> {
   const changeStr = quote.change != null ? formatChange(quote.change, quote.currency) : ''
   const changePctStr = quote.changePercent != null ? formatChangePercent(quote.changePercent) : ''
   const emoji = quote.changePercent != null ? (quote.changePercent >= 0 ? '🟢' : '🔴') : ''
 
-  const priceStr =
-    quote.currency === 'USD'
-      ? formatUSD(quote.price)
-      : `₩${Math.round(quote.price).toLocaleString('ko-KR')}`
+  const priceStr = formatPrice(quote.price, quote.currency)
 
-  return ctx.reply(
+  await ctx.reply(
     `📈 ${quote.displayName} (${quote.ticker})\n\n` +
       `현재가: ${priceStr} ${emoji}\n` +
       `변동: ${changeStr}${changePctStr}`
-  ).then(() => {})
+  )
 }
 
 async function handleFxRate(ctx: Context): Promise<void> {
