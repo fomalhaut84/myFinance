@@ -22,6 +22,11 @@ let scheduled = false
 export function scheduleNotifications(): void {
   if (scheduled) return
 
+  if (!process.env.TELEGRAM_BOT_TOKEN) {
+    console.log('[notification] TELEGRAM_BOT_TOKEN 미설정, 알림 스케줄 건너뜀')
+    return
+  }
+
   const chatIds = getAllowedChatIds()
   if (chatIds.length === 0) {
     console.log('[notification] TELEGRAM_ALLOWED_CHAT_IDS 미설정, 알림 스케줄 건너뜀')

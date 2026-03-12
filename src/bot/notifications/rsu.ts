@@ -27,9 +27,21 @@ export async function sendRSUReminders(chatIds: number[]): Promise<void> {
   const bot = getBot()
   const lines: string[] = []
 
-  // RSU 베스팅 확인
+  // D-7 ~ D-1 범위 (KST 기준 오늘 + 1일 ~ 오늘 + 7일)
+  const now = new Date()
+  const kstNow = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Seoul' }))
+  kstNow.setHours(0, 0, 0, 0)
+  const rangeStart = new Date(kstNow)
+  rangeStart.setDate(rangeStart.getDate() + 1)
+  const rangeEnd = new Date(kstNow)
+  rangeEnd.setDate(rangeEnd.getDate() + 8) // D-7 포함 (exclusive upper bound)
+
+  // RSU 베스팅 확인 (D-1 ~ D-7 범위만 조회)
   const pendingRSU = await prisma.rSUSchedule.findMany({
-    where: { status: 'pending' },
+    where: {
+      status: 'pending',
+      vestingDate: { gte: rangeStart, lt: rangeEnd },
+    },
     include: { account: { select: { name: true } } },
     orderBy: { vestingDate: 'asc' },
   })
@@ -47,9 +59,12 @@ export async function sendRSUReminders(chatIds: number[]): Promise<void> {
     }
   }
 
-  // 스톡옵션 행사 가능일 확인
+  // 스톡옵션 행사 가능일 확인 (D-1 ~ D-7 범위만 조회)
   const pendingOptions = await prisma.stockOptionVesting.findMany({
-    where: { status: 'pending' },
+    where: {
+      status: 'pending',
+      vestingDate: { gte: rangeStart, lt: rangeEnd },
+    },
     include: {
       stockOption: {
         select: { displayName: true, strikePrice: true },
