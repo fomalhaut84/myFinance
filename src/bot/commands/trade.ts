@@ -260,12 +260,11 @@ async function handleTradeCallback(ctx: Context): Promise<void> {
   }
 
   const key = `${message.chat.id}:${message.message_id}:${tradeId}`
-  const pending = pendingTrades.get(key)
 
-  // 요청자 검증
-  if (pending && ctx.from?.id !== pending.requestedByUserId) {
-    await ctx.answerCallbackQuery({ text: '⚠️ 본인만 확인/취소할 수 있습니다.' })
-    return
+  // 원자적으로 Map에서 꺼내기 (중복 클릭 방지)
+  const pending = pendingTrades.get(key)
+  if (pending) {
+    pendingTrades.delete(key)
   }
 
   if (!pending) {
@@ -274,15 +273,21 @@ async function handleTradeCallback(ctx: Context): Promise<void> {
     return
   }
 
+  // 요청자 검증
+  if (ctx.from?.id !== pending.requestedByUserId) {
+    // 원래 사용자가 아니면 다시 Map에 넣어두기
+    pendingTrades.set(key, pending)
+    await ctx.answerCallbackQuery({ text: '⚠️ 본인만 확인/취소할 수 있습니다.' })
+    return
+  }
+
   if (pending.expiresAt < Date.now()) {
-    pendingTrades.delete(key)
     await ctx.answerCallbackQuery({ text: '⚠️ 거래가 만료되었습니다.' })
     await ctx.editMessageReplyMarkup({ reply_markup: undefined })
     return
   }
 
   if (action === 'cancel') {
-    pendingTrades.delete(key)
     await ctx.answerCallbackQuery({ text: '취소되었습니다.' })
     await ctx.editMessageReplyMarkup({ reply_markup: undefined })
     await ctx.editMessageText('❌ 거래가 취소되었습니다.')
@@ -290,7 +295,6 @@ async function handleTradeCallback(ctx: Context): Promise<void> {
   }
 
   if (action === 'confirm') {
-    pendingTrades.delete(key)
 
     try {
       const result = await createTrade({
@@ -321,10 +325,18 @@ async function handleTradeCallback(ctx: Context): Promise<void> {
         `${holdingInfo}`
       )
     } catch (error) {
-      const errMsg = error instanceof Error ? error.message : '거래 기록에 실패했습니다.'
-      await ctx.answerCallbackQuery({ text: `⚠️ ${errMsg}` })
+      const rawMsg = error instanceof Error ? error.message : ''
+      // 비즈니스 에러만 사용자에게 노출
+      const isBusinessError = rawMsg.includes('초과합니다') ||
+        rawMsg.includes('이미') ||
+        rawMsg.includes('보유 수량 부족')
+      const userMsg = isBusinessError ? rawMsg : '거래 기록에 실패했습니다.'
+      if (!isBusinessError) {
+        console.error('[bot] 거래 기록 실패:', error)
+      }
+      await ctx.answerCallbackQuery({ text: `⚠️ ${userMsg}` })
       await ctx.editMessageReplyMarkup({ reply_markup: undefined })
-      await ctx.editMessageText(`⚠️ 거래 실패: ${errMsg}`)
+      await ctx.editMessageText(`⚠️ 거래 실패: ${userMsg}`)
     }
   }
 }
