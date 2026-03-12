@@ -28,16 +28,25 @@ function getQuarterLabel(month: number): string {
 export async function sendQuarterlyReminder(chatIds: number[]): Promise<void> {
   const bot = getBot()
 
-  const [accounts, prices] = await Promise.all([
-    prisma.account.findMany({
-      include: {
-        holdings: true,
-        deposits: { select: { amount: true, source: true, depositedAt: true } },
-      },
-      orderBy: { createdAt: 'asc' },
-    }),
-    prisma.priceCache.findMany(),
-  ])
+  const accounts = await prisma.account.findMany({
+    include: {
+      holdings: true,
+      deposits: { select: { amount: true, source: true, depositedAt: true } },
+    },
+    orderBy: { createdAt: 'asc' },
+  })
+
+  // 보유 종목 ticker + 환율만 조회
+  const tickers = new Set<string>(['USDKRW=X'])
+  for (const account of accounts) {
+    for (const h of account.holdings) {
+      tickers.add(h.ticker)
+    }
+  }
+
+  const prices = await prisma.priceCache.findMany({
+    where: { ticker: { in: Array.from(tickers) } },
+  })
 
   const priceMap = new Map(prices.map((p) => [p.ticker, p]))
   const fxData = priceMap.get('USDKRW=X')
