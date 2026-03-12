@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { recalcHolding, calcTotalKRW, validateTradeInput } from '@/lib/trade-utils'
+import { validateTradeInput } from '@/lib/trade-utils'
+import { createTrade } from '@/lib/trade-service'
 
 export const dynamic = 'force-dynamic'
 
@@ -66,7 +67,6 @@ export async function POST(request: NextRequest) {
 
     const { accountId, displayName, market, type, shares, price, currency, fxRate, note, tradedAt } = body
     const ticker = (body.ticker as string).toUpperCase().trim()
-    const totalKRW = calcTotalKRW(price, shares, currency, fxRate)
 
     // 계좌 존재 확인
     const account = await prisma.account.findUnique({ where: { id: accountId } })
@@ -86,107 +86,19 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Transaction: Trade 생성 + Holding 업데이트 (SELL 검증도 tx 내부에서)
-    const result = await prisma.$transaction(async (tx) => {
-      // SELL: 보유수량 확인 (트랜잭션 내부에서 동시성 안전)
-      if (type === 'SELL') {
-        const holding = await tx.holding.findUnique({
-          where: { accountId_ticker: { accountId, ticker } },
-        })
-        if (!holding || holding.shares < shares) {
-          const current = holding?.shares ?? 0
-          throw new Error(`보유 수량(${current}주)을 초과합니다.`)
-        }
-      }
-
-      // 시드 Holding 기준선 보존: 기존 Holding이 있지만 Trade가 없는 경우
-      // 기존 보유분을 대표하는 기준선 BUY 거래를 자동 생성
-      const existingTradeCount = await tx.trade.count({ where: { accountId, ticker } })
-      if (existingTradeCount === 0) {
-        const existingHolding = await tx.holding.findUnique({
-          where: { accountId_ticker: { accountId, ticker } },
-        })
-        if (existingHolding && existingHolding.shares > 0) {
-          const baselinePrice = existingHolding.currency === 'USD'
-            ? (existingHolding.avgPriceFx ?? existingHolding.avgPrice)
-            : existingHolding.avgPrice
-          const baselineTotalKRW = Math.round(existingHolding.avgPrice * existingHolding.shares)
-          await tx.trade.create({
-            data: {
-              accountId,
-              ticker: existingHolding.ticker,
-              displayName: existingHolding.displayName,
-              market: existingHolding.market,
-              type: 'BUY',
-              shares: existingHolding.shares,
-              price: baselinePrice,
-              currency: existingHolding.currency,
-              fxRate: existingHolding.avgFxRate,
-              totalKRW: baselineTotalKRW,
-              note: '시드 데이터 기준선',
-              tradedAt: new Date('2024-01-01'),
-            },
-          })
-        }
-      }
-
-      const trade = await tx.trade.create({
-        data: {
-          accountId,
-          ticker,
-          displayName,
-          market,
-          type,
-          shares,
-          price,
-          currency,
-          fxRate: currency === 'USD' ? fxRate : null,
-          totalKRW,
-          note: note || null,
-          tradedAt: new Date(tradedAt),
-        },
-      })
-
-      // 해당 계좌+종목의 전체 거래로 Holding 재계산
-      const allTrades = await tx.trade.findMany({
-        where: { accountId, ticker },
-        orderBy: [{ tradedAt: 'asc' }, { createdAt: 'asc' }],
-        select: { type: true, shares: true, price: true, currency: true, fxRate: true },
-      })
-
-      const holdingState = recalcHolding(allTrades)
-
-      let holding = null
-      if (holdingState.shares > 0) {
-        holding = await tx.holding.upsert({
-          where: { accountId_ticker: { accountId, ticker } },
-          update: {
-            shares: holdingState.shares,
-            avgPrice: holdingState.avgPrice,
-            avgPriceFx: holdingState.avgPriceFx,
-            avgFxRate: holdingState.avgFxRate,
-          },
-          create: {
-            accountId,
-            ticker,
-            displayName,
-            market,
-            shares: holdingState.shares,
-            avgPrice: holdingState.avgPrice,
-            currency,
-            avgPriceFx: holdingState.avgPriceFx,
-            avgFxRate: holdingState.avgFxRate,
-          },
-        })
-      } else {
-        // 전량 매도 → Holding 삭제
-        await tx.holding.deleteMany({
-          where: { accountId, ticker },
-        })
-      }
-
-      return { trade, holding }
-    }, { isolationLevel: 'Serializable' })
+    const result = await createTrade({
+      accountId,
+      ticker,
+      displayName,
+      market,
+      type,
+      shares,
+      price,
+      currency,
+      fxRate,
+      note,
+      tradedAt: new Date(tradedAt),
+    })
 
     return NextResponse.json(result, { status: 201 })
   } catch (error) {
