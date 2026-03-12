@@ -5,9 +5,9 @@ import { formatUSD, splitMessage } from '../utils/formatter'
 
 function formatChange(change: number, currency: string): string {
   const sign = change >= 0 ? '+' : ''
-  return currency === 'USD'
-    ? `${sign}${formatUSD(change)}`
-    : `${sign}₩${Math.round(change).toLocaleString('ko-KR')}`
+  if (currency === 'USD') return `${sign}${formatUSD(change)}`
+  if (currency === 'KRW') return `${sign}₩${Math.round(change).toLocaleString('ko-KR')}`
+  return `${sign}${change.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`
 }
 
 function formatChangePercent(changePercent: number): string {
@@ -36,8 +36,8 @@ async function handlePrice(ctx: Context): Promise<void> {
   }
 
   if (resolvedTicker) {
-    // 보유 종목 ticker 확정 → 실시간 조회
-    await fetchAndReply(ctx, resolvedTicker)
+    // 보유 종목 ticker 확정 → 실시간 조회 (실패 시 캐시 fallback)
+    await fetchAndReplyWithFallback(ctx, resolvedTicker)
     return
   }
 
@@ -109,8 +109,33 @@ async function resolveTickerFromCache(
 }
 
 /**
- * yahoo-finance2 실시간 조회 후 응답.
- * 보유 종목이면 PriceCache도 갱신된다 (fetchQuote 내부).
+ * 보유 종목 실시간 조회. 실패 시 PriceCache fallback.
+ */
+async function fetchAndReplyWithFallback(ctx: Context, ticker: string): Promise<void> {
+  try {
+    const quote = await fetchQuote(ticker)
+    await replyQuote(ctx, quote)
+  } catch (error) {
+    console.error(`[bot] 실시간 조회 실패, 캐시 fallback (${ticker}):`, error)
+    const cached = await prisma.priceCache.findUnique({ where: { ticker } })
+    if (cached) {
+      await replyQuote(ctx, {
+        ticker: cached.ticker,
+        displayName: cached.displayName,
+        price: cached.price,
+        currency: cached.currency,
+        market: cached.market,
+        change: cached.change,
+        changePercent: cached.changePercent,
+      })
+    } else {
+      await ctx.reply(`⚠️ 주가 조회 중 일시적 오류가 발생했습니다. 잠시 후 다시 시도해주세요.`)
+    }
+  }
+}
+
+/**
+ * 비보유 종목 실시간 조회. fallback 없음.
  */
 async function fetchAndReply(ctx: Context, ticker: string): Promise<void> {
   try {
