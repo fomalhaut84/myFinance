@@ -5,7 +5,7 @@
 
 import { prisma } from '@/lib/prisma'
 import { getBot } from '@/bot/index'
-import { GIFT_SOURCES } from '@/lib/tax/gift-tax'
+import { isGiftSource } from '@/lib/tax/gift-tax'
 import { accountEmoji, formatKRWFull, splitMessage } from '@/bot/utils/formatter'
 
 export async function sendMonthlyReminder(chatIds: number[]): Promise<void> {
@@ -44,7 +44,7 @@ export async function sendMonthlyReminder(chatIds: number[]): Promise<void> {
   if (monthDeposits.length > 0) {
     lines.push('\n📊 이번 달 입금/증여:')
     for (const d of monthDeposits) {
-      const isGift = GIFT_SOURCES.includes(d.source)
+      const isGift = isGiftSource(d.source)
       const sourceLabel = isGift ? '증여' : '입금'
       lines.push(`  ${d.account.name}: ${formatKRWFull(d.amount)} (${sourceLabel})`)
     }
