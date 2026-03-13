@@ -11,7 +11,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
   try {
     const existing = await prisma.category.findUnique({
       where: { id: params.id },
-      include: { _count: { select: { transactions: true } } },
+      include: { _count: { select: { transactions: true, budgets: true } } },
     })
     if (!existing) {
       return NextResponse.json({ error: '카테고리를 찾을 수 없습니다.' }, { status: 404 })
@@ -29,11 +29,11 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
     const { name, type, icon, keywords, sortOrder } = body as Record<string, unknown>
 
-    // type 변경 시 거래가 있으면 차단
+    // type 변경 시 거래/예산이 있으면 차단
     if (type !== undefined && type !== existing.type) {
-      if (existing._count.transactions > 0) {
+      if (existing._count.transactions > 0 || existing._count.budgets > 0) {
         return NextResponse.json(
-          { error: '거래가 연결된 카테고리의 유형은 변경할 수 없습니다.' },
+          { error: '거래 또는 예산이 연결된 카테고리의 유형은 변경할 수 없습니다.' },
           { status: 400 }
         )
       }
@@ -82,7 +82,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     }
 
     const cleanedKeywords = Array.isArray(keywords)
-      ? (keywords as string[]).map((k) => k.trim()).filter(Boolean)
+      ? Array.from(new Set((keywords as string[]).map((k) => k.trim()).filter(Boolean)))
       : undefined
 
     const updated = await prisma.category.update({

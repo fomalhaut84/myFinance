@@ -92,9 +92,9 @@ export default function CategoryTable({ categories, activeTab, onTabChange }: Ca
                       <td className="px-3 py-3 border-b border-border">
                         <div className="flex flex-wrap gap-1">
                           {c.keywords.length > 0 ? (
-                            c.keywords.map((k) => (
+                            c.keywords.map((k, idx) => (
                               <span
-                                key={k}
+                                key={`${k}-${idx}`}
                                 className="px-1.5 py-0.5 rounded bg-surface-dim text-[11px] text-dim"
                               >
                                 {k}

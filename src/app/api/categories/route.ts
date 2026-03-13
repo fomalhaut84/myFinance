@@ -54,7 +54,7 @@ export async function POST(request: NextRequest) {
     const trimmedName = (name as string).trim()
 
     const cleanedKeywords = Array.isArray(keywords)
-      ? (keywords as string[]).map((k) => k.trim()).filter(Boolean)
+      ? Array.from(new Set((keywords as string[]).map((k) => k.trim()).filter(Boolean)))
       : []
 
     // slug 충돌 시 최대 3회 재시도
@@ -62,7 +62,7 @@ export async function POST(request: NextRequest) {
     for (let attempt = 0; attempt < MAX_SLUG_RETRIES; attempt++) {
       let slug = generateSlug(trimmedName)
       if (!slug) slug = 'cat'
-      if (attempt > 0) slug = `${slug}-${Date.now()}`
+      if (attempt > 0) slug = `${slug}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
 
       try {
         const category = await prisma.category.create({
