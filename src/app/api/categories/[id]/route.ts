@@ -1,0 +1,132 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { prisma } from '@/lib/prisma'
+import { CATEGORY_TYPES } from '@/lib/category-utils'
+
+interface RouteParams {
+  params: { id: string }
+}
+
+export async function PUT(request: NextRequest, { params }: RouteParams) {
+  try {
+    const existing = await prisma.category.findUnique({
+      where: { id: params.id },
+      include: { _count: { select: { transactions: true } } },
+    })
+    if (!existing) {
+      return NextResponse.json({ error: '카테고리를 찾을 수 없습니다.' }, { status: 404 })
+    }
+
+    let body: unknown
+    try {
+      body = await request.json()
+    } catch {
+      return NextResponse.json({ error: '잘못된 요청 형식입니다.' }, { status: 400 })
+    }
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      return NextResponse.json({ error: '잘못된 요청 형식입니다.' }, { status: 400 })
+    }
+
+    const { name, type, icon, keywords, sortOrder } = body as Record<string, unknown>
+
+    // type 변경 시 거래가 있으면 차단
+    if (type !== undefined && type !== existing.type) {
+      if (existing._count.transactions > 0) {
+        return NextResponse.json(
+          { error: '거래가 연결된 카테고리의 유형은 변경할 수 없습니다.' },
+          { status: 400 }
+        )
+      }
+      if (typeof type !== 'string' || !(CATEGORY_TYPES as readonly string[]).includes(type)) {
+        return NextResponse.json({ error: '유효한 유형을 선택해주세요.' }, { status: 400 })
+      }
+    }
+
+    // name 변경 시 중복 확인
+    if (name !== undefined) {
+      if (typeof name !== 'string' || !name.trim()) {
+        return NextResponse.json({ error: '카테고리 이름을 입력해주세요.' }, { status: 400 })
+      }
+      if (name.trim().length > 50) {
+        return NextResponse.json({ error: '이름은 50자 이내로 입력해주세요.' }, { status: 400 })
+      }
+      const trimmedName = name.trim()
+      if (trimmedName !== existing.name) {
+        const duplicate = await prisma.category.findUnique({ where: { name: trimmedName } })
+        if (duplicate) {
+          return NextResponse.json({ error: '이미 존재하는 카테고리 이름입니다.' }, { status: 409 })
+        }
+      }
+    }
+
+    if (icon !== undefined && icon !== null && typeof icon !== 'string') {
+      return NextResponse.json({ error: '아이콘은 문자열이어야 합니다.' }, { status: 400 })
+    }
+
+    if (keywords !== undefined && keywords !== null) {
+      if (!Array.isArray(keywords)) {
+        return NextResponse.json({ error: '키워드는 배열이어야 합니다.' }, { status: 400 })
+      }
+      if (keywords.some((k: unknown) => typeof k !== 'string')) {
+        return NextResponse.json({ error: '키워드는 문자열 배열이어야 합니다.' }, { status: 400 })
+      }
+    }
+
+    if (sortOrder !== undefined && sortOrder !== null) {
+      if (typeof sortOrder !== 'number' || !Number.isFinite(sortOrder)) {
+        return NextResponse.json({ error: '정렬 순서는 숫자여야 합니다.' }, { status: 400 })
+      }
+    }
+
+    const cleanedKeywords = Array.isArray(keywords)
+      ? (keywords as string[]).map((k) => k.trim()).filter(Boolean)
+      : undefined
+
+    const updated = await prisma.category.update({
+      where: { id: params.id },
+      data: {
+        name: typeof name === 'string' ? name.trim() : undefined,
+        type: typeof type === 'string' ? type : undefined,
+        icon: icon !== undefined ? (typeof icon === 'string' ? (icon.trim() || null) : null) : undefined,
+        keywords: cleanedKeywords,
+        sortOrder: typeof sortOrder === 'number' ? Math.round(sortOrder) : undefined,
+      },
+    })
+
+    return NextResponse.json(updated)
+  } catch (error) {
+    console.error('PUT /api/categories/[id] error:', error)
+    return NextResponse.json({ error: '카테고리 수정에 실패했습니다.' }, { status: 500 })
+  }
+}
+
+export async function DELETE(_request: NextRequest, { params }: RouteParams) {
+  try {
+    const existing = await prisma.category.findUnique({
+      where: { id: params.id },
+      include: { _count: { select: { transactions: true, budgets: true } } },
+    })
+    if (!existing) {
+      return NextResponse.json({ error: '카테고리를 찾을 수 없습니다.' }, { status: 404 })
+    }
+
+    if (existing._count.transactions > 0) {
+      return NextResponse.json(
+        { error: `${existing._count.transactions}건의 거래가 연결되어 삭제할 수 없습니다.` },
+        { status: 400 }
+      )
+    }
+
+    if (existing._count.budgets > 0) {
+      return NextResponse.json(
+        { error: `${existing._count.budgets}건의 예산이 연결되어 삭제할 수 없습니다.` },
+        { status: 400 }
+      )
+    }
+
+    await prisma.category.delete({ where: { id: params.id } })
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error('DELETE /api/categories/[id] error:', error)
+    return NextResponse.json({ error: '카테고리 삭제에 실패했습니다.' }, { status: 500 })
+  }
+}
