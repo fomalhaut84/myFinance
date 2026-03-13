@@ -94,7 +94,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
           throw new Error('HAS_LINKED_DATA')
         }
         return tx.category.update({ where: { id: params.id }, data: updateData })
-      })
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable })
       return NextResponse.json(updated)
     }
 
