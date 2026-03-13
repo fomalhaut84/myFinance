@@ -52,7 +52,7 @@ export default function CategoryForm({ onClose }: CategoryFormProps) {
           type,
           icon: icon.trim() || null,
           keywords,
-          sortOrder: parseInt(sortOrder) || 0,
+          sortOrder: sortOrder.trim() === '' ? 0 : parseInt(sortOrder),
         }),
       })
 

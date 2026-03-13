@@ -133,6 +133,9 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
     await prisma.category.delete({ where: { id: params.id } })
     return NextResponse.json({ success: true })
   } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2003') {
+      return NextResponse.json({ error: '연결된 데이터가 있어 삭제할 수 없습니다.' }, { status: 400 })
+    }
     console.error('DELETE /api/categories/[id] error:', error)
     return NextResponse.json({ error: '카테고리 삭제에 실패했습니다.' }, { status: 500 })
   }
