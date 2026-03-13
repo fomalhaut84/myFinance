@@ -11,7 +11,6 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
   try {
     const existing = await prisma.category.findUnique({
       where: { id: params.id },
-      include: { _count: { select: { transactions: true, budgets: true } } },
     })
     if (!existing) {
       return NextResponse.json({ error: '카테고리를 찾을 수 없습니다.' }, { status: 404 })
@@ -28,34 +27,22 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     }
 
     const { name, type, icon, keywords, sortOrder } = body as Record<string, unknown>
+    const isTypeChange = type !== undefined && type !== existing.type
 
-    // type 변경 시 거래/예산이 있으면 차단
-    if (type !== undefined && type !== existing.type) {
-      if (existing._count.transactions > 0 || existing._count.budgets > 0) {
-        return NextResponse.json(
-          { error: '거래 또는 예산이 연결된 카테고리의 유형은 변경할 수 없습니다.' },
-          { status: 400 }
-        )
-      }
+    // type 검증 (트랜잭션 전에)
+    if (isTypeChange) {
       if (typeof type !== 'string' || !(CATEGORY_TYPES as readonly string[]).includes(type)) {
         return NextResponse.json({ error: '유효한 유형을 선택해주세요.' }, { status: 400 })
       }
     }
 
-    // name 변경 시 중복 확인
+    // name 검증
     if (name !== undefined) {
       if (typeof name !== 'string' || !name.trim()) {
         return NextResponse.json({ error: '카테고리 이름을 입력해주세요.' }, { status: 400 })
       }
       if (name.trim().length > 50) {
         return NextResponse.json({ error: '이름은 50자 이내로 입력해주세요.' }, { status: 400 })
-      }
-      const trimmedName = name.trim()
-      if (trimmedName !== existing.name) {
-        const duplicate = await prisma.category.findUnique({ where: { name: trimmedName } })
-        if (duplicate) {
-          return NextResponse.json({ error: '이미 존재하는 카테고리 이름입니다.' }, { status: 409 })
-        }
       }
     }
 
@@ -85,19 +72,50 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       ? Array.from(new Set((keywords as string[]).map((k) => k.trim()).filter(Boolean)))
       : undefined
 
+    const updateData = {
+      name: typeof name === 'string' ? name.trim() : undefined,
+      type: typeof type === 'string' ? type : undefined,
+      icon: icon !== undefined ? (typeof icon === 'string' ? (icon.trim() || null) : null) : undefined,
+      keywords: cleanedKeywords,
+      sortOrder: typeof sortOrder === 'number' ? Math.round(sortOrder) : undefined,
+    }
+
+    // type 변경 시 트랜잭션으로 체크+업데이트 원자 실행
+    if (isTypeChange) {
+      const updated = await prisma.$transaction(async (tx) => {
+        const fresh = await tx.category.findUnique({
+          where: { id: params.id },
+          include: { _count: { select: { transactions: true, budgets: true } } },
+        })
+        if (!fresh) {
+          throw new Error('NOT_FOUND')
+        }
+        if (fresh._count.transactions > 0 || fresh._count.budgets > 0) {
+          throw new Error('HAS_LINKED_DATA')
+        }
+        return tx.category.update({ where: { id: params.id }, data: updateData })
+      })
+      return NextResponse.json(updated)
+    }
+
     const updated = await prisma.category.update({
       where: { id: params.id },
-      data: {
-        name: typeof name === 'string' ? name.trim() : undefined,
-        type: typeof type === 'string' ? type : undefined,
-        icon: icon !== undefined ? (typeof icon === 'string' ? (icon.trim() || null) : null) : undefined,
-        keywords: cleanedKeywords,
-        sortOrder: typeof sortOrder === 'number' ? Math.round(sortOrder) : undefined,
-      },
+      data: updateData,
     })
 
     return NextResponse.json(updated)
   } catch (error) {
+    if (error instanceof Error) {
+      if (error.message === 'NOT_FOUND') {
+        return NextResponse.json({ error: '카테고리를 찾을 수 없습니다.' }, { status: 404 })
+      }
+      if (error.message === 'HAS_LINKED_DATA') {
+        return NextResponse.json(
+          { error: '거래 또는 예산이 연결된 카테고리의 유형은 변경할 수 없습니다.' },
+          { status: 400 }
+        )
+      }
+    }
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
       return NextResponse.json({ error: '이미 존재하는 카테고리 이름입니다.' }, { status: 409 })
     }
