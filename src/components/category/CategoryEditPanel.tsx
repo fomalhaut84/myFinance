@@ -21,7 +21,7 @@ export default function CategoryEditPanel({ category, onClose }: CategoryEditPan
   const [keywordsText, setKeywordsText] = useState(category.keywords.join(', '))
   const [sortOrder, setSortOrder] = useState(String(category.sortOrder))
 
-  const hasTransactions = category._count.transactions > 0
+  const hasLinkedData = category._count.transactions > 0 || category._count.budgets > 0
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
@@ -114,8 +114,8 @@ export default function CategoryEditPanel({ category, onClose }: CategoryEditPan
           <div>
             <label className={labelClasses}>
               유형
-              {hasTransactions && (
-                <span className="ml-2 text-[11px] font-normal text-dim">(거래가 있어 변경 불가)</span>
+              {hasLinkedData && (
+                <span className="ml-2 text-[11px] font-normal text-dim">(거래 또는 예산이 있어 변경 불가)</span>
               )}
             </label>
             <div className="flex gap-2">
@@ -123,13 +123,13 @@ export default function CategoryEditPanel({ category, onClose }: CategoryEditPan
                 <button
                   key={t}
                   type="button"
-                  onClick={() => !hasTransactions && setType(t)}
-                  disabled={hasTransactions}
+                  onClick={() => !hasLinkedData && setType(t)}
+                  disabled={hasLinkedData}
                   className={`px-3 py-1.5 rounded-lg text-[12px] font-semibold border transition-all ${
                     type === t
                       ? 'bg-surface text-bright border-border-hover'
                       : 'border-border text-sub hover:bg-surface-dim'
-                  } ${hasTransactions ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  } ${hasLinkedData ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
                   {CATEGORY_TYPE_LABELS[t]}
                 </button>
