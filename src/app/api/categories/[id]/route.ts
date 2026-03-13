@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { CATEGORY_TYPES } from '@/lib/category-utils'
 
@@ -72,8 +73,11 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     }
 
     if (sortOrder !== undefined && sortOrder !== null) {
-      if (typeof sortOrder !== 'number' || !Number.isFinite(sortOrder)) {
-        return NextResponse.json({ error: '정렬 순서는 숫자여야 합니다.' }, { status: 400 })
+      if (typeof sortOrder !== 'number' || !Number.isInteger(sortOrder)) {
+        return NextResponse.json({ error: '정렬 순서는 정수여야 합니다.' }, { status: 400 })
+      }
+      if (sortOrder < 0 || sortOrder > 999) {
+        return NextResponse.json({ error: '정렬 순서는 0~999 범위여야 합니다.' }, { status: 400 })
       }
     }
 
@@ -94,6 +98,9 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json(updated)
   } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      return NextResponse.json({ error: '이미 존재하는 카테고리 이름입니다.' }, { status: 409 })
+    }
     console.error('PUT /api/categories/[id] error:', error)
     return NextResponse.json({ error: '카테고리 수정에 실패했습니다.' }, { status: 500 })
   }

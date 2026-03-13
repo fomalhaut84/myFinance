@@ -74,9 +74,12 @@ export default function CategoryDeleteModal({ category, onClose }: CategoryDelet
               </div>
             </div>
 
-            {category._count.transactions > 0 ? (
+            {category._count.transactions > 0 || category._count.budgets > 0 ? (
               <p className="text-[12px] text-red-400/80 leading-relaxed">
-                거래가 연결되어 있어 삭제할 수 없습니다. 먼저 거래를 다른 카테고리로 이동해주세요.
+                {category._count.transactions > 0 && `${category._count.transactions}건의 거래`}
+                {category._count.transactions > 0 && category._count.budgets > 0 && ', '}
+                {category._count.budgets > 0 && `${category._count.budgets}건의 예산`}
+                이 연결되어 삭제할 수 없습니다.
               </p>
             ) : (
               <p className="text-[12px] text-red-400/80 leading-relaxed">
@@ -95,7 +98,7 @@ export default function CategoryDeleteModal({ category, onClose }: CategoryDelet
             </button>
             <button
               onClick={handleDelete}
-              disabled={isDeleting || category._count.transactions > 0}
+              disabled={isDeleting || category._count.transactions > 0 || category._count.budgets > 0}
               className="flex-1 py-2.5 rounded-lg text-[13px] font-bold bg-red-500/15 text-red-400 border border-red-500/25 hover:bg-red-500/25 disabled:opacity-40 transition-all"
             >
               {isDeleting ? '삭제 중...' : '삭제'}

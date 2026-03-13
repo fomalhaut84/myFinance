@@ -8,7 +8,7 @@ export default async function CategoriesPage() {
   const categories = await prisma.category.findMany({
     orderBy: [{ type: 'asc' }, { sortOrder: 'asc' }, { name: 'asc' }],
     include: {
-      _count: { select: { transactions: true } },
+      _count: { select: { transactions: true, budgets: true } },
     },
   })
 

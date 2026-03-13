@@ -41,8 +41,10 @@ export function validateCategoryInput(body: Record<string, unknown>): CategoryVa
   }
 
   if (body.sortOrder !== undefined && body.sortOrder !== null) {
-    if (typeof body.sortOrder !== 'number' || !Number.isFinite(body.sortOrder)) {
-      errors.push({ field: 'sortOrder', message: '정렬 순서는 숫자여야 합니다.' })
+    if (typeof body.sortOrder !== 'number' || !Number.isInteger(body.sortOrder)) {
+      errors.push({ field: 'sortOrder', message: '정렬 순서는 정수여야 합니다.' })
+    } else if (body.sortOrder < 0 || body.sortOrder > 999) {
+      errors.push({ field: 'sortOrder', message: '정렬 순서는 0~999 범위여야 합니다.' })
     }
   }
 

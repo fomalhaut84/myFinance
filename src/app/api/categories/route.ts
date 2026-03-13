@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { validateCategoryInput, generateSlug } from '@/lib/category-utils'
 
@@ -18,7 +19,7 @@ export async function GET(request: NextRequest) {
       where,
       orderBy: [{ type: 'asc' }, { sortOrder: 'asc' }, { name: 'asc' }],
       include: {
-        _count: { select: { transactions: true } },
+        _count: { select: { transactions: true, budgets: true } },
       },
     })
 
@@ -86,6 +87,9 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(category, { status: 201 })
   } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      return NextResponse.json({ error: '이미 존재하는 카테고리 이름입니다.' }, { status: 409 })
+    }
     console.error('POST /api/categories error:', error)
     return NextResponse.json(
       { error: '카테고리 생성에 실패했습니다.' },

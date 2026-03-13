@@ -12,7 +12,7 @@ export interface CategoryRow {
   icon: string | null
   keywords: string[]
   sortOrder: number
-  _count: { transactions: number }
+  _count: { transactions: number; budgets: number }
 }
 
 interface CategoryTableProps {
