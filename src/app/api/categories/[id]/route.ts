@@ -117,8 +117,13 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         )
       }
     }
-    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-      return NextResponse.json({ error: '이미 존재하는 카테고리 이름입니다.' }, { status: 409 })
+    if (error instanceof Prisma.PrismaClientKnownRequestError) {
+      if (error.code === 'P2002') {
+        return NextResponse.json({ error: '이미 존재하는 카테고리 이름입니다.' }, { status: 409 })
+      }
+      if (error.code === 'P2025') {
+        return NextResponse.json({ error: '카테고리를 찾을 수 없습니다.' }, { status: 404 })
+      }
     }
     console.error('PUT /api/categories/[id] error:', error)
     return NextResponse.json({ error: '카테고리 수정에 실패했습니다.' }, { status: 500 })
@@ -152,8 +157,13 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
     await prisma.category.delete({ where: { id: params.id } })
     return NextResponse.json({ success: true })
   } catch (error) {
-    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2003') {
-      return NextResponse.json({ error: '연결된 데이터가 있어 삭제할 수 없습니다.' }, { status: 400 })
+    if (error instanceof Prisma.PrismaClientKnownRequestError) {
+      if (error.code === 'P2003') {
+        return NextResponse.json({ error: '연결된 데이터가 있어 삭제할 수 없습니다.' }, { status: 400 })
+      }
+      if (error.code === 'P2025') {
+        return NextResponse.json({ error: '카테고리를 찾을 수 없습니다.' }, { status: 404 })
+      }
     }
     console.error('DELETE /api/categories/[id] error:', error)
     return NextResponse.json({ error: '카테고리 삭제에 실패했습니다.' }, { status: 500 })
