@@ -72,9 +72,9 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       ? Array.from(new Set((keywords as string[]).map((k) => k.trim()).filter(Boolean)))
       : undefined
 
-    const updateData = {
+    // type은 변경 시에만 트랜잭션 경로에서 설정 (stale 덮어쓰기 방지)
+    const baseUpdateData = {
       name: typeof name === 'string' ? name.trim() : undefined,
-      type: typeof type === 'string' ? type : undefined,
       icon: icon !== undefined ? (typeof icon === 'string' ? (icon.trim() || null) : null) : undefined,
       keywords: cleanedKeywords,
       sortOrder: typeof sortOrder === 'number' ? Math.round(sortOrder) : undefined,
@@ -82,6 +82,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
     // type 변경 시 트랜잭션으로 체크+업데이트 원자 실행
     if (isTypeChange) {
+      const updateDataWithType = { ...baseUpdateData, type: type as string }
       const updated = await prisma.$transaction(async (tx) => {
         const fresh = await tx.category.findUnique({
           where: { id: params.id },
@@ -93,14 +94,14 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         if (fresh._count.transactions > 0 || fresh._count.budgets > 0) {
           throw new Error('HAS_LINKED_DATA')
         }
-        return tx.category.update({ where: { id: params.id }, data: updateData })
+        return tx.category.update({ where: { id: params.id }, data: updateDataWithType })
       }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable })
       return NextResponse.json(updated)
     }
 
     const updated = await prisma.category.update({
       where: { id: params.id },
-      data: updateData,
+      data: baseUpdateData,
     })
 
     return NextResponse.json(updated)
