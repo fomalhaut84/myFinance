@@ -1,0 +1,78 @@
+import { prisma } from '@/lib/prisma'
+import { formatDate, DEFAULT_FX_RATE_USD_KRW } from '@/lib/format'
+import { toolResult, toolError, formatMoney } from '../utils'
+
+/**
+ * get_prices: 보유 종목 또는 지정 종목의 현재 시세
+ */
+export async function getPrices(args: { tickers?: string[] }) {
+  try {
+    const whereClause =
+      args.tickers && args.tickers.length > 0
+        ? { ticker: { in: args.tickers } }
+        : {}
+
+    const prices = await prisma.priceCache.findMany({
+      where: whereClause,
+      orderBy: { ticker: 'asc' },
+    })
+
+    if (prices.length === 0) {
+      return toolResult('캐시된 시세 데이터가 없습니다.')
+    }
+
+    const lines = [`## 시세 (${prices.length}종목)`]
+
+    for (const p of prices) {
+      if (p.ticker === 'USDKRW=X') continue // 환율은 별도 도구
+
+      const priceStr = formatMoney(p.price, p.currency)
+      const changeStr =
+        p.changePercent != null
+          ? ` (${p.changePercent >= 0 ? '+' : ''}${p.changePercent.toFixed(2)}%)`
+          : ''
+
+      lines.push(
+        `- ${p.displayName} (${p.ticker}): ${priceStr}${changeStr} [${p.market}]`
+      )
+    }
+
+    const latestUpdate = prices.reduce(
+      (latest, p) => (p.updatedAt > latest ? p.updatedAt : latest),
+      prices[0].updatedAt
+    )
+    lines.push(`\n갱신: ${formatDate(latestUpdate)}`)
+
+    return toolResult(lines.join('\n'))
+  } catch (error) {
+    return toolError(error)
+  }
+}
+
+/**
+ * get_fx_rate: 현재 원/달러 환율
+ */
+export async function getFxRate() {
+  try {
+    const fx = await prisma.priceCache.findUnique({
+      where: { ticker: 'USDKRW=X' },
+    })
+
+    if (!fx) {
+      return toolResult(
+        `환율 데이터 없음. 기본값 사용: ${DEFAULT_FX_RATE_USD_KRW.toLocaleString('ko-KR')}원/달러`
+      )
+    }
+
+    const changeStr =
+      fx.changePercent != null
+        ? ` (${fx.changePercent >= 0 ? '+' : ''}${fx.changePercent.toFixed(2)}%)`
+        : ''
+
+    return toolResult(
+      `USD/KRW: ${fx.price.toLocaleString('ko-KR')}원${changeStr}\n갱신: ${formatDate(fx.updatedAt)}`
+    )
+  } catch (error) {
+    return toolError(error)
+  }
+}
