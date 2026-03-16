@@ -85,14 +85,26 @@ export async function askAdvisor(
     dailyLimit = 30,
   } = options
 
+  // 입력 검증
+  if (!Number.isFinite(timeout) || timeout <= 0) {
+    throw new AdvisorError('timeout은 양수여야 합니다.')
+  }
+  if (!Number.isFinite(maxBudgetUsd) || maxBudgetUsd <= 0) {
+    throw new AdvisorError('maxBudgetUsd는 양수여야 합니다.')
+  }
+  if (!Number.isInteger(dailyLimit) || dailyLimit <= 0) {
+    throw new AdvisorError('dailyLimit은 양의 정수여야 합니다.')
+  }
+
   // Rate limit 체크
   const rateLimit = checkAndIncrement(dailyLimit)
   if (!rateLimit.allowed) {
     throw new AdvisorRateLimitError(rateLimit.remaining, rateLimit.resetDate)
   }
 
-  const projectRoot = process.cwd()
-  const mcpConfigPath = path.join(projectRoot, 'src/lib/ai/mcp-config.json')
+  const projectRoot = process.env.MYFINANCE_ROOT ?? process.cwd()
+  const mcpConfigPath = process.env.MCP_CONFIG_PATH
+    ?? path.join(projectRoot, 'src/lib/ai/mcp-config.json')
 
   const args = [
     '-p', prompt,
@@ -104,7 +116,7 @@ export async function askAdvisor(
     '--allowedTools', ALLOWED_TOOLS,
     '--tools', '',
     '--max-budget-usd', String(maxBudgetUsd),
-    '--permission-mode', 'bypassPermissions',
+    '--permission-mode', 'auto',
     '--no-session-persistence',
   ]
 
