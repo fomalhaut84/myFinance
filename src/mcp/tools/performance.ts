@@ -29,9 +29,17 @@ export async function getPerformance(args: {
 
     const results: string[] = []
 
-    for (const account of accounts) {
-      const twr = await calculateTWR(account.id, period)
-      const contribution = await calculateContribution(account.id, period)
+    const accountResults = await Promise.all(
+      accounts.map(async (account) => {
+        const [twr, contribution] = await Promise.all([
+          calculateTWR(account.id, period),
+          calculateContribution(account.id, period),
+        ])
+        return { account, twr, contribution }
+      })
+    )
+
+    for (const { account, twr, contribution } of accountResults) {
 
       const lines = [`## ${account.name} (${period})`]
 

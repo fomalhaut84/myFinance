@@ -30,7 +30,10 @@ export async function getGiftTaxStatus(args: {
       select: { amount: true, source: true, depositedAt: true },
     })
 
-    const isMinor = (account.ownerAge ?? 0) < 19
+    if (account.ownerAge == null) {
+      return toolError('계좌에 나이 정보가 설정되어 있지 않습니다.')
+    }
+    const isMinor = account.ownerAge < 19
     const summary = calcGiftTaxSummary(deposits, isMinor)
 
     const lines = [

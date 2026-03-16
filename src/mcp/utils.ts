@@ -10,16 +10,19 @@ export async function resolveAccountId(
 ): Promise<string | null> {
   if (name === '전체') return null
 
-  const account = await prisma.account.findFirst({
+  const accounts = await prisma.account.findMany({
     where: { name },
     select: { id: true },
   })
 
-  if (!account) {
+  if (accounts.length === 0) {
     throw new Error(`계좌를 찾을 수 없습니다: ${name}`)
   }
+  if (accounts.length > 1) {
+    throw new Error(`동일 이름 계좌가 ${accounts.length}개 존재합니다: ${name}`)
+  }
 
-  return account.id
+  return accounts[0].id
 }
 
 /**

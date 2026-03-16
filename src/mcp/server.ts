@@ -90,7 +90,7 @@ server.tool(
     account_name: z.enum(['세진', '소담', '다솜']).describe('계좌명'),
     years: z.number().int().positive().max(100).optional().describe('시뮬레이션 기간 (기본 10년, 최대 100년)'),
     monthly: z.number().nonnegative().optional().describe('월 적립금 (원, 기본 0)'),
-    return_pct: z.number().optional().describe('연 수익률 % (미지정 시 5/8/10% 3시나리오)'),
+    return_pct: z.number().gt(-100).max(200).optional().describe('연 수익률 % (-100 초과 ~ 200 이하, 미지정 시 5/8/10% 3시나리오)'),
   },
   async (args) => simulateGrowth(args)
 )
