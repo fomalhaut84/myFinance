@@ -5,6 +5,7 @@ import { syncKrxStocks } from '@/lib/krx-stocks'
 const MIN_SYNC_INTERVAL_MS = 600_000
 
 let lastSyncAt = 0
+let isSyncing = false
 
 /**
  * POST /api/prices/krx-sync
@@ -20,9 +21,21 @@ export async function POST() {
       )
     }
 
-    const result = await syncKrxStocks()
-    lastSyncAt = Date.now()
-    return NextResponse.json(result)
+    if (isSyncing) {
+      return NextResponse.json(
+        { error: 'KRX 동기화가 이미 진행 중입니다.' },
+        { status: 429 }
+      )
+    }
+
+    isSyncing = true
+    try {
+      const result = await syncKrxStocks()
+      lastSyncAt = Date.now()
+      return NextResponse.json(result)
+    } finally {
+      isSyncing = false
+    }
   } catch (error) {
     console.error('[api] KRX 종목 동기화 실패:', error)
     return NextResponse.json({ error: 'KRX 종목 동기화에 실패했습니다.' }, { status: 500 })
