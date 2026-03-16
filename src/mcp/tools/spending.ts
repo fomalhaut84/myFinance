@@ -10,12 +10,9 @@ export async function getSpendingSummary(args: {
 }) {
   try {
     const { year, month } = args
-    const monthStr = String(month).padStart(2, '0')
-    const nextMonth = month === 12 ? 1 : month + 1
-    const nextYear = month === 12 ? year + 1 : year
-    const nextMonthStr = String(nextMonth).padStart(2, '0')
-    const startDate = new Date(`${year}-${monthStr}-01T00:00:00+09:00`)
-    const endDate = new Date(`${nextYear}-${nextMonthStr}-01T00:00:00+09:00`)
+    // UTC 기준 — 기존 API (src/app/api/transactions/route.ts)와 동일
+    const startDate = new Date(Date.UTC(year, month - 1, 1))
+    const endDate = new Date(Date.UTC(year, month, 1))
 
     // DB에서 카테고리별 집계
     const grouped = await prisma.transaction.groupBy({
