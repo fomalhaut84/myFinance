@@ -171,14 +171,6 @@ async function handleExpenseCallback(ctx: Context): Promise<void> {
 
   const key = `${message.chat.id}:${message.message_id}:${txId}`
 
-  if (action === 'cancel') {
-    pendingTransactions.delete(key)
-    await ctx.answerCallbackQuery({ text: '취소되었습니다.' })
-    await ctx.editMessageReplyMarkup({ reply_markup: undefined })
-    await ctx.editMessageText('❌ 기록이 취소되었습니다.')
-    return
-  }
-
   const pending = pendingTransactions.get(key)
   if (!pending) {
     await ctx.answerCallbackQuery({ text: '⚠️ 만료된 요청입니다.' })
@@ -186,7 +178,7 @@ async function handleExpenseCallback(ctx: Context): Promise<void> {
     return
   }
 
-  // 요청자 검증
+  // 요청자 검증 (모든 액션 공통)
   if (ctx.from?.id !== pending.requestedByUserId) {
     await ctx.answerCallbackQuery({ text: '⚠️ 본인만 확인/취소할 수 있습니다.' })
     return
@@ -196,6 +188,14 @@ async function handleExpenseCallback(ctx: Context): Promise<void> {
     pendingTransactions.delete(key)
     await ctx.answerCallbackQuery({ text: '⚠️ 요청이 만료되었습니다.' })
     await ctx.editMessageReplyMarkup({ reply_markup: undefined })
+    return
+  }
+
+  if (action === 'cancel') {
+    pendingTransactions.delete(key)
+    await ctx.answerCallbackQuery({ text: '취소되었습니다.' })
+    await ctx.editMessageReplyMarkup({ reply_markup: undefined })
+    await ctx.editMessageText('❌ 기록이 취소되었습니다.')
     return
   }
 
@@ -300,7 +300,13 @@ async function createTransaction(
 
 export function registerExpenseCommands(bot: Bot): void {
   // "수입 ..." 명시적 prefix
-  bot.hears(/^수입\s+.+$/, async (ctx) => {
+  bot.hears(/^수입(?:\s+.*)?$/, async (ctx) => {
+    const text = ctx.message?.text ?? ''
+    const args = text.replace(/^수입\s*/, '').trim()
+    if (!args) {
+      await ctx.reply('사용법: 수입 [내용] [금액]\n예: 수입 월급 5000000')
+      return
+    }
     try {
       await handleExpenseInput(ctx)
     } catch (error) {
