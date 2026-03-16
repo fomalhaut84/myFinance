@@ -58,10 +58,21 @@ export async function getPortfolio(args: { account_name: string }) {
 
       for (const h of holdings) {
         const price = priceMap.get(h.ticker)
-        const currentPrice = price?.price ?? 0
         const currentFxRate = h.currency === 'USD' ? fxRate : 1
-
         const cost = calcCostKRW(h)
+
+        if (!price) {
+          // 가격 캐시 없음 → 매입금 기준 표시
+          totalCost += cost
+          totalValue += cost
+          lines.push(
+            `- ${h.displayName} (${h.ticker}): ${h.shares}주` +
+              ` | 매입금 ${formatMoney(cost, 'KRW')} (시세 미수신)`
+          )
+          continue
+        }
+
+        const currentPrice = price.price
         const value = calcCurrentValueKRW(h, currentPrice, currentFxRate)
         const pl = calcProfitLoss(h, currentPrice, currentFxRate)
 

@@ -97,7 +97,11 @@ export async function getDividends(args: {
     for (const d of dividends) {
       const accountLabel = accountId == null ? `[${d.account.name}] ` : ''
       totalNet += d.amountKRW
-      totalTax += d.taxAmount ?? 0
+      const taxRaw = d.taxAmount ?? 0
+      totalTax +=
+        d.currency === 'USD' && d.fxRate
+          ? Math.round(taxRaw * d.fxRate)
+          : Math.round(taxRaw)
 
       lines.push(
         `- ${formatDate(d.payDate)} ${accountLabel}${d.displayName} (${d.ticker})` +

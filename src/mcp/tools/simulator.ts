@@ -3,7 +3,7 @@ import {
   simulateAccount,
   DEFAULT_SCENARIOS,
 } from '@/lib/simulator/compound-engine'
-import { calcCurrentValueKRW, DEFAULT_FX_RATE_USD_KRW } from '@/lib/format'
+import { calcCostKRW, calcCurrentValueKRW, DEFAULT_FX_RATE_USD_KRW } from '@/lib/format'
 import { isGiftSource } from '@/lib/tax/gift-tax'
 import {
   resolveAccountId,
@@ -50,7 +50,12 @@ export async function simulateGrowth(args: {
 
     let initialValue = 0
     for (const h of holdings) {
-      const currentPrice = priceMap.get(h.ticker) ?? 0
+      const currentPrice = priceMap.get(h.ticker)
+      if (currentPrice == null) {
+        // 시세 없으면 매입금 기준
+        initialValue += calcCostKRW(h)
+        continue
+      }
       const currentFxRate = h.currency === 'USD' ? fxRate : 1
       initialValue += calcCurrentValueKRW(h, currentPrice, currentFxRate)
     }

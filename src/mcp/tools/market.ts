@@ -7,13 +7,23 @@ import { toolResult, toolError, formatMoney } from '../utils'
  */
 export async function getPrices(args: { tickers?: string[] }) {
   try {
-    const whereClause =
-      args.tickers && args.tickers.length > 0
-        ? { ticker: { in: args.tickers } }
-        : {}
+    let tickers: string[]
+    if (args.tickers && args.tickers.length > 0) {
+      tickers = args.tickers
+    } else {
+      // 보유 종목 ticker만 조회
+      const holdings = await prisma.holding.findMany({
+        select: { ticker: true },
+        distinct: ['ticker'],
+      })
+      tickers = holdings.map((h) => h.ticker)
+      if (tickers.length === 0) {
+        return toolResult('보유 종목이 없습니다.')
+      }
+    }
 
     const prices = await prisma.priceCache.findMany({
-      where: whereClause,
+      where: { ticker: { in: tickers } },
       orderBy: { ticker: 'asc' },
     })
 

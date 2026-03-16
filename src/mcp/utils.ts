@@ -1,6 +1,5 @@
 import { prisma } from '@/lib/prisma'
-
-export type AccountName = '세진' | '소담' | '다솜'
+import { formatKRW, formatUSD } from '@/lib/format'
 
 /**
  * 계좌명 → Account ID 변환
@@ -57,11 +56,8 @@ export function toolError(error: unknown) {
 }
 
 /**
- * 금액을 읽기 좋은 형태로 포맷
+ * 금액을 읽기 좋은 형태로 포맷 (lib/format.ts 위임)
  */
 export function formatMoney(amount: number, currency: string): string {
-  if (currency === 'USD') {
-    return `$${amount.toFixed(2)}`
-  }
-  return `${Math.round(amount).toLocaleString('ko-KR')}원`
+  return currency === 'USD' ? formatUSD(amount) : formatKRW(amount)
 }

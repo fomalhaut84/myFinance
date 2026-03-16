@@ -14,8 +14,12 @@ export async function getSpendingSummary(args: {
       return toolError('month는 1~12 사이여야 합니다.')
     }
 
-    const startDate = new Date(year, month - 1, 1)
-    const endDate = new Date(year, month, 1)
+    const monthStr = String(month).padStart(2, '0')
+    const nextMonth = month === 12 ? 1 : month + 1
+    const nextYear = month === 12 ? year + 1 : year
+    const nextMonthStr = String(nextMonth).padStart(2, '0')
+    const startDate = new Date(`${year}-${monthStr}-01T00:00:00+09:00`)
+    const endDate = new Date(`${nextYear}-${nextMonthStr}-01T00:00:00+09:00`)
 
     const transactions = await prisma.transaction.findMany({
       where: {
