@@ -31,10 +31,15 @@ export async function getPrices(args: { tickers?: string[] }) {
       return toolResult('캐시된 시세 데이터가 없습니다.')
     }
 
-    const lines = [`## 시세 (${prices.length}종목)`]
+    const stockPrices = prices.filter((p) => p.ticker !== 'USDKRW=X')
 
-    for (const p of prices) {
-      if (p.ticker === 'USDKRW=X') continue // 환율은 별도 도구
+    if (stockPrices.length === 0) {
+      return toolResult('캐시된 시세 데이터가 없습니다.')
+    }
+
+    const lines = [`## 시세 (${stockPrices.length}종목)`]
+
+    for (const p of stockPrices) {
 
       const priceStr = formatMoney(p.price, p.currency)
       const changeStr =
@@ -47,9 +52,9 @@ export async function getPrices(args: { tickers?: string[] }) {
       )
     }
 
-    const latestUpdate = prices.reduce(
+    const latestUpdate = stockPrices.reduce(
       (latest, p) => (p.updatedAt > latest ? p.updatedAt : latest),
-      prices[0].updatedAt
+      stockPrices[0].updatedAt
     )
     lines.push(`\n갱신: ${formatDate(latestUpdate)}`)
 

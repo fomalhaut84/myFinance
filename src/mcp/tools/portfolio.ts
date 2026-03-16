@@ -54,6 +54,7 @@ export async function getPortfolio(args: { account_name: string }) {
 
       let totalCost = 0
       let totalValue = 0
+      let unpricedCost = 0
       const lines: string[] = [`## ${account.name}`]
 
       for (const h of holdings) {
@@ -62,9 +63,7 @@ export async function getPortfolio(args: { account_name: string }) {
         const cost = calcCostKRW(h)
 
         if (!price) {
-          // 가격 캐시 없음 → 매입금 기준 표시
-          totalCost += cost
-          totalValue += cost
+          unpricedCost += cost
           lines.push(
             `- ${h.displayName} (${h.ticker}): ${h.shares}주` +
               ` | 매입금 ${formatMoney(cost, 'KRW')} (시세 미수신)`
@@ -98,6 +97,11 @@ export async function getPortfolio(args: { account_name: string }) {
           ` | 매입금 ${formatMoney(totalCost, 'KRW')}` +
           ` | 손익 ${formatMoney(totalPL, 'KRW')} (${totalReturn >= 0 ? '+' : ''}${totalReturn.toFixed(1)}%)`
       )
+      if (unpricedCost > 0) {
+        lines.push(
+          `※ 시세 미수신 종목 매입금 ${formatMoney(unpricedCost, 'KRW')}은 합계에서 제외`
+        )
+      }
       lines.push(`환율: ${fxRate.toLocaleString('ko-KR')}원/달러`)
 
       results.push(lines.join('\n'))

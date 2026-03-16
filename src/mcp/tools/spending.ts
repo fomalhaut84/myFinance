@@ -10,10 +10,6 @@ export async function getSpendingSummary(args: {
 }) {
   try {
     const { year, month } = args
-    if (month < 1 || month > 12) {
-      return toolError('month는 1~12 사이여야 합니다.')
-    }
-
     const monthStr = String(month).padStart(2, '0')
     const nextMonth = month === 12 ? 1 : month + 1
     const nextYear = month === 12 ? year + 1 : year

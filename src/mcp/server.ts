@@ -31,7 +31,7 @@ server.tool(
   '최근 거래(매수/매도) 내역 조회',
   {
     account_name: z.enum(ACCOUNT_NAMES).describe('계좌명 (세진/소담/다솜/전체)'),
-    days: z.number().int().positive().optional().describe('조회 일수 (기본 30)'),
+    days: z.number().int().positive().max(3650).optional().describe('조회 일수 (기본 30, 최대 3650)'),
   },
   async (args) => getTrades(args)
 )
@@ -88,7 +88,7 @@ server.tool(
   '복리 성장 시뮬레이션 (3가지 시나리오)',
   {
     account_name: z.enum(['세진', '소담', '다솜']).describe('계좌명'),
-    years: z.number().int().positive().optional().describe('시뮬레이션 기간 (기본 10년)'),
+    years: z.number().int().positive().max(100).optional().describe('시뮬레이션 기간 (기본 10년, 최대 100년)'),
     monthly: z.number().nonnegative().optional().describe('월 적립금 (원, 기본 0)'),
     return_pct: z.number().optional().describe('연 수익률 % (미지정 시 5/8/10% 3시나리오)'),
   },
@@ -101,7 +101,7 @@ server.tool(
   'get_prices',
   '보유 종목 또는 지정 종목의 현재 시세',
   {
-    tickers: z.array(z.string()).optional().describe('티커 목록 (미지정 시 전체 보유 종목)'),
+    tickers: z.array(z.string()).max(100).optional().describe('티커 목록 (미지정 시 전체 보유 종목, 최대 100개)'),
   },
   async (args) => getPrices(args)
 )

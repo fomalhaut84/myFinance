@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/prisma'
 import { calcGiftTaxSummary } from '@/lib/tax/gift-tax'
-import { formatDate } from '@/lib/format'
+import { formatDate, DEFAULT_FX_RATE_USD_KRW } from '@/lib/format'
 import {
   resolveAccountId,
   toolResult,
@@ -99,8 +99,8 @@ export async function getDividends(args: {
       totalNet += d.amountKRW
       const taxRaw = d.taxAmount ?? 0
       totalTax +=
-        d.currency === 'USD' && d.fxRate
-          ? Math.round(taxRaw * d.fxRate)
+        d.currency === 'USD'
+          ? Math.round(taxRaw * (d.fxRate ?? DEFAULT_FX_RATE_USD_KRW))
           : Math.round(taxRaw)
 
       lines.push(
