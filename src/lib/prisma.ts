@@ -8,9 +8,16 @@ function createPrismaClient(): PrismaClient {
 
   try {
     const url = new URL(rawUrl)
-    url.searchParams.set('connection_limit', '10')
-    url.searchParams.set('pool_timeout', '5')
-    url.searchParams.set('connect_timeout', '5')
+    const defaults: Record<string, string> = {
+      connection_limit: '10',
+      pool_timeout: '5',
+      connect_timeout: '5',
+    }
+    for (const [key, value] of Object.entries(defaults)) {
+      if (!url.searchParams.has(key)) {
+        url.searchParams.set(key, value)
+      }
+    }
     return new PrismaClient({ datasourceUrl: url.toString() })
   } catch {
     // URL 파싱 실패 시 원본 그대로 사용

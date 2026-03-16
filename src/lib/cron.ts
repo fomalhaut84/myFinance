@@ -7,7 +7,7 @@ import { prisma } from './prisma'
 /**
  * Cron 작업 mutex + 타임아웃 가드.
  * - 중복 실행 방지 (isRunning 플래그)
- * - 타임아웃 시 경고 로그 출력, 원본 작업은 완료까지 대기 후 mutex 해제
+ * - 타임아웃 시 mutex 강제 해제 (stale lock 방지)
  */
 function createCronGuard(label: string, timeoutMs: number) {
   let isRunning = false
@@ -19,17 +19,13 @@ function createCronGuard(label: string, timeoutMs: number) {
     }
     isRunning = true
 
-    let timedOut = false
     const timer = setTimeout(() => {
-      timedOut = true
-      console.error(`[cron] ${label} 타임아웃 (${timeoutMs / 1000}s) — 작업 완료 대기 중`)
+      console.error(`[cron] ${label} 타임아웃 (${timeoutMs / 1000}s) — mutex 강제 해제`)
+      isRunning = false
     }, timeoutMs)
 
     try {
       await task()
-      if (timedOut) {
-        console.log(`[cron] ${label} 타임아웃 후 작업 완료`)
-      }
     } catch (error) {
       console.error(`[cron] ${label} 실패:`, error)
     } finally {

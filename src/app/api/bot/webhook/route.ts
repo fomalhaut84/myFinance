@@ -34,12 +34,12 @@ export async function POST(request: NextRequest): Promise<Response> {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const h = getHandler()
-    if (!h) {
+    const webhookHandler = getHandler()
+    if (!webhookHandler) {
       return NextResponse.json({ error: 'Bot not initialized' }, { status: 500 })
     }
 
-    return await h(request)
+    return await webhookHandler(request)
   } catch (error) {
     console.error('[webhook] Error:', error)
     return NextResponse.json({ error: 'Internal error' }, { status: 500 })
