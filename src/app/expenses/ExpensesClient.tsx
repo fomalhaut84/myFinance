@@ -69,35 +69,22 @@ export default function ExpensesClient({ initialData }: ExpensesClientProps) {
   const abortRef = useRef<AbortController | null>(null)
   const isInitialMount = useRef(true)
 
-  const fetchData = useCallback(async (
-    y: number, m: number | undefined, t: TabType, o: number, listOnly = false
-  ) => {
+  const fetchData = useCallback(async (y: number, m: number | undefined, t: TabType) => {
     abortRef.current?.abort()
     const controller = new AbortController()
     abortRef.current = controller
 
     setLoading(true)
     try {
-      const params = new URLSearchParams({ year: String(y), offset: String(o) })
+      const params = new URLSearchParams({ year: String(y), offset: '0' })
       if (m) params.set('month', String(m))
       if (t !== 'all') params.set('type', t)
-      if (listOnly) params.set('listOnly', 'true')
 
       const res = await fetch(`/api/transactions?${params}`, { signal: controller.signal })
       if (res.ok) {
-        const json = await res.json()
-        if (listOnly) {
-          // 목록만 업데이트, 집계(summary/byMonth/byCategory)는 유지
-          setData((prev) => ({
-            ...prev,
-            transactions: json.transactions,
-            total: json.total,
-            offset: json.offset,
-            limit: json.limit,
-          }))
-        } else {
-          setData(json as ApiResponse)
-        }
+        const json: ApiResponse = await res.json()
+        setData(json)
+        setOffset(0)
       }
     } catch (e) {
       if (e instanceof DOMException && e.name === 'AbortError') return
@@ -115,29 +102,51 @@ export default function ExpensesClient({ initialData }: ExpensesClientProps) {
       isInitialMount.current = false
       return
     }
-    fetchData(year, month, tab, 0)
+    fetchData(year, month, tab)
   }, [year, month, tab, fetchData])
 
-  // offset만 변경 → 목록만 조회
-  const handlePageChange = useCallback((newOffset: number) => {
+  // offset만 변경 → 목록만 조회 (성공 시에만 offset 반영)
+  const handlePageChange = useCallback(async (newOffset: number) => {
+    const prevOffset = offset
     setOffset(newOffset)
-    fetchData(year, month, tab, newOffset, true)
-  }, [year, month, tab, fetchData])
 
-  const handleYearChange = (y: number) => {
-    setYear(y)
-    setOffset(0)
-  }
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
 
-  const handleMonthChange = (m: number | undefined) => {
-    setMonth(m)
-    setOffset(0)
-  }
+    setLoading(true)
+    try {
+      const params = new URLSearchParams({
+        year: String(year), offset: String(newOffset), listOnly: 'true',
+      })
+      if (month) params.set('month', String(month))
+      if (tab !== 'all') params.set('type', tab)
 
-  const handleTabChange = (t: TabType) => {
-    setTab(t)
-    setOffset(0)
-  }
+      const res = await fetch(`/api/transactions?${params}`, { signal: controller.signal })
+      if (res.ok) {
+        const json = await res.json()
+        setData((prev) => ({
+          ...prev,
+          transactions: json.transactions,
+          total: json.total,
+        }))
+      } else {
+        setOffset(prevOffset)
+      }
+    } catch (e) {
+      if (e instanceof DOMException && e.name === 'AbortError') return
+      console.error('[expenses] 페이지 이동 실패:', e)
+      setOffset(prevOffset)
+    } finally {
+      if (!controller.signal.aborted) {
+        setLoading(false)
+      }
+    }
+  }, [year, month, tab, offset])
+
+  const handleYearChange = (y: number) => setYear(y)
+  const handleMonthChange = (m: number | undefined) => setMonth(m)
+  const handleTabChange = (t: TabType) => setTab(t)
 
   const segmentBase = 'px-3 py-1.5 text-[12px] font-semibold rounded-md transition-all cursor-pointer'
   const segmentActive = 'bg-surface text-bright'
