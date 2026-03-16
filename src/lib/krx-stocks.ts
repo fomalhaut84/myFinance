@@ -20,9 +20,13 @@ interface KrxStockEntry {
  * KRX HTML을 파싱하여 종목 리스트를 반환한다.
  */
 async function fetchKrxStockList(): Promise<KrxStockEntry[]> {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 10_000)
+
   const res = await fetch(KRX_URL, {
     headers: { 'User-Agent': 'Mozilla/5.0' },
-  })
+    signal: controller.signal,
+  }).finally(() => clearTimeout(timeout))
 
   if (!res.ok) {
     throw new Error(`KRX 종목 리스트 다운로드 실패: ${res.status}`)
@@ -59,7 +63,9 @@ async function fetchKrxStockList(): Promise<KrxStockEntry[]> {
     if (!/^\d{6}$/.test(code)) continue
     if (!name) continue
 
-    const market = marketRaw === '유가' ? 'KOSPI' : 'KOSDAQ'
+    const marketMap: Record<string, string> = { '유가': 'KOSPI', '코스닥': 'KOSDAQ' }
+    const market = marketMap[marketRaw]
+    if (!market) continue // KONEX 등 미지원 마켓 skip
     const suffix = market === 'KOSPI' ? '.KS' : '.KQ'
     const yahooTicker = `${code}${suffix}`
 
@@ -91,16 +97,7 @@ export async function syncKrxStocks(): Promise<{ total: number; added: number; u
   const existingMap = new Map(existing.map((e) => [e.code, e]))
   const newCodes = new Set(entries.map((e) => e.code))
 
-  // 상폐 종목 삭제
-  const toDelete = existing.filter((e) => !newCodes.has(e.code))
-  if (toDelete.length > 0) {
-    await prisma.krxStock.deleteMany({
-      where: { id: { in: toDelete.map((e) => e.id) } },
-    })
-    result.removed = toDelete.length
-  }
-
-  // upsert (batch)
+  // 카운트 집계
   for (const entry of entries) {
     const ex = existingMap.get(entry.code)
     if (!ex) {
@@ -110,7 +107,7 @@ export async function syncKrxStocks(): Promise<{ total: number; added: number; u
     }
   }
 
-  // Prisma batch upsert
+  // upsert 먼저 실행 (실패 시에도 기존 데이터 보존)
   const BATCH_SIZE = 100
   for (let i = 0; i < entries.length; i += BATCH_SIZE) {
     const batch = entries.slice(i, i + BATCH_SIZE)
@@ -127,6 +124,15 @@ export async function syncKrxStocks(): Promise<{ total: number; added: number; u
         })
       )
     )
+  }
+
+  // 상폐 종목 삭제 (upsert 완료 후 실행)
+  const toDelete = existing.filter((e) => !newCodes.has(e.code))
+  if (toDelete.length > 0) {
+    await prisma.krxStock.deleteMany({
+      where: { id: { in: toDelete.map((e) => e.id) } },
+    })
+    result.removed = toDelete.length
   }
 
   return result
@@ -155,7 +161,7 @@ export async function searchKrxByName(
     where: { name: { contains: query, mode: 'insensitive' } },
     select: { yahooTicker: true, name: true, market: true },
     orderBy: { name: 'asc' },
-    take: 10,
+    take: 11,
   })
 
   return partial.map((e) => ({ ticker: e.yahooTicker, name: e.name, market: e.market }))
