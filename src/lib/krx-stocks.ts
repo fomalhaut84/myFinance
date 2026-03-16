@@ -7,7 +7,7 @@
 
 import { prisma } from './prisma'
 
-const KRX_URL = 'https://kind.krx.co.kr/corpgeneral/corpList.do?method=download'
+const KRX_BASE_URL = 'https://kind.krx.co.kr/corpgeneral/corpList.do?method=download'
 
 interface KrxStockEntry {
   code: string
@@ -17,24 +17,10 @@ interface KrxStockEntry {
 }
 
 /**
- * KRX HTML을 파싱하여 종목 리스트를 반환한다.
+ * KRX HTML 테이블을 파싱하여 종목 리스트를 반환한다.
+ * 컬럼 순서: 회사명(0), 종목코드(1), 업종(2), ...
  */
-async function fetchKrxStockList(): Promise<KrxStockEntry[]> {
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), 10_000)
-
-  const res = await fetch(KRX_URL, {
-    headers: { 'User-Agent': 'Mozilla/5.0' },
-    signal: controller.signal,
-  }).finally(() => clearTimeout(timeout))
-
-  if (!res.ok) {
-    throw new Error(`KRX 종목 리스트 다운로드 실패: ${res.status}`)
-  }
-
-  const buffer = await res.arrayBuffer()
-  const html = new TextDecoder('euc-kr').decode(buffer)
-
+function parseKrxHtml(html: string, market: string, suffix: string): KrxStockEntry[] {
   const entries: KrxStockEntry[] = []
   const rowRegex = /<tr>([\s\S]*?)<\/tr>/g
   let match: RegExpExecArray | null
@@ -53,26 +39,56 @@ async function fetchKrxStockList(): Promise<KrxStockEntry[]> {
       cells.push(cellMatch[1].trim())
     }
 
-    if (cells.length < 3) continue
+    if (cells.length < 2) continue
 
     const name = cells[0].trim()
-    const marketRaw = cells[1].trim()
-    const code = cells[2].trim()
+    const code = cells[1].trim()
 
-    // 6자리 숫자 종목코드만 처리 (우선주 등 특수코드 제외)
+    // 6자리 숫자 종목코드만 처리
     if (!/^\d{6}$/.test(code)) continue
     if (!name) continue
 
-    const marketMap: Record<string, string> = { '유가': 'KOSPI', '코스닥': 'KOSDAQ' }
-    const market = marketMap[marketRaw]
-    if (!market) continue // KONEX 등 미지원 마켓 skip
-    const suffix = market === 'KOSPI' ? '.KS' : '.KQ'
     const yahooTicker = `${code}${suffix}`
-
     entries.push({ code, name, market, yahooTicker })
   }
 
   return entries
+}
+
+/**
+ * KRX에서 시장별 종목 리스트를 다운로드한다.
+ */
+async function fetchKrxMarket(marketType: string): Promise<string> {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 10_000)
+
+  const url = `${KRX_BASE_URL}&marketType=${marketType}`
+  const res = await fetch(url, {
+    headers: { 'User-Agent': 'Mozilla/5.0' },
+    signal: controller.signal,
+  }).finally(() => clearTimeout(timeout))
+
+  if (!res.ok) {
+    throw new Error(`KRX 종목 리스트 다운로드 실패 (${marketType}): ${res.status}`)
+  }
+
+  const buffer = await res.arrayBuffer()
+  return new TextDecoder('euc-kr').decode(buffer)
+}
+
+/**
+ * KOSPI + KOSDAQ 종목 리스트를 합쳐서 반환한다.
+ */
+async function fetchKrxStockList(): Promise<KrxStockEntry[]> {
+  const [kospiHtml, kosdaqHtml] = await Promise.all([
+    fetchKrxMarket('stockMkt'),
+    fetchKrxMarket('kosdaqMkt'),
+  ])
+
+  const kospi = parseKrxHtml(kospiHtml, 'KOSPI', '.KS')
+  const kosdaq = parseKrxHtml(kosdaqHtml, 'KOSDAQ', '.KQ')
+
+  return [...kospi, ...kosdaq]
 }
 
 /**

@@ -70,7 +70,9 @@ async function handlePrice(ctx: Context): Promise<void> {
   }
 
   // 2-b. 영문 ticker 포맷 → yahoo-finance2 직접 조회
-  if (/^[A-Z0-9.\-=^]+$/.test(upperQuery)) {
+  // 원본 입력이 대문자+숫자+기호만이면 ticker로 간주 (예: AAPL, 005930.KS)
+  // 소문자 포함 시(예: Apple, Tesla) 종목명 검색으로 fallthrough
+  if (/^[A-Z0-9.\-=^]+$/.test(query)) {
     await fetchAndReply(ctx, upperQuery)
     return
   }
