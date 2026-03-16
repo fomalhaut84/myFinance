@@ -84,22 +84,22 @@ export function schedulePriceUpdates(): void {
  * 매일 06:05 KST (월~토) 실행. 미국장 종료 후 최신가 반영.
  */
 export function scheduleSnapshots(): void {
-  let isRunning = false
+  let isSnapshotRunning = false
 
   cron.schedule(
     '5 6 * * 1-6',
     async () => {
-      if (isRunning) {
+      if (isSnapshotRunning) {
         console.warn('[cron] 스냅샷 이미 실행 중, 건너뜀')
         return
       }
-      isRunning = true
+      isSnapshotRunning = true
       try {
         await takeAllSnapshots()
       } catch (error) {
         console.error('[cron] Snapshot failed:', error)
       } finally {
-        isRunning = false
+        isSnapshotRunning = false
       }
     },
     { timezone: 'Asia/Seoul' }
@@ -113,14 +113,14 @@ export function scheduleSnapshots(): void {
  * 매주 월요일 07:00 KST 실행.
  */
 export function scheduleKrxSync(): void {
-  let isRunning = false
+  let isKrxSyncRunning = false
 
   async function runSync(): Promise<void> {
-    if (isRunning) {
+    if (isKrxSyncRunning) {
       console.warn('[cron] KRX 동기화 이미 실행 중, 건너뜀')
       return
     }
-    isRunning = true
+    isKrxSyncRunning = true
     try {
       const result = await syncKrxStocks()
       console.log(
@@ -129,7 +129,7 @@ export function scheduleKrxSync(): void {
     } catch (error) {
       console.error('[cron] KRX 종목 동기화 실패:', error)
     } finally {
-      isRunning = false
+      isKrxSyncRunning = false
     }
   }
 

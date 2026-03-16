@@ -3,14 +3,19 @@ import { PrismaClient } from '@prisma/client'
 const globalForPrisma = globalThis as unknown as { prisma: PrismaClient }
 
 function createPrismaClient(): PrismaClient {
-  const url = process.env.DATABASE_URL ?? ''
-  const separator = url.includes('?') ? '&' : '?'
-  const poolParams = 'connection_limit=10&pool_timeout=5&connect_timeout=5'
-  const datasourceUrl = url ? `${url}${separator}${poolParams}` : undefined
+  const rawUrl = process.env.DATABASE_URL
+  if (!rawUrl) return new PrismaClient()
 
-  return new PrismaClient({
-    datasourceUrl,
-  })
+  try {
+    const url = new URL(rawUrl)
+    url.searchParams.set('connection_limit', '10')
+    url.searchParams.set('pool_timeout', '5')
+    url.searchParams.set('connect_timeout', '5')
+    return new PrismaClient({ datasourceUrl: url.toString() })
+  } catch {
+    // URL 파싱 실패 시 원본 그대로 사용
+    return new PrismaClient()
+  }
 }
 
 export const prisma = globalForPrisma.prisma ?? createPrismaClient()
