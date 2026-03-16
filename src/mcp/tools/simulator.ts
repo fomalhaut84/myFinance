@@ -4,7 +4,7 @@ import {
   DEFAULT_SCENARIOS,
 } from '@/lib/simulator/compound-engine'
 import { calcCostKRW, calcCurrentValueKRW, DEFAULT_FX_RATE_USD_KRW } from '@/lib/format'
-import { isGiftSource } from '@/lib/tax/gift-tax'
+import { calcGiftTaxSummary } from '@/lib/tax/gift-tax'
 import {
   resolveAccountId,
   toolResult,
@@ -60,16 +60,15 @@ export async function simulateGrowth(args: {
       initialValue += calcCurrentValueKRW(h, currentPrice, currentFxRate)
     }
 
-    // 증여 누적액 (미성년 계좌)
+    // 증여 누적액 (미성년 계좌, 10년 윈도우 기준)
     let giftTotal = 0
     if (account.ownerAge != null && account.ownerAge < 19) {
       const deposits = await prisma.deposit.findMany({
         where: { accountId },
-        select: { amount: true, source: true },
+        select: { amount: true, source: true, depositedAt: true },
       })
-      giftTotal = deposits
-        .filter((d) => isGiftSource(d.source))
-        .reduce((sum, d) => sum + d.amount, 0)
+      const summary = calcGiftTaxSummary(deposits, true)
+      giftTotal = summary.totalGifted
     }
 
     const years = args.years ?? 10

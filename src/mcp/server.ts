@@ -64,7 +64,7 @@ server.tool(
   '배당금 수령 내역 + 세금 합계',
   {
     account_name: z.enum(ACCOUNT_NAMES).describe('계좌명 (세진/소담/다솜/전체)'),
-    year: z.number().int().optional().describe('조회 연도 (기본 올해)'),
+    year: z.number().int().min(2000).max(2100).optional().describe('조회 연도 (기본 올해, 2000~2100)'),
   },
   async (args) => getDividends(args)
 )
@@ -75,7 +75,7 @@ server.tool(
   'get_spending_summary',
   '월별 소비/수입 카테고리별 요약',
   {
-    year: z.number().int().describe('연도'),
+    year: z.number().int().min(2000).max(2100).describe('연도 (2000~2100)'),
     month: z.number().int().min(1).max(12).describe('월 (1~12)'),
   },
   async (args) => getSpendingSummary(args)
