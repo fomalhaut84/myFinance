@@ -1,0 +1,214 @@
+'use client'
+
+import { useState, useEffect, useCallback } from 'react'
+import ExpenseSummary from '@/components/expense/ExpenseSummary'
+import MonthlyChart from '@/components/expense/MonthlyChart'
+import CategoryPieChart from '@/components/expense/CategoryPieChart'
+import TransactionTable from '@/components/expense/TransactionTable'
+
+interface MonthlyData {
+  month: number
+  expense: number
+  income: number
+}
+
+interface CategoryData {
+  categoryId: string
+  categoryName: string
+  icon: string | null
+  type: string
+  total: number
+  count: number
+}
+
+interface TransactionRow {
+  id: string
+  amount: number
+  description: string
+  categoryName: string
+  categoryIcon: string | null
+  categoryType: string
+  transactedAt: string
+}
+
+interface ApiResponse {
+  transactions: TransactionRow[]
+  total: number
+  offset: number
+  limit: number
+  summary: {
+    totalExpense: number
+    totalIncome: number
+    net: number
+    count: number
+  }
+  byMonth: MonthlyData[]
+  byCategory: CategoryData[]
+  year: number
+}
+
+interface ExpensesClientProps {
+  initialData: ApiResponse
+}
+
+type TabType = 'all' | 'expense' | 'income'
+
+const currentYear = new Date().getFullYear()
+const YEARS = [currentYear, currentYear - 1, currentYear - 2]
+const MONTHS = Array.from({ length: 12 }, (_, i) => i + 1)
+
+export default function ExpensesClient({ initialData }: ExpensesClientProps) {
+  const [data, setData] = useState<ApiResponse>(initialData)
+  const [year, setYear] = useState(initialData.year)
+  const [month, setMonth] = useState<number | undefined>(undefined)
+  const [tab, setTab] = useState<TabType>('all')
+  const [offset, setOffset] = useState(0)
+  const [loading, setLoading] = useState(false)
+
+  const fetchData = useCallback(async (y: number, m: number | undefined, t: TabType, o: number) => {
+    setLoading(true)
+    try {
+      const params = new URLSearchParams({ year: String(y), offset: String(o) })
+      if (m) params.set('month', String(m))
+      if (t !== 'all') params.set('type', t)
+
+      const res = await fetch(`/api/transactions?${params}`)
+      if (res.ok) {
+        const json: ApiResponse = await res.json()
+        setData(json)
+      }
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    fetchData(year, month, tab, offset)
+  }, [year, month, tab, offset, fetchData])
+
+  const handleYearChange = (y: number) => {
+    setYear(y)
+    setOffset(0)
+  }
+
+  const handleMonthChange = (m: number | undefined) => {
+    setMonth(m)
+    setOffset(0)
+  }
+
+  const handleTabChange = (t: TabType) => {
+    setTab(t)
+    setOffset(0)
+  }
+
+  const segmentBase = 'px-3 py-1.5 text-[12px] font-semibold rounded-md transition-all cursor-pointer'
+  const segmentActive = 'bg-surface text-bright'
+  const segmentInactive = 'text-sub hover:text-muted hover:bg-surface-dim'
+
+  const expenseCategories = data.byCategory.filter((c) => c.type === 'expense')
+  const incomeCategories = data.byCategory.filter((c) => c.type === 'income')
+
+  return (
+    <div className={loading ? 'opacity-60 transition-opacity' : 'transition-opacity'}>
+      {/* 필터 */}
+      <div className="flex flex-wrap items-center gap-4 mb-5">
+        {/* 연도 */}
+        <div className="flex items-center gap-1 bg-card rounded-lg p-1 border border-border">
+          {YEARS.map((y) => (
+            <button
+              key={y}
+              onClick={() => handleYearChange(y)}
+              className={`${segmentBase} ${year === y ? segmentActive : segmentInactive}`}
+            >
+              {y}
+            </button>
+          ))}
+        </div>
+
+        {/* 월 */}
+        <div className="flex items-center gap-1 bg-card rounded-lg p-1 border border-border">
+          <button
+            onClick={() => handleMonthChange(undefined)}
+            className={`${segmentBase} ${!month ? segmentActive : segmentInactive}`}
+          >
+            전체
+          </button>
+          {MONTHS.map((m) => (
+            <button
+              key={m}
+              onClick={() => handleMonthChange(m)}
+              className={`${segmentBase} ${month === m ? segmentActive : segmentInactive}`}
+            >
+              {m}월
+            </button>
+          ))}
+        </div>
+
+        {/* 타입 */}
+        <div className="flex items-center gap-1 bg-card rounded-lg p-1 border border-border">
+          <button
+            onClick={() => handleTabChange('all')}
+            className={`${segmentBase} ${tab === 'all' ? segmentActive : segmentInactive}`}
+          >
+            전체
+          </button>
+          <button
+            onClick={() => handleTabChange('expense')}
+            className={`${segmentBase} ${tab === 'expense' ? segmentActive : segmentInactive}`}
+          >
+            소비
+          </button>
+          <button
+            onClick={() => handleTabChange('income')}
+            className={`${segmentBase} ${tab === 'income' ? segmentActive : segmentInactive}`}
+          >
+            수입
+          </button>
+        </div>
+      </div>
+
+      {/* 요약 카드 */}
+      <div className="mb-5">
+        <ExpenseSummary
+          totalExpense={data.summary.totalExpense}
+          totalIncome={data.summary.totalIncome}
+          net={data.summary.net}
+          count={data.summary.count}
+          year={year}
+          month={month}
+        />
+      </div>
+
+      {/* 차트 영역 */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 mb-5">
+        <div className="lg:col-span-2">
+          <MonthlyChart data={data.byMonth} year={year} />
+        </div>
+        <div>
+          {tab === 'income' ? (
+            <CategoryPieChart
+              data={incomeCategories}
+              title="수입 카테고리별 비율"
+              type="income"
+            />
+          ) : (
+            <CategoryPieChart
+              data={expenseCategories}
+              title="소비 카테고리별 비율"
+              type="expense"
+            />
+          )}
+        </div>
+      </div>
+
+      {/* 거래 내역 테이블 */}
+      <TransactionTable
+        transactions={data.transactions}
+        total={data.total}
+        limit={data.limit}
+        offset={data.offset}
+        onPageChange={setOffset}
+      />
+    </div>
+  )
+}
