@@ -8,7 +8,7 @@ interface TransactionRow {
   description: string
   categoryName: string
   categoryIcon: string | null
-  categoryType: string
+  categoryType: 'expense' | 'income'
   transactedAt: string
 }
 

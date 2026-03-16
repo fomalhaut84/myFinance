@@ -22,7 +22,11 @@ export const dynamic = 'force-dynamic'
 export async function GET(request: NextRequest) {
   try {
     const sp = request.nextUrl.searchParams
-    const type = sp.get('type') ?? undefined
+    const rawType = sp.get('type')
+    if (rawType && rawType !== 'expense' && rawType !== 'income') {
+      return NextResponse.json({ error: 'type은 expense 또는 income만 허용됩니다.' }, { status: 400 })
+    }
+    const type = rawType ?? undefined
     const yearStr = sp.get('year')
     const monthStr = sp.get('month')
     const offsetStr = sp.get('offset')

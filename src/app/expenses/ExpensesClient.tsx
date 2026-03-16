@@ -67,6 +67,7 @@ export default function ExpensesClient({ initialData }: ExpensesClientProps) {
   const [offset, setOffset] = useState(0)
   const [loading, setLoading] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
+  const isInitialMount = useRef(true)
 
   const fetchData = useCallback(async (y: number, m: number | undefined, t: TabType, o: number) => {
     abortRef.current?.abort()
@@ -95,6 +96,11 @@ export default function ExpensesClient({ initialData }: ExpensesClientProps) {
   }, [])
 
   useEffect(() => {
+    // 초기 마운트 시에는 SSR 데이터 사용, fetch 스킵
+    if (isInitialMount.current) {
+      isInitialMount.current = false
+      return
+    }
     fetchData(year, month, tab, offset)
   }, [year, month, tab, offset, fetchData])
 
@@ -218,7 +224,7 @@ export default function ExpensesClient({ initialData }: ExpensesClientProps) {
         transactions={data.transactions}
         total={data.total}
         limit={data.limit}
-        offset={data.offset}
+        offset={offset}
         onPageChange={setOffset}
       />
     </div>
