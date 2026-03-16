@@ -109,31 +109,17 @@ export async function askAdvisor(
   ]
 
   return new Promise<AdvisorResult>((resolve, reject) => {
-    let settled = false
-
-    const killTimer = setTimeout(() => {
-      if (!settled && child.exitCode === null) {
-        try {
-          child.kill('SIGTERM')
-        } catch {
-          // 이미 종료된 경우 무시
-        }
-      }
-    }, timeout + 5000)
-
-    const child = execFile(
+    execFile(
       'claude',
       args,
       {
         cwd: projectRoot,
         timeout,
+        killSignal: 'SIGKILL', // 타임아웃 시 강제 종료 보장
         maxBuffer: 1024 * 1024, // 1MB
         env: { ...process.env },
       },
       (error, stdout) => {
-        settled = true
-        clearTimeout(killTimer)
-
         if (error) {
           // 실패 시 rate limit 롤백
           decrement()
