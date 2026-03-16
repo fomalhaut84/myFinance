@@ -1,0 +1,152 @@
+import { execFile } from 'child_process'
+import path from 'path'
+import { SYSTEM_PROMPT } from './system-prompt'
+import { checkAndIncrement } from './rate-limiter'
+
+export type AdvisorModel = 'haiku' | 'sonnet'
+
+export interface AdvisorOptions {
+  /** 모델 선택 (기본: haiku) */
+  model?: AdvisorModel
+  /** 타임아웃 ms (기본: 120_000) */
+  timeout?: number
+  /** API 비용 상한 USD (기본: 0.50) */
+  maxBudgetUsd?: number
+  /** 일일 호출 제한 (기본: 30) */
+  dailyLimit?: number
+}
+
+export interface AdvisorResult {
+  response: string
+  model: string
+  durationMs: number
+  costUsd: number
+  rateLimitRemaining: number
+}
+
+export class AdvisorRateLimitError extends Error {
+  constructor(
+    public remaining: number,
+    public resetDate: string
+  ) {
+    super(`일일 AI 호출 한도에 도달했습니다. (리셋: ${resetDate})`)
+    this.name = 'AdvisorRateLimitError'
+  }
+}
+
+export class AdvisorTimeoutError extends Error {
+  constructor(timeoutMs: number) {
+    super(`AI 응답 시간이 초과되었습니다. (${timeoutMs / 1000}초)`)
+    this.name = 'AdvisorTimeoutError'
+  }
+}
+
+export class AdvisorError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'AdvisorError'
+  }
+}
+
+interface ClaudeJsonOutput {
+  type: string
+  subtype: string
+  is_error: boolean
+  result: string
+  duration_ms: number
+  total_cost_usd: number
+}
+
+/**
+ * Claude Code CLI를 subprocess로 호출하여 AI 어드바이저 응답을 생성한다.
+ *
+ * MCP 서버(myfinance)를 연결하여 DB 데이터를 자동 조회.
+ * 빌트인 도구는 비활성화하고 MCP 도구만 허용.
+ */
+export async function askAdvisor(
+  prompt: string,
+  options: AdvisorOptions = {}
+): Promise<AdvisorResult> {
+  const {
+    model = 'haiku',
+    timeout = 120_000,
+    maxBudgetUsd = 0.50,
+    dailyLimit = 30,
+  } = options
+
+  // Rate limit 체크
+  const rateLimit = checkAndIncrement(dailyLimit)
+  if (!rateLimit.allowed) {
+    throw new AdvisorRateLimitError(rateLimit.remaining, rateLimit.resetDate)
+  }
+
+  const projectRoot = path.resolve(__dirname, '../../..')
+  const mcpConfigPath = path.join(__dirname, 'mcp-config.json')
+
+  const args = [
+    '-p', prompt,
+    '--output-format', 'json',
+    '--model', model,
+    '--system-prompt', SYSTEM_PROMPT,
+    '--mcp-config', mcpConfigPath,
+    '--strict-mcp-config',
+    '--allowedTools', 'mcp__myfinance__*',
+    '--tools', '',
+    '--max-budget-usd', String(maxBudgetUsd),
+    '--permission-mode', 'bypassPermissions',
+    '--no-session-persistence',
+  ]
+
+  return new Promise<AdvisorResult>((resolve, reject) => {
+    const child = execFile(
+      'claude',
+      args,
+      {
+        cwd: projectRoot,
+        timeout,
+        maxBuffer: 1024 * 1024, // 1MB
+        env: { ...process.env },
+      },
+      (error, stdout) => {
+        if (error) {
+          if (error.killed || error.code === 'ETIMEDOUT') {
+            reject(new AdvisorTimeoutError(timeout))
+            return
+          }
+          reject(new AdvisorError(`Claude CLI 실행 오류: ${error.message}`))
+          return
+        }
+
+        try {
+          const output: ClaudeJsonOutput = JSON.parse(stdout)
+
+          if (output.is_error) {
+            reject(new AdvisorError(`AI 응답 오류: ${output.result}`))
+            return
+          }
+
+          resolve({
+            response: output.result,
+            model,
+            durationMs: output.duration_ms,
+            costUsd: output.total_cost_usd,
+            rateLimitRemaining: rateLimit.remaining,
+          })
+        } catch {
+          reject(new AdvisorError('AI 응답을 파싱할 수 없습니다.'))
+        }
+      }
+    )
+
+    // 타임아웃 시 프로세스 종료 보장
+    if (child.pid) {
+      setTimeout(() => {
+        try {
+          child.kill('SIGTERM')
+        } catch {
+          // 이미 종료된 경우 무시
+        }
+      }, timeout + 5000)
+    }
+  })
+}

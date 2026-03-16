@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "myfinance": {
+      "command": "npx",
+      "args": ["tsx", "src/mcp/server.ts"],
+      "env": {
+        "DATABASE_URL": "${DATABASE_URL}"
+      }
+    }
+  }
+}
