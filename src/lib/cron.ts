@@ -20,8 +20,7 @@ function createCronGuard(label: string, timeoutMs: number) {
     isRunning = true
 
     const timer = setTimeout(() => {
-      console.error(`[cron] ${label} 타임아웃 (${timeoutMs / 1000}s) — mutex 강제 해제`)
-      isRunning = false
+      console.error(`[cron] ${label} 타임아웃 경고 (${timeoutMs / 1000}s 초과) — 작업 완료 대기 중`)
     }, timeoutMs)
 
     try {
