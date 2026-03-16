@@ -1,14 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createWebhookHandler } from '@/bot/index'
 
-let handler: ReturnType<typeof createWebhookHandler> | null = null
-
-function getHandler() {
-  if (!handler) {
-    handler = createWebhookHandler()
-  }
-  return handler
-}
+// 모듈 로드 시점에 즉시 초기화 (콜드 스타트 제거)
+const handler = createWebhookHandler()
 
 export async function POST(request: NextRequest): Promise<Response> {
   try {
@@ -18,18 +12,12 @@ export async function POST(request: NextRequest): Promise<Response> {
       return NextResponse.json({ error: 'Not configured' }, { status: 500 })
     }
 
-    const botToken = process.env.TELEGRAM_BOT_TOKEN
-    if (!botToken) {
-      console.error('[webhook] TELEGRAM_BOT_TOKEN 미설정')
-      return NextResponse.json({ error: 'Not configured' }, { status: 500 })
-    }
-
     const receivedSecret = request.headers.get('x-telegram-bot-api-secret-token')
     if (receivedSecret !== secretToken) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    return await getHandler()(request)
+    return await handler(request)
   } catch (error) {
     console.error('[webhook] Error:', error)
     return NextResponse.json({ error: 'Internal error' }, { status: 500 })
