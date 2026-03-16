@@ -200,7 +200,9 @@ async function handleExpenseCallback(ctx: Context): Promise<void> {
   }
 
   if (action === 'cat') {
-    // 카테고리 선택
+    // 카테고리 선택 — 중복 클릭 방지를 위해 먼저 Map에서 제거
+    pendingTransactions.delete(key)
+
     const categoryId = parts[3]
     if (!categoryId) {
       await ctx.answerCallbackQuery({ text: '⚠️ 카테고리 정보가 없습니다.' })
@@ -217,8 +219,6 @@ async function handleExpenseCallback(ctx: Context): Promise<void> {
       return
     }
 
-    // 카테고리 확정 → 바로 Transaction 생성
-    pendingTransactions.delete(key)
     await createTransaction(ctx, { ...pending, categoryId: category.id, categoryName: category.name })
     return
   }
