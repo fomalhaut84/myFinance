@@ -11,9 +11,7 @@ function getCurrentYearMonth(): { year: number; month: number } {
 
 /** KST 기준 이번 달 시작/끝 (UTC) */
 function getMonthRange(year: number, month: number): { start: Date; end: Date } {
-  // KST 기준 1일 00:00 → UTC
   const start = new Date(`${year}-${String(month).padStart(2, '0')}-01T00:00:00+09:00`)
-  // 다음 달 1일 00:00 → UTC
   const nextMonth = month === 12 ? 1 : month + 1
   const nextYear = month === 12 ? year + 1 : year
   const end = new Date(`${nextYear}-${String(nextMonth).padStart(2, '0')}-01T00:00:00+09:00`)
@@ -21,118 +19,70 @@ function getMonthRange(year: number, month: number): { start: Date; end: Date } 
 }
 
 /**
- * /소비 — 이번 달 소비 요약 (카테고리별 합계)
+ * 소비/수입 월별 요약 (카테고리별 합계) — DB groupBy 집계
  */
-async function handleExpenseSummary(ctx: Context): Promise<void> {
+async function handleTransactionSummary(
+  ctx: Context,
+  type: 'expense' | 'income'
+): Promise<void> {
+  const typeLabel = type === 'expense' ? '소비' : '수입'
+  const totalLabel = type === 'expense' ? '총 소비' : '총 수입'
   const { year, month } = getCurrentYearMonth()
   const { start, end } = getMonthRange(year, month)
 
-  const transactions = await prisma.transaction.findMany({
+  // DB에서 카테고리별 합계 + 건수 집계
+  const grouped = await prisma.transaction.groupBy({
+    by: ['categoryId'],
     where: {
       transactedAt: { gte: start, lt: end },
-      category: { type: 'expense' },
+      category: { type },
     },
-    include: { category: { select: { name: true, icon: true } } },
+    _sum: { amount: true },
+    _count: { id: true },
   })
 
-  if (transactions.length === 0) {
-    await ctx.reply(`📊 ${month}월 소비 내역이 없습니다.`)
+  if (grouped.length === 0) {
+    await ctx.reply(`📊 ${month}월 ${typeLabel} 내역이 없습니다.`)
     return
   }
 
-  // 카테고리별 합계
-  const categoryTotals = new Map<string, { name: string; icon: string | null; total: number; count: number }>()
-  let grandTotal = 0
+  // 카테고리 정보 조회
+  const categoryIds = grouped.map((g) => g.categoryId)
+  const categories = await prisma.category.findMany({
+    where: { id: { in: categoryIds } },
+    select: { id: true, name: true, icon: true },
+  })
+  const catMap = new Map(categories.map((c) => [c.id, c]))
 
-  for (const tx of transactions) {
-    const key = tx.categoryId
-    const existing = categoryTotals.get(key)
-    if (existing) {
-      existing.total += tx.amount
-      existing.count++
-    } else {
-      categoryTotals.set(key, {
-        name: tx.category.name,
-        icon: tx.category.icon,
-        total: tx.amount,
-        count: 1,
-      })
-    }
-    grandTotal += tx.amount
-  }
+  let grandTotal = 0
+  let totalCount = 0
+  const items = grouped.map((g) => {
+    const total = g._sum.amount ?? 0
+    const count = g._count.id
+    grandTotal += total
+    totalCount += count
+    const cat = catMap.get(g.categoryId)
+    return { name: cat?.name ?? '알 수 없음', icon: cat?.icon ?? null, total, count }
+  })
 
   // 합계 내림차순 정렬
-  const sorted = Array.from(categoryTotals.values()).sort((a, b) => b.total - a.total)
+  items.sort((a, b) => b.total - a.total)
 
-  const lines = sorted.map((cat) => {
+  const lines = items.map((cat) => {
     const label = cat.icon ? `${cat.icon} ${cat.name}` : cat.name
     const pct = grandTotal > 0 ? ((cat.total / grandTotal) * 100).toFixed(0) : '0'
     return `${label}: ${formatKRWFull(cat.total)} (${pct}%, ${cat.count}건)`
   })
 
   await ctx.reply(
-    `📊 ${month}월 소비 요약\n\n` +
+    `📊 ${month}월 ${typeLabel} 요약\n\n` +
       lines.join('\n') +
-      `\n\n💰 총 소비: ${formatKRWFull(grandTotal)} (${transactions.length}건)`
+      `\n\n💰 ${totalLabel}: ${formatKRWFull(grandTotal)} (${totalCount}건)`
   )
 }
 
 /**
- * /수입 — 이번 달 수입 요약 (카테고리별 합계)
- */
-async function handleIncomeSummary(ctx: Context): Promise<void> {
-  const { year, month } = getCurrentYearMonth()
-  const { start, end } = getMonthRange(year, month)
-
-  const transactions = await prisma.transaction.findMany({
-    where: {
-      transactedAt: { gte: start, lt: end },
-      category: { type: 'income' },
-    },
-    include: { category: { select: { name: true, icon: true } } },
-  })
-
-  if (transactions.length === 0) {
-    await ctx.reply(`📊 ${month}월 수입 내역이 없습니다.`)
-    return
-  }
-
-  const categoryTotals = new Map<string, { name: string; icon: string | null; total: number; count: number }>()
-  let grandTotal = 0
-
-  for (const tx of transactions) {
-    const key = tx.categoryId
-    const existing = categoryTotals.get(key)
-    if (existing) {
-      existing.total += tx.amount
-      existing.count++
-    } else {
-      categoryTotals.set(key, {
-        name: tx.category.name,
-        icon: tx.category.icon,
-        total: tx.amount,
-        count: 1,
-      })
-    }
-    grandTotal += tx.amount
-  }
-
-  const sorted = Array.from(categoryTotals.values()).sort((a, b) => b.total - a.total)
-
-  const lines = sorted.map((cat) => {
-    const label = cat.icon ? `${cat.icon} ${cat.name}` : cat.name
-    return `${label}: ${formatKRWFull(cat.total)} (${cat.count}건)`
-  })
-
-  await ctx.reply(
-    `📊 ${month}월 수입 요약\n\n` +
-      lines.join('\n') +
-      `\n\n💰 총 수입: ${formatKRWFull(grandTotal)} (${transactions.length}건)`
-  )
-}
-
-/**
- * /예산 — 이번 달 예산 잔여 확인
+ * 예산 — 이번 달 예산 잔여 확인
  */
 async function handleBudgetStatus(ctx: Context): Promise<void> {
   const { year, month } = getCurrentYearMonth()
@@ -180,7 +130,6 @@ async function handleBudgetStatus(ctx: Context): Promise<void> {
   }
 
   if (categoryBudgets.length > 0) {
-    // 카테고리별 소비 합계
     const catSpent = await prisma.transaction.groupBy({
       by: ['categoryId'],
       where: {
@@ -253,7 +202,7 @@ async function handleBudgetSet(ctx: Context): Promise<void> {
 export function registerBudgetCommands(bot: Bot): void {
   bot.hears(/^소비\s*$/, async (ctx) => {
     try {
-      await handleExpenseSummary(ctx)
+      await handleTransactionSummary(ctx, 'expense')
     } catch (error) {
       console.error('[bot] 소비 조회 실패:', error)
       await ctx.reply('⚠️ 소비 조회에 실패했습니다.')
@@ -262,7 +211,7 @@ export function registerBudgetCommands(bot: Bot): void {
 
   bot.hears(/^수입\s*$/, async (ctx) => {
     try {
-      await handleIncomeSummary(ctx)
+      await handleTransactionSummary(ctx, 'income')
     } catch (error) {
       console.error('[bot] 수입 조회 실패:', error)
       await ctx.reply('⚠️ 수입 조회에 실패했습니다.')
