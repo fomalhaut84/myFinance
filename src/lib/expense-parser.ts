@@ -52,24 +52,29 @@ export function parseExpenseInput(input: string): ParseResult {
 
   // 공백으로 분리된 토큰 중 순수 숫자(콤마 허용)인 것을 금액 후보로 채택
   // "RTX4090 케이스 800" → 토큰: ["RTX4090", "케이스", "800"] → 800이 금액
-  // 독립 토큰이 없으면 텍스트 내 숫자 fallback
   const tokens = body.split(/\s+/)
-  let amountToken: { amount: number; tokenIndex: number } | null = null
+  const numericTokens: { amount: number; tokenIndex: number }[] = []
 
-  for (let i = tokens.length - 1; i >= 0; i--) {
+  for (let i = 0; i < tokens.length; i++) {
     const raw = tokens[i].replace(/,/g, '')
     if (/^\d+$/.test(raw)) {
       const num = parseInt(raw, 10)
       if (num > 0) {
-        amountToken = { amount: num, tokenIndex: i }
-        break // 마지막(가장 오른쪽) 독립 숫자 토큰 채택
+        numericTokens.push({ amount: num, tokenIndex: i })
       }
     }
   }
 
-  if (!amountToken) {
+  if (numericTokens.length === 0) {
     return { error: '금액을 찾을 수 없습니다.\n예: 점심 12000' }
   }
+
+  // 독립 숫자 토큰이 2개 이상이면 모호한 입력 → 거부
+  if (numericTokens.length > 1) {
+    return { error: '금액이 모호합니다. 설명과 금액을 하나씩 입력해주세요.\n예: 점심 12000' }
+  }
+
+  const amountToken = numericTokens[0]
 
   // 금액 토큰을 제거하고 나머지를 설명으로
   const descTokens = tokens.filter((_, i) => i !== amountToken!.tokenIndex)
