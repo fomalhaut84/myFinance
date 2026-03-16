@@ -1,7 +1,7 @@
 import { execFile } from 'child_process'
 import path from 'path'
 import { SYSTEM_PROMPT } from './system-prompt'
-import { checkAndIncrement } from './rate-limiter'
+import { checkAndIncrement, decrement } from './rate-limiter'
 
 export type AdvisorModel = 'haiku' | 'sonnet'
 
@@ -18,7 +18,7 @@ export interface AdvisorOptions {
 
 export interface AdvisorResult {
   response: string
-  model: string
+  model: AdvisorModel
   durationMs: number
   costUsd: number
   rateLimitRemaining: number
@@ -48,9 +48,20 @@ export class AdvisorError extends Error {
   }
 }
 
+/** 허용된 MCP 읽기 전용 도구 목록 (와일드카드 대신 명시적 allowlist) */
+const ALLOWED_TOOLS = [
+  'mcp__myfinance__get_portfolio',
+  'mcp__myfinance__get_trades',
+  'mcp__myfinance__get_performance',
+  'mcp__myfinance__get_gift_tax_status',
+  'mcp__myfinance__get_dividends',
+  'mcp__myfinance__get_spending_summary',
+  'mcp__myfinance__simulate_growth',
+  'mcp__myfinance__get_prices',
+  'mcp__myfinance__get_fx_rate',
+].join(',')
+
 interface ClaudeJsonOutput {
-  type: string
-  subtype: string
   is_error: boolean
   result: string
   duration_ms: number
@@ -61,7 +72,7 @@ interface ClaudeJsonOutput {
  * Claude Code CLI를 subprocess로 호출하여 AI 어드바이저 응답을 생성한다.
  *
  * MCP 서버(myfinance)를 연결하여 DB 데이터를 자동 조회.
- * 빌트인 도구는 비활성화하고 MCP 도구만 허용.
+ * 빌트인 도구는 비활성화하고 읽기 전용 MCP 도구만 허용.
  */
 export async function askAdvisor(
   prompt: string,
@@ -80,8 +91,8 @@ export async function askAdvisor(
     throw new AdvisorRateLimitError(rateLimit.remaining, rateLimit.resetDate)
   }
 
-  const projectRoot = path.resolve(__dirname, '../../..')
-  const mcpConfigPath = path.join(__dirname, 'mcp-config.json')
+  const projectRoot = process.cwd()
+  const mcpConfigPath = path.join(projectRoot, 'src/lib/ai/mcp-config.json')
 
   const args = [
     '-p', prompt,
@@ -90,7 +101,7 @@ export async function askAdvisor(
     '--system-prompt', SYSTEM_PROMPT,
     '--mcp-config', mcpConfigPath,
     '--strict-mcp-config',
-    '--allowedTools', 'mcp__myfinance__*',
+    '--allowedTools', ALLOWED_TOOLS,
     '--tools', '',
     '--max-budget-usd', String(maxBudgetUsd),
     '--permission-mode', 'bypassPermissions',
@@ -98,6 +109,18 @@ export async function askAdvisor(
   ]
 
   return new Promise<AdvisorResult>((resolve, reject) => {
+    let settled = false
+
+    const killTimer = setTimeout(() => {
+      if (!settled && child.exitCode === null) {
+        try {
+          child.kill('SIGTERM')
+        } catch {
+          // 이미 종료된 경우 무시
+        }
+      }
+    }, timeout + 5000)
+
     const child = execFile(
       'claude',
       args,
@@ -108,7 +131,13 @@ export async function askAdvisor(
         env: { ...process.env },
       },
       (error, stdout) => {
+        settled = true
+        clearTimeout(killTimer)
+
         if (error) {
+          // 실패 시 rate limit 롤백
+          decrement()
+
           if (error.killed || error.code === 'ETIMEDOUT') {
             reject(new AdvisorTimeoutError(timeout))
             return
@@ -121,6 +150,7 @@ export async function askAdvisor(
           const output: ClaudeJsonOutput = JSON.parse(stdout)
 
           if (output.is_error) {
+            decrement()
             reject(new AdvisorError(`AI 응답 오류: ${output.result}`))
             return
           }
@@ -133,20 +163,10 @@ export async function askAdvisor(
             rateLimitRemaining: rateLimit.remaining,
           })
         } catch {
+          decrement()
           reject(new AdvisorError('AI 응답을 파싱할 수 없습니다.'))
         }
       }
     )
-
-    // 타임아웃 시 프로세스 종료 보장
-    if (child.pid) {
-      setTimeout(() => {
-        try {
-          child.kill('SIGTERM')
-        } catch {
-          // 이미 종료된 경우 무시
-        }
-      }, timeout + 5000)
-    }
   })
 }

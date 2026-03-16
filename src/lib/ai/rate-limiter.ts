@@ -66,6 +66,16 @@ export function checkAndIncrement(
 }
 
 /**
+ * 실패 시 카운터 롤백 (1 감소)
+ */
+export function decrement(): void {
+  resetIfNewDay()
+  if (state.count > 0) {
+    state.count -= 1
+  }
+}
+
+/**
  * 현재 상태 조회 (카운터 변경 없음)
  */
 export function getRateLimitStatus(
