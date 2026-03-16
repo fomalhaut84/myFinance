@@ -4,6 +4,16 @@ import { takeAllSnapshots } from './performance/snapshot'
 import { syncKrxStocks } from './krx-stocks'
 import { prisma } from './prisma'
 
+/** 타임아웃 付き Promise 실행. hang 방지용. */
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`[cron] ${label} 타임아웃 (${ms / 1000}s)`)), ms)
+    ),
+  ])
+}
+
 /** 현재 시각을 KST 기준으로 반환 (시, 분, 요일) */
 function getKSTTime(): { h: number; m: number; day: number } {
   const now = new Date()
@@ -95,7 +105,7 @@ export function scheduleSnapshots(): void {
       }
       isSnapshotRunning = true
       try {
-        await takeAllSnapshots()
+        await withTimeout(takeAllSnapshots(), 10 * 60 * 1000, '스냅샷')
       } catch (error) {
         console.error('[cron] Snapshot failed:', error)
       } finally {
@@ -122,7 +132,7 @@ export function scheduleKrxSync(): void {
     }
     isKrxSyncRunning = true
     try {
-      const result = await syncKrxStocks()
+      const result = await withTimeout(syncKrxStocks(), 5 * 60 * 1000, 'KRX 동기화')
       console.log(
         `[cron] KRX 종목 동기화 완료: ${result.total}개 (추가 ${result.added}, 수정 ${result.updated}, 삭제 ${result.removed})`
       )
