@@ -341,7 +341,8 @@ export function registerExpenseFallback(bot: Bot): void {
     // 슬래시 커맨드는 무시
     if (text.startsWith('/')) return
     // 기존 커맨드 패턴은 무시 (이미 다른 핸들러에서 처리됨)
-    if (/^(현황|계좌|주가|환율|매수|매도|수입)\s*/i.test(text)) return
+    // 커맨드 단어 뒤에 공백 또는 문자열 끝이어야 매칭 (예: "매수수수료"는 통과)
+    if (/^(현황|계좌|주가|환율|매수|매도|수입)(\s|$)/i.test(text)) return
 
     // 숫자가 포함되어 있어야 소비 입력으로 간주
     if (!/\d/.test(text)) return

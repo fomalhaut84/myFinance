@@ -50,41 +50,34 @@ export function parseExpenseInput(input: string): ParseResult {
     return { error: '설명과 금액을 입력해주세요.\n예: 점심 12000' }
   }
 
-  // 금액 패턴: 연속 숫자(콤마 포함)
-  const amountPattern = /[\d,]+/g
-  const matches = Array.from(body.matchAll(amountPattern))
+  // 공백으로 분리된 토큰 중 순수 숫자(콤마 허용)인 것을 금액 후보로 채택
+  // "RTX4090 케이스 800" → 토큰: ["RTX4090", "케이스", "800"] → 800이 금액
+  // 독립 토큰이 없으면 텍스트 내 숫자 fallback
+  const tokens = body.split(/\s+/)
+  let amountToken: { amount: number; tokenIndex: number } | null = null
 
-  if (matches.length === 0) {
-    return { error: '금액을 찾을 수 없습니다.\n예: 점심 12000' }
-  }
-
-  // 유효한 금액 후보 찾기 (1 이상의 정수)
-  let bestMatch: { amount: number; index: number; length: number } | null = null
-
-  for (const m of matches) {
-    const raw = m[0].replace(/,/g, '')
-    // 순수 숫자인지 확인 (빈 문자열, 콤마만 있는 경우 제외)
-    if (!/^\d+$/.test(raw)) continue
-    const num = parseInt(raw, 10)
-    if (num <= 0) continue
-    // 가장 큰 숫자를 금액으로 채택 (보통 금액이 가장 큰 숫자)
-    if (!bestMatch || num > bestMatch.amount) {
-      bestMatch = { amount: num, index: m.index!, length: m[0].length }
+  for (let i = tokens.length - 1; i >= 0; i--) {
+    const raw = tokens[i].replace(/,/g, '')
+    if (/^\d+$/.test(raw)) {
+      const num = parseInt(raw, 10)
+      if (num > 0) {
+        amountToken = { amount: num, tokenIndex: i }
+        break // 마지막(가장 오른쪽) 독립 숫자 토큰 채택
+      }
     }
   }
 
-  if (!bestMatch) {
-    return { error: '유효한 금액을 찾을 수 없습니다.\n예: 점심 12000' }
+  if (!amountToken) {
+    return { error: '금액을 찾을 수 없습니다.\n예: 점심 12000' }
   }
 
-  // 금액 부분을 제거하고 나머지를 설명으로
-  const description = (
-    body.slice(0, bestMatch.index) + body.slice(bestMatch.index + bestMatch.length)
-  ).trim()
+  // 금액 토큰을 제거하고 나머지를 설명으로
+  const descTokens = tokens.filter((_, i) => i !== amountToken!.tokenIndex)
+  const description = descTokens.join(' ').trim()
 
   if (!description) {
     return { error: '설명을 입력해주세요.\n예: 점심 12000' }
   }
 
-  return { description, amount: bestMatch.amount, type }
+  return { description, amount: amountToken.amount, type }
 }
