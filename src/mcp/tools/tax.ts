@@ -96,15 +96,19 @@ export async function getDividends(args: {
 
     let totalNet = 0
     let totalTax = 0
+    let hasMissingFxRate = false
 
     for (const d of dividends) {
       const accountLabel = accountId == null ? `[${d.account.name}] ` : ''
       totalNet += d.amountKRW
       const taxRaw = d.taxAmount ?? 0
-      totalTax +=
-        d.currency === 'USD'
-          ? Math.round(taxRaw * (d.fxRate ?? DEFAULT_FX_RATE_USD_KRW))
-          : Math.round(taxRaw)
+
+      if (d.currency === 'USD') {
+        if (d.fxRate == null) hasMissingFxRate = true
+        totalTax += Math.round(taxRaw * (d.fxRate ?? DEFAULT_FX_RATE_USD_KRW))
+      } else {
+        totalTax += Math.round(taxRaw)
+      }
 
       lines.push(
         `- ${formatDate(d.payDate)} ${accountLabel}${d.displayName} (${d.ticker})` +
@@ -118,6 +122,9 @@ export async function getDividends(args: {
       `\n**합계**: 세후 ${formatMoney(totalNet, 'KRW')}` +
         ` | 원천징수 세금 ${formatMoney(totalTax, 'KRW')}`
     )
+    if (hasMissingFxRate) {
+      lines.push(`※ 환율 누락 건은 기본 환율(${DEFAULT_FX_RATE_USD_KRW.toLocaleString('ko-KR')}원)로 추정`)
+    }
 
     return toolResult(lines.join('\n'))
   } catch (error) {

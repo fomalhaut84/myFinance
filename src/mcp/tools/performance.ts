@@ -1,6 +1,5 @@
 import { calculateTWR } from '@/lib/performance/twr'
 import { calculateContribution } from '@/lib/performance/contribution'
-import { VALID_PERIODS } from '@/lib/performance/constants'
 import {
   resolveAccountId,
   getAllAccountIds,
@@ -17,9 +16,6 @@ export async function getPerformance(args: {
 }) {
   try {
     const period = args.period ?? '1M'
-    if (!VALID_PERIODS.includes(period)) {
-      return toolError(`유효하지 않은 기간입니다. 사용 가능: ${VALID_PERIODS.join(', ')}`)
-    }
 
     const accountId = await resolveAccountId(args.account_name)
     const accounts =

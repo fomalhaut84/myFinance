@@ -2,7 +2,7 @@ import { prisma } from '@/lib/prisma'
 import { toolResult, toolError, formatMoney } from '../utils'
 
 /**
- * get_spending_summary: 월별 소비/수입 요약
+ * get_spending_summary: 월별 소비/수입 요약 (DB 집계)
  */
 export async function getSpendingSummary(args: {
   year: number
@@ -17,40 +17,34 @@ export async function getSpendingSummary(args: {
     const startDate = new Date(`${year}-${monthStr}-01T00:00:00+09:00`)
     const endDate = new Date(`${nextYear}-${nextMonthStr}-01T00:00:00+09:00`)
 
-    const transactions = await prisma.transaction.findMany({
+    // DB에서 카테고리별 집계
+    const grouped = await prisma.transaction.groupBy({
+      by: ['categoryId'],
       where: {
         transactedAt: { gte: startDate, lt: endDate },
       },
-      include: { category: { select: { name: true, type: true } } },
+      _sum: { amount: true },
+      _count: { id: true },
     })
 
-    if (transactions.length === 0) {
+    if (grouped.length === 0) {
       return toolResult(`${year}년 ${month}월 거래 내역이 없습니다.`)
     }
 
-    // 카테고리별 집계
-    const categoryMap = new Map<
-      string,
-      { name: string; type: string; total: number; count: number }
-    >()
+    // 카테고리 정보 조회
+    const categoryIds = grouped.map((g) => g.categoryId)
+    const categories = await prisma.category.findMany({
+      where: { id: { in: categoryIds } },
+      select: { id: true, name: true, type: true },
+    })
+    const categoryMap = new Map(categories.map((c) => [c.id, c]))
 
-    for (const t of transactions) {
-      const key = t.categoryId
-      const existing = categoryMap.get(key)
-      if (existing) {
-        existing.total += t.amount
-        existing.count += 1
-      } else {
-        categoryMap.set(key, {
-          name: t.category.name,
-          type: t.category.type,
-          total: t.amount,
-          count: 1,
-        })
-      }
-    }
-
-    const allCategories = Array.from(categoryMap.values())
+    const allCategories = grouped.map((g) => ({
+      name: categoryMap.get(g.categoryId)?.name ?? '기타',
+      type: categoryMap.get(g.categoryId)?.type ?? 'expense',
+      total: g._sum.amount ?? 0,
+      count: g._count.id,
+    }))
 
     const expenses = allCategories
       .filter((c) => c.type === 'expense')

@@ -21,36 +21,54 @@ export async function getPortfolio(args: { account_name: string }) {
   try {
     const accountId = await resolveAccountId(args.account_name)
 
-    // 환율 조회
-    const fxCache = await prisma.priceCache.findUnique({
-      where: { ticker: 'USDKRW=X' },
-    })
-    const fxRate = fxCache?.price ?? DEFAULT_FX_RATE_USD_KRW
-
     const accounts =
       accountId != null
         ? [{ id: accountId, name: args.account_name }]
         : await getAllAccountIds()
 
+    const accountIds = accounts.map((a) => a.id)
+
+    // 배치 쿼리: 전체 holdings + prices + 환율 한 번에 조회
+    const [allHoldings, fxCache] = await Promise.all([
+      prisma.holding.findMany({
+        where: { accountId: { in: accountIds } },
+        orderBy: { ticker: 'asc' },
+      }),
+      prisma.priceCache.findUnique({ where: { ticker: 'USDKRW=X' } }),
+    ])
+
+    const fxRate = fxCache?.price ?? DEFAULT_FX_RATE_USD_KRW
+
+    // 보유 종목 시세 일괄 조회
+    const allTickers = Array.from(new Set(allHoldings.map((h) => h.ticker)))
+    const prices =
+      allTickers.length > 0
+        ? await prisma.priceCache.findMany({
+            where: { ticker: { in: allTickers } },
+          })
+        : []
+    const priceMap = new Map(prices.map((p) => [p.ticker, p]))
+
+    // accountId별 그룹핑
+    const holdingsByAccount = new Map<string, typeof allHoldings>()
+    for (const h of allHoldings) {
+      const list = holdingsByAccount.get(h.accountId)
+      if (list) {
+        list.push(h)
+      } else {
+        holdingsByAccount.set(h.accountId, [h])
+      }
+    }
+
     const results: string[] = []
 
     for (const account of accounts) {
-      const holdings = await prisma.holding.findMany({
-        where: { accountId: account.id },
-        orderBy: { ticker: 'asc' },
-      })
+      const holdings = holdingsByAccount.get(account.id) ?? []
 
       if (holdings.length === 0) {
         results.push(`## ${account.name}\n보유 종목 없음`)
         continue
       }
-
-      // 현재가 조회
-      const tickers = holdings.map((h) => h.ticker)
-      const prices = await prisma.priceCache.findMany({
-        where: { ticker: { in: tickers } },
-      })
-      const priceMap = new Map(prices.map((p) => [p.ticker, p]))
 
       let totalCost = 0
       let totalValue = 0
@@ -131,16 +149,32 @@ export async function getTrades(args: {
         ? [{ id: accountId, name: args.account_name }]
         : await getAllAccountIds()
 
+    const accountIds = accounts.map((a) => a.id)
+
+    // 배치 쿼리
+    const allTrades = await prisma.trade.findMany({
+      where: {
+        accountId: { in: accountIds },
+        tradedAt: { gte: since },
+      },
+      orderBy: { tradedAt: 'desc' },
+    })
+
+    // accountId별 그룹핑
+    const tradesByAccount = new Map<string, typeof allTrades>()
+    for (const t of allTrades) {
+      const list = tradesByAccount.get(t.accountId)
+      if (list) {
+        list.push(t)
+      } else {
+        tradesByAccount.set(t.accountId, [t])
+      }
+    }
+
     const results: string[] = []
 
     for (const account of accounts) {
-      const trades = await prisma.trade.findMany({
-        where: {
-          accountId: account.id,
-          tradedAt: { gte: since },
-        },
-        orderBy: { tradedAt: 'desc' },
-      })
+      const trades = tradesByAccount.get(account.id) ?? []
 
       if (trades.length === 0) {
         results.push(`## ${account.name}\n최근 ${days}일간 거래 없음`)
