@@ -4,14 +4,39 @@ import { takeAllSnapshots } from './performance/snapshot'
 import { syncKrxStocks } from './krx-stocks'
 import { prisma } from './prisma'
 
-/** 타임아웃 付き Promise 실행. hang 방지용. */
-function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
-  return Promise.race([
-    promise,
-    new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error(`[cron] ${label} 타임아웃 (${ms / 1000}s)`)), ms)
-    ),
-  ])
+/**
+ * Cron 작업 mutex + 타임아웃 가드.
+ * - 중복 실행 방지 (isRunning 플래그)
+ * - 타임아웃 시 경고 로그 출력, 원본 작업은 완료까지 대기 후 mutex 해제
+ */
+function createCronGuard(label: string, timeoutMs: number) {
+  let isRunning = false
+
+  return async (task: () => Promise<void>): Promise<void> => {
+    if (isRunning) {
+      console.warn(`[cron] ${label} 이미 실행 중, 건너뜀`)
+      return
+    }
+    isRunning = true
+
+    let timedOut = false
+    const timer = setTimeout(() => {
+      timedOut = true
+      console.error(`[cron] ${label} 타임아웃 (${timeoutMs / 1000}s) — 작업 완료 대기 중`)
+    }, timeoutMs)
+
+    try {
+      await task()
+      if (timedOut) {
+        console.log(`[cron] ${label} 타임아웃 후 작업 완료`)
+      }
+    } catch (error) {
+      console.error(`[cron] ${label} 실패:`, error)
+    } finally {
+      clearTimeout(timer)
+      isRunning = false
+    }
+  }
 }
 
 /** 현재 시각을 KST 기준으로 반환 (시, 분, 요일) */
@@ -94,24 +119,11 @@ export function schedulePriceUpdates(): void {
  * 매일 06:05 KST (월~토) 실행. 미국장 종료 후 최신가 반영.
  */
 export function scheduleSnapshots(): void {
-  let isSnapshotRunning = false
+  const guard = createCronGuard('스냅샷', 10 * 60 * 1000)
 
   cron.schedule(
     '5 6 * * 1-6',
-    async () => {
-      if (isSnapshotRunning) {
-        console.warn('[cron] 스냅샷 이미 실행 중, 건너뜀')
-        return
-      }
-      isSnapshotRunning = true
-      try {
-        await withTimeout(takeAllSnapshots(), 10 * 60 * 1000, '스냅샷')
-      } catch (error) {
-        console.error('[cron] Snapshot failed:', error)
-      } finally {
-        isSnapshotRunning = false
-      }
-    },
+    () => { void guard(async () => { await takeAllSnapshots() }) },
     { timezone: 'Asia/Seoul' }
   )
 
@@ -123,28 +135,19 @@ export function scheduleSnapshots(): void {
  * 매주 월요일 07:00 KST 실행.
  */
 export function scheduleKrxSync(): void {
-  let isKrxSyncRunning = false
+  const guard = createCronGuard('KRX 동기화', 5 * 60 * 1000)
 
   async function runSync(): Promise<void> {
-    if (isKrxSyncRunning) {
-      console.warn('[cron] KRX 동기화 이미 실행 중, 건너뜀')
-      return
-    }
-    isKrxSyncRunning = true
-    try {
-      const result = await withTimeout(syncKrxStocks(), 5 * 60 * 1000, 'KRX 동기화')
+    await guard(async () => {
+      const result = await syncKrxStocks()
       console.log(
         `[cron] KRX 종목 동기화 완료: ${result.total}개 (추가 ${result.added}, 수정 ${result.updated}, 삭제 ${result.removed})`
       )
-    } catch (error) {
-      console.error('[cron] KRX 종목 동기화 실패:', error)
-    } finally {
-      isKrxSyncRunning = false
-    }
+    })
   }
 
   // 주간 동기화 (매주 월 07:00 KST)
-  cron.schedule('0 7 * * 1', runSync, { timezone: 'Asia/Seoul' })
+  cron.schedule('0 7 * * 1', () => { void runSync() }, { timezone: 'Asia/Seoul' })
 
   // 초기 데이터가 없으면 서버 시작 시 자동 동기화
   void (async () => {

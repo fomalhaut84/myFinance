@@ -23,9 +23,9 @@ function getHandler(): ReturnType<typeof createWebhookHandler> | null {
 
 export async function POST(request: NextRequest): Promise<Response> {
   try {
+    const botToken = process.env.TELEGRAM_BOT_TOKEN
     const secretToken = process.env.TELEGRAM_WEBHOOK_SECRET
-    if (!secretToken) {
-      console.error('[webhook] TELEGRAM_WEBHOOK_SECRET 미설정')
+    if (!botToken || !secretToken) {
       return NextResponse.json({ error: 'Not configured' }, { status: 500 })
     }
 
