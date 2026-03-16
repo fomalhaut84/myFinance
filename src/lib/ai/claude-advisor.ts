@@ -85,6 +85,15 @@ export async function askAdvisor(
     dailyLimit = 30,
   } = options
 
+  // 프롬프트 길이 제한 (10,000자)
+  const MAX_PROMPT_LENGTH = 10_000
+  if (!prompt || prompt.trim().length === 0) {
+    throw new AdvisorError('질문을 입력해주세요.')
+  }
+  if (prompt.length > MAX_PROMPT_LENGTH) {
+    throw new AdvisorError(`질문이 너무 깁니다. (최대 ${MAX_PROMPT_LENGTH}자)`)
+  }
+
   // 입력 검증
   if (!Number.isFinite(timeout) || timeout <= 0) {
     throw new AdvisorError('timeout은 양수여야 합니다.')
@@ -128,7 +137,7 @@ export async function askAdvisor(
         cwd: projectRoot,
         timeout,
         killSignal: 'SIGKILL', // 타임아웃 시 강제 종료 보장
-        maxBuffer: 1024 * 1024, // 1MB
+        maxBuffer: 8 * 1024 * 1024, // 8MB
         env: { ...process.env },
       },
       (error, stdout) => {
