@@ -127,12 +127,19 @@ export async function syncKrxStocks(): Promise<{ total: number; added: number; u
   }
 
   // 상폐 종목 삭제 (upsert 완료 후 실행)
+  // 안전장치: 수집 결과가 기존의 80% 미만이면 삭제 skip (파싱 이상 방지)
   const toDelete = existing.filter((e) => !newCodes.has(e.code))
   if (toDelete.length > 0) {
-    await prisma.krxStock.deleteMany({
-      where: { id: { in: toDelete.map((e) => e.id) } },
-    })
-    result.removed = toDelete.length
+    if (existing.length > 0 && entries.length < existing.length * 0.8) {
+      console.warn(
+        `[krx-stocks] 수집 ${entries.length}개 < 기존 ${existing.length}개의 80%. 삭제 건너뜀 (파싱 이상 가능성)`
+      )
+    } else {
+      await prisma.krxStock.deleteMany({
+        where: { id: { in: toDelete.map((e) => e.id) } },
+      })
+      result.removed = toDelete.length
+    }
   }
 
   return result

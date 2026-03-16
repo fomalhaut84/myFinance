@@ -20,8 +20,8 @@ export async function POST() {
       )
     }
 
-    lastSyncAt = now
     const result = await syncKrxStocks()
+    lastSyncAt = Date.now()
     return NextResponse.json(result)
   } catch (error) {
     console.error('[api] KRX 종목 동기화 실패:', error)
