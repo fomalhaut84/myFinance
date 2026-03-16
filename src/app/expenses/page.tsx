@@ -9,10 +9,16 @@ async function fetchInitialData() {
 
   const dateFrom = new Date(Date.UTC(currentYear, 0, 1))
   const dateTo = new Date(Date.UTC(currentYear + 1, 0, 1))
+  const dateRange = { gte: dateFrom, lt: dateTo }
 
-  const [transactions, total, allTransactions] = await Promise.all([
+  const allCategories = await prisma.category.findMany({
+    select: { id: true, name: true, icon: true, type: true },
+  })
+  const categoryMap = new Map(allCategories.map((c) => [c.id, c]))
+
+  const [transactions, total, annualTransactions, categoryAgg] = await Promise.all([
     prisma.transaction.findMany({
-      where: { transactedAt: { gte: dateFrom, lt: dateTo } },
+      where: { transactedAt: dateRange },
       orderBy: [{ transactedAt: 'desc' }, { createdAt: 'desc' }],
       take: 20,
       include: {
@@ -20,62 +26,62 @@ async function fetchInitialData() {
       },
     }),
     prisma.transaction.count({
-      where: { transactedAt: { gte: dateFrom, lt: dateTo } },
+      where: { transactedAt: dateRange },
     }),
     prisma.transaction.findMany({
-      where: { transactedAt: { gte: dateFrom, lt: dateTo } },
-      select: {
-        amount: true,
-        transactedAt: true,
-        categoryId: true,
-        category: { select: { name: true, icon: true, type: true } },
-      },
+      where: { transactedAt: dateRange },
+      select: { amount: true, transactedAt: true, categoryId: true },
+    }),
+    prisma.transaction.groupBy({
+      by: ['categoryId'],
+      where: { transactedAt: dateRange },
+      _sum: { amount: true },
+      _count: true,
     }),
   ])
 
+  // byMonth
   const byMonth = Array.from({ length: 12 }, (_, i) => ({
     month: i + 1,
     expense: 0,
     income: 0,
   }))
 
-  const catMap = new Map<
-    string,
-    { categoryId: string; categoryName: string; icon: string | null; type: string; total: number; count: number }
-  >()
-
-  let totalExpense = 0
-  let totalIncome = 0
-
-  for (const tx of allTransactions) {
+  for (const tx of annualTransactions) {
     const m = tx.transactedAt.getUTCMonth()
-    const catType = tx.category.type
-
-    if (catType === 'expense') {
+    const cat = categoryMap.get(tx.categoryId)
+    if (!cat) continue
+    if (cat.type === 'expense') {
       byMonth[m].expense += tx.amount
-      totalExpense += tx.amount
     } else {
       byMonth[m].income += tx.amount
-      totalIncome += tx.amount
-    }
-
-    const existing = catMap.get(tx.categoryId)
-    if (existing) {
-      existing.total += tx.amount
-      existing.count += 1
-    } else {
-      catMap.set(tx.categoryId, {
-        categoryId: tx.categoryId,
-        categoryName: tx.category.name,
-        icon: tx.category.icon,
-        type: catType,
-        total: tx.amount,
-        count: 1,
-      })
     }
   }
 
-  const byCategory = Array.from(catMap.values()).sort((a, b) => b.total - a.total)
+  // summary + byCategory
+  let totalExpense = 0
+  let totalIncome = 0
+  let filteredCount = 0
+
+  const byCategory = categoryAgg
+    .map((row) => {
+      const cat = categoryMap.get(row.categoryId)
+      if (!cat) return null
+      const amount = row._sum.amount ?? 0
+      if (cat.type === 'expense') totalExpense += amount
+      else totalIncome += amount
+      filteredCount += row._count
+      return {
+        categoryId: row.categoryId,
+        categoryName: cat.name,
+        icon: cat.icon,
+        type: cat.type as 'expense' | 'income',
+        total: amount,
+        count: row._count,
+      }
+    })
+    .filter((r): r is NonNullable<typeof r> => r !== null)
+    .sort((a, b) => b.total - a.total)
 
   const serialized = transactions.map((tx) => ({
     id: tx.id,
@@ -84,7 +90,7 @@ async function fetchInitialData() {
     categoryId: tx.categoryId,
     categoryName: tx.category.name,
     categoryIcon: tx.category.icon,
-    categoryType: tx.category.type,
+    categoryType: tx.category.type as 'expense' | 'income',
     transactedAt: tx.transactedAt.toISOString(),
     currency: 'KRW' as const,
   }))
@@ -98,7 +104,7 @@ async function fetchInitialData() {
       totalExpense,
       totalIncome,
       net: totalIncome - totalExpense,
-      count: allTransactions.length,
+      count: filteredCount,
     },
     byMonth,
     byCategory,

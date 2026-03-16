@@ -42,7 +42,7 @@ export default function ExpenseSummary({
 
       <Card>
         <div className="text-[11px] text-dim font-semibold tracking-wide uppercase mb-2">
-          순수지
+          순수익
         </div>
         <div className={`text-[20px] font-extrabold tabular-nums ${net >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
           {net >= 0 ? '+' : ''}{formatKRW(net)}

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import ExpenseSummary from '@/components/expense/ExpenseSummary'
 import MonthlyChart from '@/components/expense/MonthlyChart'
 import CategoryPieChart from '@/components/expense/CategoryPieChart'
@@ -12,11 +12,13 @@ interface MonthlyData {
   income: number
 }
 
+type TransactionType = 'expense' | 'income'
+
 interface CategoryData {
   categoryId: string
   categoryName: string
   icon: string | null
-  type: string
+  type: TransactionType
   total: number
   count: number
 }
@@ -27,7 +29,7 @@ interface TransactionRow {
   description: string
   categoryName: string
   categoryIcon: string | null
-  categoryType: string
+  categoryType: TransactionType
   transactedAt: string
 }
 
@@ -64,21 +66,31 @@ export default function ExpensesClient({ initialData }: ExpensesClientProps) {
   const [tab, setTab] = useState<TabType>('all')
   const [offset, setOffset] = useState(0)
   const [loading, setLoading] = useState(false)
+  const abortRef = useRef<AbortController | null>(null)
 
   const fetchData = useCallback(async (y: number, m: number | undefined, t: TabType, o: number) => {
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+
     setLoading(true)
     try {
       const params = new URLSearchParams({ year: String(y), offset: String(o) })
       if (m) params.set('month', String(m))
       if (t !== 'all') params.set('type', t)
 
-      const res = await fetch(`/api/transactions?${params}`)
+      const res = await fetch(`/api/transactions?${params}`, { signal: controller.signal })
       if (res.ok) {
         const json: ApiResponse = await res.json()
         setData(json)
       }
+    } catch (e) {
+      if (e instanceof DOMException && e.name === 'AbortError') return
+      throw e
     } finally {
-      setLoading(false)
+      if (!controller.signal.aborted) {
+        setLoading(false)
+      }
     }
   }, [])
 
