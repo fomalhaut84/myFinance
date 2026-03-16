@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { searchKrxByName } from '@/lib/krx-stocks'
 import { searchYahooByName } from '@/lib/price-fetcher'
 
+export const dynamic = 'force-dynamic'
+
 /**
  * GET /api/prices/search?q=삼성전자
  * 종목명으로 ticker 검색 (한글 → KRX DB, 영문 → Yahoo Search)
