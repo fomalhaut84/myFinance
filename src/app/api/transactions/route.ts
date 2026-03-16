@@ -12,6 +12,7 @@ export const dynamic = 'force-dynamic'
  *   month    — 월 (선택)
  *   offset   — 페이지네이션 (기본 0)
  *   limit    — 페이지 크기 (기본 20, 최대 100)
+ *   listOnly — "true"이면 transactions/total만 반환 (페이지 이동 최적화)
  *
  * 응답:
  *   transactions — 거래 내역 (최신순)
@@ -31,6 +32,7 @@ export async function GET(request: NextRequest) {
     const monthStr = sp.get('month')
     const offsetStr = sp.get('offset')
     const limitStr = sp.get('limit')
+    const listOnly = sp.get('listOnly') === 'true'
 
     const currentYear = new Date().getFullYear()
     const year = yearStr && /^\d{4}$/.test(yearStr) ? parseInt(yearStr) : currentYear
@@ -69,19 +71,8 @@ export async function GET(request: NextRequest) {
       ...(categoryIds ? { categoryId: { in: categoryIds } } : {}),
     }
 
-    // 연간 범위 (byMonth 차트용 — 항상 해당 연도 전체)
-    const yearFrom = new Date(Date.UTC(year, 0, 1))
-    const yearTo = new Date(Date.UTC(year + 1, 0, 1))
-
-    // 카테고리 조회 (byCategory 집계에 필요)
-    const allCategories = await prisma.category.findMany({
-      select: { id: true, name: true, icon: true, type: true },
-    })
-    const categoryMap = new Map(allCategories.map((c) => [c.id, c]))
-
-    // 병렬 조회
-    const [transactions, total, annualTransactions, filteredAgg] = await Promise.all([
-      // 1) 페이지네이션된 거래 목록
+    // 목록 + 카운트 (항상 조회)
+    const [transactions, total] = await Promise.all([
       prisma.transaction.findMany({
         where: baseWhere,
         orderBy: [{ transactedAt: 'desc' }, { createdAt: 'desc' }],
@@ -91,72 +82,8 @@ export async function GET(request: NextRequest) {
           category: { select: { name: true, icon: true, type: true } },
         },
       }),
-      // 2) 필터 적용 건수
       prisma.transaction.count({ where: baseWhere }),
-      // 3) 연간 전체 거래 (byMonth 차트용, 타입 필터 없이)
-      prisma.transaction.findMany({
-        where: { transactedAt: { gte: yearFrom, lt: yearTo } },
-        select: {
-          amount: true,
-          transactedAt: true,
-          categoryId: true,
-        },
-      }),
-      // 4) 필터 적용된 카테고리별 집계 (summary + byCategory)
-      prisma.transaction.groupBy({
-        by: ['categoryId'],
-        where: baseWhere,
-        _sum: { amount: true },
-        _count: true,
-      }),
     ])
-
-    // byMonth 집계 (12개월, 항상 연간)
-    const byMonth = Array.from({ length: 12 }, (_, i) => ({
-      month: i + 1,
-      expense: 0,
-      income: 0,
-    }))
-
-    for (const tx of annualTransactions) {
-      const m = tx.transactedAt.getUTCMonth()
-      const cat = categoryMap.get(tx.categoryId)
-      if (!cat) continue
-
-      if (cat.type === 'expense') {
-        byMonth[m].expense += tx.amount
-      } else {
-        byMonth[m].income += tx.amount
-      }
-    }
-
-    // summary + byCategory (필터 적용된 범위)
-    let totalExpense = 0
-    let totalIncome = 0
-    let filteredCount = 0
-
-    const byCategory = filteredAgg
-      .map((row) => {
-        const cat = categoryMap.get(row.categoryId)
-        if (!cat) return null
-        const total = row._sum.amount ?? 0
-        const count = row._count
-
-        if (cat.type === 'expense') totalExpense += total
-        else totalIncome += total
-        filteredCount += count
-
-        return {
-          categoryId: row.categoryId,
-          categoryName: cat.name,
-          icon: cat.icon,
-          type: cat.type,
-          total,
-          count,
-        }
-      })
-      .filter((r): r is NonNullable<typeof r> => r !== null)
-      .sort((a, b) => b.total - a.total)
 
     const serialized = transactions.map((tx) => ({
       id: tx.id,
@@ -169,6 +96,85 @@ export async function GET(request: NextRequest) {
       transactedAt: tx.transactedAt.toISOString(),
       currency: 'KRW',
     }))
+
+    // listOnly 모드: 페이지 이동 시 집계 스킵
+    if (listOnly) {
+      return NextResponse.json({
+        transactions: serialized,
+        total,
+        offset,
+        limit,
+        year,
+      })
+    }
+
+    // 집계 조회 (필터 변경 시에만)
+    const yearFrom = new Date(Date.UTC(year, 0, 1))
+    const yearTo = new Date(Date.UTC(year + 1, 0, 1))
+
+    const allCategories = await prisma.category.findMany({
+      select: { id: true, name: true, icon: true, type: true },
+    })
+    const categoryMap = new Map(allCategories.map((c) => [c.id, c]))
+
+    const [annualTransactions, filteredAgg] = await Promise.all([
+      prisma.transaction.findMany({
+        where: { transactedAt: { gte: yearFrom, lt: yearTo } },
+        select: { amount: true, transactedAt: true, categoryId: true },
+      }),
+      prisma.transaction.groupBy({
+        by: ['categoryId'],
+        where: baseWhere,
+        _sum: { amount: true },
+        _count: true,
+      }),
+    ])
+
+    // byMonth (항상 연간)
+    const byMonth = Array.from({ length: 12 }, (_, i) => ({
+      month: i + 1,
+      expense: 0,
+      income: 0,
+    }))
+
+    for (const tx of annualTransactions) {
+      const m = tx.transactedAt.getUTCMonth()
+      const cat = categoryMap.get(tx.categoryId)
+      if (!cat) continue
+      if (cat.type === 'expense') {
+        byMonth[m].expense += tx.amount
+      } else {
+        byMonth[m].income += tx.amount
+      }
+    }
+
+    // summary + byCategory
+    let totalExpense = 0
+    let totalIncome = 0
+    let filteredCount = 0
+
+    const byCategory = filteredAgg
+      .map((row) => {
+        const cat = categoryMap.get(row.categoryId)
+        if (!cat) return null
+        const rowTotal = row._sum.amount ?? 0
+        const count = row._count
+
+        if (cat.type === 'expense') totalExpense += rowTotal
+        else totalIncome += rowTotal
+        filteredCount += count
+
+        return {
+          categoryId: row.categoryId,
+          categoryName: cat.name,
+          icon: cat.icon,
+          type: cat.type,
+          total: rowTotal,
+          count,
+        }
+      })
+      .filter((r): r is NonNullable<typeof r> => r !== null)
+      .sort((a, b) => b.total - a.total)
 
     return NextResponse.json({
       transactions: serialized,

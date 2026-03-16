@@ -69,7 +69,9 @@ export default function ExpensesClient({ initialData }: ExpensesClientProps) {
   const abortRef = useRef<AbortController | null>(null)
   const isInitialMount = useRef(true)
 
-  const fetchData = useCallback(async (y: number, m: number | undefined, t: TabType, o: number) => {
+  const fetchData = useCallback(async (
+    y: number, m: number | undefined, t: TabType, o: number, listOnly = false
+  ) => {
     abortRef.current?.abort()
     const controller = new AbortController()
     abortRef.current = controller
@@ -79,15 +81,27 @@ export default function ExpensesClient({ initialData }: ExpensesClientProps) {
       const params = new URLSearchParams({ year: String(y), offset: String(o) })
       if (m) params.set('month', String(m))
       if (t !== 'all') params.set('type', t)
+      if (listOnly) params.set('listOnly', 'true')
 
       const res = await fetch(`/api/transactions?${params}`, { signal: controller.signal })
       if (res.ok) {
-        const json: ApiResponse = await res.json()
-        setData(json)
+        const json = await res.json()
+        if (listOnly) {
+          // 목록만 업데이트, 집계(summary/byMonth/byCategory)는 유지
+          setData((prev) => ({
+            ...prev,
+            transactions: json.transactions,
+            total: json.total,
+            offset: json.offset,
+            limit: json.limit,
+          }))
+        } else {
+          setData(json as ApiResponse)
+        }
       }
     } catch (e) {
       if (e instanceof DOMException && e.name === 'AbortError') return
-      throw e
+      console.error('[expenses] 데이터 조회 실패:', e)
     } finally {
       if (!controller.signal.aborted) {
         setLoading(false)
@@ -95,14 +109,20 @@ export default function ExpensesClient({ initialData }: ExpensesClientProps) {
     }
   }, [])
 
+  // 필터(year/month/tab) 변경 → 전체 조회
   useEffect(() => {
-    // 초기 마운트 시에는 SSR 데이터 사용, fetch 스킵
     if (isInitialMount.current) {
       isInitialMount.current = false
       return
     }
-    fetchData(year, month, tab, offset)
-  }, [year, month, tab, offset, fetchData])
+    fetchData(year, month, tab, 0)
+  }, [year, month, tab, fetchData])
+
+  // offset만 변경 → 목록만 조회
+  const handlePageChange = useCallback((newOffset: number) => {
+    setOffset(newOffset)
+    fetchData(year, month, tab, newOffset, true)
+  }, [year, month, tab, fetchData])
 
   const handleYearChange = (y: number) => {
     setYear(y)
@@ -225,7 +245,7 @@ export default function ExpensesClient({ initialData }: ExpensesClientProps) {
         total={data.total}
         limit={data.limit}
         offset={offset}
-        onPageChange={setOffset}
+        onPageChange={handlePageChange}
       />
     </div>
   )
