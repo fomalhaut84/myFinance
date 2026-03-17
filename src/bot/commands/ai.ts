@@ -203,6 +203,11 @@ async function handleParsedTrade(ctx: Context, response: string): Promise<void> 
       where: { displayName: { equals: displayName, mode: 'insensitive' } },
       take: 2,
     })
+    if (byName.length > 1) {
+      const candidates = byName.map((p) => `${p.displayName} (${p.ticker})`).join('\n  ')
+      await ctx.reply(`여러 종목이 매칭됩니다:\n  ${candidates}\n\n티커를 정확히 입력해주세요.`)
+      return
+    }
     if (byName.length === 1) {
       ticker = byName[0].ticker
       displayName = byName[0].displayName
@@ -232,6 +237,13 @@ async function handleParsedTrade(ctx: Context, response: string): Promise<void> 
 
   if (!ticker || !market) {
     await ctx.reply(`⚠️ 종목을 찾을 수 없습니다: ${parsed.displayName || parsed.ticker}\n티커를 정확히 입력하거나 "매수 [계좌] [종목] [수량] [가격]" 형식으로 입력해주세요.`)
+    return
+  }
+
+  // 파싱 통화와 종목 통화 불일치 체크
+  if (parsed.currency !== currency) {
+    const currLabel = currency === 'USD' ? '달러(USD)' : '원화(KRW)'
+    await ctx.reply(`⚠️ ${displayName}은(는) ${currLabel} 종목입니다. 가격 단위를 확인해주세요.`)
     return
   }
 
