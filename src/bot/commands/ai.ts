@@ -30,12 +30,17 @@ function fireAiQuestion(ctx: Context, question: string): void {
   askAdvisor(question)
     .then(async (result) => {
       const html = markdownToTelegramHtml(result.response)
-      const chunks = splitMessage(html)
-      for (const chunk of chunks) {
+      // HTML 전체를 한 번에 전송 시도, 4096자 초과 시 plain text fallback
+      if (html.length <= 4096) {
         try {
-          await ctx.reply(chunk, { parse_mode: 'HTML' })
+          await ctx.reply(html, { parse_mode: 'HTML' })
         } catch {
-          // HTML 파싱 실패 시 plain text fallback
+          await ctx.reply(result.response)
+        }
+      } else {
+        // 긴 응답: HTML 태그 분할 문제를 피하기 위해 plain text로 전송
+        const chunks = splitMessage(result.response)
+        for (const chunk of chunks) {
           await ctx.reply(chunk)
         }
       }
