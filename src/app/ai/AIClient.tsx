@@ -59,10 +59,16 @@ export default function AIClient() {
   const [isLoading, setIsLoading] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const abortRef = useRef<AbortController | null>(null)
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, isLoading])
+
+  // unmount 시 진행 중인 요청 취소
+  useEffect(() => {
+    return () => { abortRef.current?.abort() }
+  }, [])
 
   const sendMessage = async (prompt: string) => {
     if (!prompt.trim() || isLoading) return
@@ -77,11 +83,17 @@ export default function AIClient() {
     setInput('')
     setIsLoading(true)
 
+    // 이전 요청 취소
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+
     try {
       const res = await fetch('/api/ai/ask', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt: prompt.trim() }),
+        signal: controller.signal,
       })
       const data = await res.json()
 
@@ -98,6 +110,7 @@ export default function AIClient() {
       }
       setMessages((prev) => [...prev, aiMsg])
     } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return
       const errContent = `⚠️ ${error instanceof Error ? error.message : 'AI 응답 처리에 실패했습니다.'}`
       const errMsg: Message = {
         id: generateId(),
