@@ -45,11 +45,16 @@ export async function checkPriceAlerts(chatIds: number[]): Promise<void> {
       key: { in: ['price_drop_pct', 'price_surge_pct', 'fx_change_krw'] },
     },
   })
-  const configMap = new Map(configs.map((c) => [c.key, parseFloat(c.value)]))
+  const configMap = new Map(configs.map((c) => [c.key, c.value]))
 
-  const dropThreshold = configMap.get('price_drop_pct') ?? -5
-  const surgeThreshold = configMap.get('price_surge_pct') ?? 5
-  const fxThreshold = configMap.get('fx_change_krw') ?? 50
+  const parseOrDefault = (key: string, fallback: number): number => {
+    const raw = parseFloat(configMap.get(key) ?? '')
+    return Number.isFinite(raw) ? raw : fallback
+  }
+
+  const dropThreshold = parseOrDefault('price_drop_pct', -5)
+  const surgeThreshold = parseOrDefault('price_surge_pct', 5)
+  const fxThreshold = parseOrDefault('fx_change_krw', 50)
 
   // 보유 종목만 조회 (전체 PriceCache가 아니라)
   const holdings = await prisma.holding.findMany({

@@ -107,11 +107,13 @@ export function schedulePriceUpdates(): void {
 
       if (isMarketHours || isTopOfHour) {
         try {
-          await refreshPrices()
-          // 갱신 후 급등락/환율 변동 알림 체크
-          const chatIds = getAllowedChatIds()
-          if (chatIds.length > 0) {
-            await checkPriceAlerts(chatIds)
+          const result = await refreshPrices()
+          // 실제 갱신이 발생한 경우에만 알림 체크
+          if (result.success > 0) {
+            const chatIds = getAllowedChatIds()
+            if (chatIds.length > 0) {
+              await checkPriceAlerts(chatIds)
+            }
           }
         } catch (error) {
           console.error('[cron] Price refresh failed:', error)
