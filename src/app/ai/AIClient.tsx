@@ -1,6 +1,8 @@
 'use client'
 
 import { useState, useRef, useEffect, FormEvent } from 'react'
+import { marked } from 'marked'
+import DOMPurify from 'dompurify'
 
 interface Message {
   id: string
@@ -29,68 +31,11 @@ function generateId(): string {
  * XSS 방지를 위해 먼저 이스케이프 후 마크다운 태그만 허용
  */
 /**
- * 마크다운 표를 HTML table로 변환
+ * marked + DOMPurify로 마크다운 → 안전한 HTML 변환
  */
-function renderTable(tableBlock: string): string {
-  const rows = tableBlock.trim().split('\n')
-  if (rows.length < 2) return tableBlock
-
-  const parseRow = (row: string): string[] =>
-    row.split('|').map((c) => c.trim()).filter((_, i, arr) => i > 0 && i < arr.length)
-
-  // 구분선(|---|) 행 찾기
-  const sepIdx = rows.findIndex((r) => /^\|[\s-:|]+\|$/.test(r))
-  if (sepIdx < 1) return tableBlock
-
-  const headers = parseRow(rows[sepIdx - 1])
-  const dataRows = rows.slice(sepIdx + 1).filter((r) => r.includes('|'))
-
-  const thCells = headers
-    .map((h) => `<th class="px-3 py-2 text-left text-sub font-medium text-[12px] bg-surface whitespace-nowrap">${h}</th>`)
-    .join('')
-  const bodyRows = dataRows
-    .map((r) => {
-      const cells = parseRow(r)
-      const tds = cells.map((c) => `<td class="px-3 py-2 text-[12px] border-t border-border">${c}</td>`).join('')
-      return `<tr>${tds}</tr>`
-    })
-    .join('')
-
-  return `<div class="overflow-x-auto my-2"><table class="w-full border border-border rounded-lg overflow-hidden text-[12px]"><thead><tr>${thCells}</tr></thead><tbody>${bodyRows}</tbody></table></div>`
-}
-
 function renderMarkdown(text: string): string {
-  // 먼저 이스케이프
-  let escaped = text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-
-  // 표 블록을 먼저 처리 (줄바꿈 변환 전에)
-  escaped = escaped.replace(
-    /((?:^\|.+\|$\n?)+)/gm,
-    (match) => renderTable(match)
-  )
-
-  return escaped
-    // 헤더
-    .replace(/^### (.+)$/gm, '<h3 class="text-[14px] font-bold text-bright mt-4 mb-2 first:mt-0">$1</h3>')
-    .replace(/^## (.+)$/gm, '<h2 class="text-[14px] font-bold text-bright mt-4 mb-2 first:mt-0">$1</h2>')
-    .replace(/^# (.+)$/gm, '<h2 class="text-[15px] font-bold text-bright mt-4 mb-2 first:mt-0">$1</h2>')
-    // 볼드, 이탤릭
-    .replace(/\*\*(.+?)\*\*/g, '<strong class="text-bright">$1</strong>')
-    .replace(/\*(.+?)\*/g, '<em class="text-sub">$1</em>')
-    // 인라인 코드
-    .replace(/`(.+?)`/g, '<code class="bg-surface text-sejin px-1 rounded text-[12px]">$1</code>')
-    // 수평선
-    .replace(/^---$/gm, '<hr class="border-border my-3" />')
-    // 인용
-    .replace(/^&gt; (.+)$/gm, '<blockquote class="border-l-2 border-border pl-3 text-sub my-2">$1</blockquote>')
-    // 리스트
-    .replace(/^- (.+)$/gm, '<li class="ml-5 list-disc my-0.5">$1</li>')
-    // 줄바꿈
-    .replace(/\n\n/g, '<br /><br />')
-    .replace(/\n/g, '<br />')
+  const rawHtml = marked.parse(text, { async: false, gfm: true, breaks: true }) as string
+  return DOMPurify.sanitize(rawHtml)
 }
 
 export default function AIClient() {
@@ -237,6 +182,7 @@ export default function AIClient() {
                 >
                   {msg.role === 'assistant' ? (
                     <div
+                      className="ai-markdown"
                       dangerouslySetInnerHTML={{ __html: msg.html ?? renderMarkdown(msg.content) }}
                     />
                   ) : (
