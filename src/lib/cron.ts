@@ -3,6 +3,16 @@ import { refreshPrices } from './price-fetcher'
 import { takeAllSnapshots } from './performance/snapshot'
 import { syncKrxStocks } from './krx-stocks'
 import { prisma } from './prisma'
+import { checkPriceAlerts } from '@/bot/notifications/price-alert'
+
+function getAllowedChatIds(): number[] {
+  return (process.env.TELEGRAM_ALLOWED_CHAT_IDS ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map(Number)
+    .filter((n) => !isNaN(n))
+}
 
 /**
  * Cron 작업 mutex + 타임아웃 가드.
@@ -98,6 +108,11 @@ export function schedulePriceUpdates(): void {
       if (isMarketHours || isTopOfHour) {
         try {
           await refreshPrices()
+          // 갱신 후 급등락/환율 변동 알림 체크
+          const chatIds = getAllowedChatIds()
+          if (chatIds.length > 0) {
+            await checkPriceAlerts(chatIds)
+          }
         } catch (error) {
           console.error('[cron] Price refresh failed:', error)
         }
