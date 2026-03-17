@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma'
 import { parseExpenseInput, isParseError } from '@/lib/expense-parser'
 import { matchCategory, getAllCategories, type MatchedCategory } from '@/lib/category-matcher'
 import { formatKRWFull } from '../utils/formatter'
+import { isAiQuestion } from '../utils/ai-trigger'
 
 interface PendingTransaction {
   requestedByUserId: number
@@ -345,11 +346,7 @@ export function registerExpenseFallback(bot: Bot): void {
 
     // 숫자 포함이지만 질문형 키워드가 있으면 AI fallback으로 전달
     // (예: "테슬라 2026 전망 알려줘")
-    const hasQuestionKeyword =
-      /[?？]/.test(text) ||
-      /(어때|알려줘?|분석|비교|추천|설명|요약|어떻게|얼마|언제)\s*$/.test(text) ||
-      /\b(분석|비교|추천|설명|요약)\b/.test(text)
-    if (hasQuestionKeyword) return next()
+    if (isAiQuestion(text)) return next()
 
     try {
       await handleExpenseInput(ctx)

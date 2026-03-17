@@ -7,6 +7,7 @@ import {
 } from '@/lib/ai/claude-advisor'
 import { getRateLimitStatus } from '@/lib/ai/rate-limiter'
 import { splitMessage } from '../utils/formatter'
+import { isAiQuestion } from '../utils/ai-trigger'
 
 const TYPING_INTERVAL_MS = 5000
 const MIN_AI_TEXT_LENGTH = 3
@@ -103,12 +104,7 @@ export function registerAiFallback(bot: Bot): void {
 
     if (text.trim().length < MIN_AI_TEXT_LENGTH) return
 
-    // AI 질문 트리거: ? 또는 질문형 어미/키워드 (단어 경계 매칭)
-    const aiTrigger =
-      /[?？]/.test(text) ||
-      /(어때|알려줘?|분석|비교|추천|설명|요약|어떻게|얼마|언제)\s*$/.test(text) ||
-      /\b(분석|비교|추천|설명|요약)\b/.test(text)
-    if (!aiTrigger) return
+    if (!isAiQuestion(text)) return
 
     try {
       await handleAiQuestion(ctx, text)

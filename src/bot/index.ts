@@ -30,7 +30,7 @@ function createBot(): Bot {
   registerBudgetCommands(instance)
   registerAiCommands(instance)
 
-  // fallback 순서: 소비 입력(숫자 포함) → AI 질문(숫자 미포함)
+  // fallback 순서: 소비 입력 → AI 질문 (질문형 키워드 포함 시)
   registerExpenseFallback(instance)
   registerAiFallback(instance)
 
