@@ -28,11 +28,51 @@ function generateId(): string {
  * 간단 마크다운 → HTML 변환
  * XSS 방지를 위해 먼저 이스케이프 후 마크다운 태그만 허용
  */
+/**
+ * 마크다운 표를 HTML table로 변환
+ */
+function renderTable(tableBlock: string): string {
+  const rows = tableBlock.trim().split('\n')
+  if (rows.length < 2) return tableBlock
+
+  const parseRow = (row: string): string[] =>
+    row.split('|').map((c) => c.trim()).filter((_, i, arr) => i > 0 && i < arr.length)
+
+  // 구분선(|---|) 행 찾기
+  const sepIdx = rows.findIndex((r) => /^\|[\s-:|]+\|$/.test(r))
+  if (sepIdx < 1) return tableBlock
+
+  const headers = parseRow(rows[sepIdx - 1])
+  const dataRows = rows.slice(sepIdx + 1).filter((r) => r.includes('|'))
+
+  const thCells = headers
+    .map((h) => `<th class="px-3 py-2 text-left text-sub font-medium text-[12px] bg-surface whitespace-nowrap">${h}</th>`)
+    .join('')
+  const bodyRows = dataRows
+    .map((r) => {
+      const cells = parseRow(r)
+      const tds = cells.map((c) => `<td class="px-3 py-2 text-[12px] border-t border-border">${c}</td>`).join('')
+      return `<tr>${tds}</tr>`
+    })
+    .join('')
+
+  return `<div class="overflow-x-auto my-2"><table class="w-full border border-border rounded-lg overflow-hidden text-[12px]"><thead><tr>${thCells}</tr></thead><tbody>${bodyRows}</tbody></table></div>`
+}
+
 function renderMarkdown(text: string): string {
-  return text
+  // 먼저 이스케이프
+  let escaped = text
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
+
+  // 표 블록을 먼저 처리 (줄바꿈 변환 전에)
+  escaped = escaped.replace(
+    /((?:^\|.+\|$\n?)+)/gm,
+    (match) => renderTable(match)
+  )
+
+  return escaped
     // 헤더
     .replace(/^### (.+)$/gm, '<h3 class="text-[14px] font-bold text-bright mt-4 mb-2 first:mt-0">$1</h3>')
     .replace(/^## (.+)$/gm, '<h2 class="text-[14px] font-bold text-bright mt-4 mb-2 first:mt-0">$1</h2>')
