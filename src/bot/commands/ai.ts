@@ -135,8 +135,12 @@ async function handleParsedTrade(ctx: Context, response: string): Promise<void> 
       await ctx.reply(`⚠️ 파싱 실패: ${raw.error}\n"매수 [계좌] [종목] [수량] [가격]" 형식으로 입력해주세요.`)
       return
     }
+    if (raw.type !== 'BUY' && raw.type !== 'SELL') {
+      await ctx.reply(`⚠️ 매수/매도를 구분할 수 없습니다. "매수 [계좌] [종목] [수량] [가격]" 형식으로 입력해주세요.`)
+      return
+    }
     parsed = {
-      type: raw.type === 'SELL' ? 'SELL' : 'BUY',
+      type: raw.type,
       accountName: String(raw.accountName ?? ''),
       ticker: String(raw.ticker ?? ''),
       displayName: String(raw.displayName ?? ''),
@@ -150,12 +154,16 @@ async function handleParsedTrade(ctx: Context, response: string): Promise<void> 
   }
 
   // 검증
-  if (!parsed.accountName || parsed.shares <= 0 || parsed.price <= 0) {
-    await ctx.reply('⚠️ 계좌명, 수량, 가격을 확인해주세요.')
+  if (!parsed.accountName) {
+    await ctx.reply('⚠️ 계좌명을 확인해주세요.')
     return
   }
-  if (!Number.isInteger(parsed.shares)) {
-    await ctx.reply('⚠️ 수량은 정수여야 합니다.')
+  if (!Number.isFinite(parsed.shares) || parsed.shares <= 0 || !Number.isInteger(parsed.shares)) {
+    await ctx.reply('⚠️ 수량은 1 이상의 정수여야 합니다.')
+    return
+  }
+  if (!Number.isFinite(parsed.price) || parsed.price <= 0) {
+    await ctx.reply('⚠️ 가격은 0보다 큰 숫자여야 합니다.')
     return
   }
 
