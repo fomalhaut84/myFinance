@@ -8,40 +8,35 @@ import {
 import { getRateLimitStatus } from '@/lib/ai/rate-limiter'
 import { splitMessage } from '../utils/formatter'
 
+const TYPING_INTERVAL_MS = 5000
+const MIN_AI_TEXT_LENGTH = 3
+
 /**
  * AI 질문 처리 (공통 핸들러)
  */
 async function handleAiQuestion(ctx: Context, question: string): Promise<void> {
-  // typing indicator 시작
   await ctx.replyWithChatAction('typing')
 
-  // typing을 주기적으로 갱신 (5초마다, 최대 120초)
   const typingInterval = setInterval(async () => {
     try {
       await ctx.replyWithChatAction('typing')
     } catch {
       // typing 전송 실패 무시
     }
-  }, 5000)
+  }, TYPING_INTERVAL_MS)
 
   try {
     const result = await askAdvisor(question)
 
-    clearInterval(typingInterval)
-
-    // 응답 전송 (4096자 제한 분할)
     const chunks = splitMessage(result.response)
     for (const chunk of chunks) {
       await ctx.reply(chunk)
     }
 
-    // 잔여 횟수 표시
     await ctx.reply(
       `💡 남은 AI 질문: ${result.rateLimitRemaining}회/일`
     )
   } catch (error) {
-    clearInterval(typingInterval)
-
     if (error instanceof AdvisorRateLimitError) {
       await ctx.reply(
         `⚠️ ${error.message}\n내일 다시 이용해주세요.`
@@ -63,6 +58,8 @@ async function handleAiQuestion(ctx: Context, question: string): Promise<void> {
 
     console.error('[bot] AI 질문 처리 실패:', error)
     await ctx.reply('⚠️ AI 질문 처리에 실패했습니다.')
+  } finally {
+    clearInterval(typingInterval)
   }
 }
 
@@ -70,7 +67,6 @@ async function handleAiQuestion(ctx: Context, question: string): Promise<void> {
  * /ai 커맨드 + AI fallback 등록
  */
 export function registerAiCommands(bot: Bot): void {
-  // /ai [질문] 커맨드
   bot.command('ai', async (ctx) => {
     try {
       const question = ctx.match?.toString().trim()
@@ -95,20 +91,23 @@ export function registerAiCommands(bot: Bot): void {
 }
 
 /**
- * AI 자연어 fallback (숫자 없는 메시지 → AI 전달)
- * 반드시 expenseFallback보다 뒤에 등록해야 함
+ * AI 자연어 fallback
+ * expense fallback이 next()로 통과시킨 메시지만 수신
  */
 export function registerAiFallback(bot: Bot): void {
-  // expense fallback이 next()로 통과시킨 메시지만 수신
-  // (슬래시 커맨드, 기존 커맨드 패턴, 숫자 포함 메시지는 이미 필터됨)
   bot.on('message:text', async (ctx) => {
     const text = ctx.message.text
 
-    // 너무 짧은 메시지 무시 (2자 이하)
-    if (text.trim().length <= 2) return
+    // 슬래시 커맨드는 AI로 보내지 않음
+    if (text.startsWith('/')) return
 
-    // AI 질문으로 인식하는 조건: 질문형 키워드 또는 ? 포함
-    const aiTrigger = /[?？]|어때|알려|분석|비교|추천|설명|요약|현황|어떻게|얼마|언제|왜|뭐|무엇/.test(text)
+    if (text.trim().length < MIN_AI_TEXT_LENGTH) return
+
+    // AI 질문 트리거: ? 또는 질문형 어미/키워드 (단어 경계 매칭)
+    const aiTrigger =
+      /[?？]/.test(text) ||
+      /(어때|알려줘?|분석|비교|추천|설명|요약|어떻게|얼마|언제)\s*$/.test(text) ||
+      /\b(분석|비교|추천|설명|요약)\b/.test(text)
     if (!aiTrigger) return
 
     try {

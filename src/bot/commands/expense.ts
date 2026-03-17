@@ -340,9 +340,16 @@ export function registerExpenseFallback(bot: Bot): void {
     if (/^(현황|계좌|주가|환율|매수|매도|수입|예산설정)(\s|$)/i.test(text)) return next()
     if (/^(소비|예산)\s*$/i.test(text)) return next()
 
-    // 숫자가 포함되어 있어야 소비 입력으로 간주
     // 숫자 미포함 → 다음 핸들러(AI fallback)로 전달
     if (!/\d/.test(text)) return next()
+
+    // 숫자 포함이지만 질문형 키워드가 있으면 AI fallback으로 전달
+    // (예: "테슬라 2026 전망 알려줘")
+    const hasQuestionKeyword =
+      /[?？]/.test(text) ||
+      /(어때|알려줘?|분석|비교|추천|설명|요약|어떻게|얼마|언제)\s*$/.test(text) ||
+      /\b(분석|비교|추천|설명|요약)\b/.test(text)
+    if (hasQuestionKeyword) return next()
 
     try {
       await handleExpenseInput(ctx)
