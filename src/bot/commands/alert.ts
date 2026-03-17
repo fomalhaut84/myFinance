@@ -1,4 +1,4 @@
-import { Bot } from 'grammy'
+import { Bot, Context } from 'grammy'
 import { prisma } from '@/lib/prisma'
 
 /** 키 → 사용자 친화적 별칭 매핑 */
@@ -17,9 +17,16 @@ function isValidValue(value: string): boolean {
 }
 
 export function registerAlertCommands(bot: Bot): void {
-  bot.command('알림설정', async (ctx) => {
-    try {
-      const args = ctx.match?.toString().trim()
+  // 텔레그램 커맨드는 영문만 지원하므로 /alertconfig + 한글 "알림설정" 모두 매칭
+  bot.command('alertconfig', handler)
+  bot.hears(/^알림설정(?:\s+.*)?$/, handler)
+}
+
+async function handler(ctx: Context) {
+  try {
+    const text = ctx.message?.text ?? ''
+    // /alertconfig args 또는 알림설정 args
+    const args = (ctx.match?.toString().trim()) || text.replace(/^(\/alertconfig|알림설정)\s*/, '').trim()
 
       // 인자 없음 → 현재 설정 조회
       if (!args) {
@@ -93,5 +100,4 @@ export function registerAlertCommands(bot: Bot): void {
       console.error('[bot] 알림설정 실패:', error)
       await ctx.reply('⚠️ 알림 설정에 실패했습니다.')
     }
-  })
 }
