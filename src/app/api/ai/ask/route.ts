@@ -6,12 +6,35 @@ import {
 } from '@/lib/ai/claude-advisor'
 
 export const dynamic = 'force-dynamic'
-export const maxDuration = 300 // Vercel 등 서버리스 환경 대비
+export const maxDuration = 300
+
+/** 사용자 입력 검증 에러 메시지만 허용 */
+const SAFE_ERROR_PREFIXES = ['질문을 입력해주세요', '질문이 너무 깁니다']
+
+function isSafeError(msg: string): boolean {
+  return SAFE_ERROR_PREFIXES.some((p) => msg.startsWith(p))
+}
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
-    const { prompt } = body
+    let body: unknown
+    try {
+      body = await request.json()
+    } catch {
+      return NextResponse.json(
+        { error: '잘못된 요청 형식입니다.' },
+        { status: 400 }
+      )
+    }
+
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      return NextResponse.json(
+        { error: '잘못된 요청 형식입니다.' },
+        { status: 400 }
+      )
+    }
+
+    const { prompt } = body as { prompt?: unknown }
 
     if (!prompt || typeof prompt !== 'string' || prompt.trim().length === 0) {
       return NextResponse.json(
@@ -36,7 +59,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    if (error instanceof AdvisorError) {
+    if (error instanceof AdvisorError && isSafeError(error.message)) {
       return NextResponse.json(
         { error: error.message },
         { status: 400 }

@@ -6,6 +6,7 @@ interface Message {
   id: string
   role: 'user' | 'assistant'
   content: string
+  html?: string // assistant 메시지의 렌더링된 HTML (미리 계산)
 }
 
 const PRESETS = [
@@ -20,7 +21,7 @@ const PRESETS = [
 ] as const
 
 function generateId(): string {
-  return `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+  return crypto.randomUUID()
 }
 
 /**
@@ -88,17 +89,21 @@ export default function AIClient() {
         throw new Error(data.error || 'AI 응답 실패')
       }
 
+      const aiContent = data.response
       const aiMsg: Message = {
         id: generateId(),
         role: 'assistant',
-        content: data.response,
+        content: aiContent,
+        html: renderMarkdown(aiContent),
       }
       setMessages((prev) => [...prev, aiMsg])
     } catch (error) {
+      const errContent = `⚠️ ${error instanceof Error ? error.message : 'AI 응답 처리에 실패했습니다.'}`
       const errMsg: Message = {
         id: generateId(),
         role: 'assistant',
-        content: `⚠️ ${error instanceof Error ? error.message : 'AI 응답 처리에 실패했습니다.'}`,
+        content: errContent,
+        html: renderMarkdown(errContent),
       }
       setMessages((prev) => [...prev, errMsg])
     } finally {
@@ -133,6 +138,9 @@ export default function AIClient() {
             <h2 className="text-[18px] font-bold text-bright">AI 어드바이저</h2>
             <p className="text-[13px] text-sub mt-1">
               포트폴리오, 세금, 소비 현황을 분석해드립니다
+            </p>
+            <p className="text-[11px] text-dim mt-1">
+              각 질문은 독립적으로 처리됩니다
             </p>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 w-full mt-8">
               {PRESETS.map((p) => (
@@ -176,7 +184,7 @@ export default function AIClient() {
                 >
                   {msg.role === 'assistant' ? (
                     <div
-                      dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }}
+                      dangerouslySetInnerHTML={{ __html: msg.html ?? renderMarkdown(msg.content) }}
                     />
                   ) : (
                     <span>{msg.content}</span>
