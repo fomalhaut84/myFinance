@@ -44,7 +44,9 @@ export function scheduleNotifications(): void {
           const config = await prisma.alertConfig.findUnique({
             where: { key: 'daily_summary_hour' },
           })
-          const hour = parseInt(config?.value ?? '8', 10)
+          const rawHour = parseInt(config?.value ?? '8', 10)
+          const hour = Number.isInteger(rawHour) && rawHour >= 0 && rawHour <= 23
+            ? rawHour : 8
           const now = new Date()
           const kstHour = (now.getUTCHours() + 9) % 24
           if (kstHour === hour) {
