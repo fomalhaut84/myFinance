@@ -330,18 +330,19 @@ export function registerExpenseCommands(bot: Bot): void {
  * 반드시 다른 모든 hears 핸들러 이후에 등록해야 한다.
  */
 export function registerExpenseFallback(bot: Bot): void {
-  bot.on('message:text', async (ctx) => {
+  bot.on('message:text', async (ctx, next) => {
     const text = ctx.message.text
-    // 슬래시 커맨드는 무시
-    if (text.startsWith('/')) return
+    // 슬래시 커맨드는 무시 → 다음 핸들러로
+    if (text.startsWith('/')) return next()
     // 기존 커맨드 패턴은 무시 (이미 다른 핸들러에서 처리됨)
     // 커맨드 단어 뒤에 공백 또는 문자열 끝이어야 매칭 (예: "매수수수료"는 통과)
     // "수입 ..."은 expense 핸들러가 처리, "소비"/"수입" 단독은 budget 핸들러가 처리
-    if (/^(현황|계좌|주가|환율|매수|매도|수입|예산설정)(\s|$)/i.test(text)) return
-    if (/^(소비|예산)\s*$/i.test(text)) return
+    if (/^(현황|계좌|주가|환율|매수|매도|수입|예산설정)(\s|$)/i.test(text)) return next()
+    if (/^(소비|예산)\s*$/i.test(text)) return next()
 
     // 숫자가 포함되어 있어야 소비 입력으로 간주
-    if (!/\d/.test(text)) return
+    // 숫자 미포함 → 다음 핸들러(AI fallback)로 전달
+    if (!/\d/.test(text)) return next()
 
     try {
       await handleExpenseInput(ctx)

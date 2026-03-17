@@ -99,21 +99,17 @@ export function registerAiCommands(bot: Bot): void {
  * 반드시 expenseFallback보다 뒤에 등록해야 함
  */
 export function registerAiFallback(bot: Bot): void {
+  // expense fallback이 next()로 통과시킨 메시지만 수신
+  // (슬래시 커맨드, 기존 커맨드 패턴, 숫자 포함 메시지는 이미 필터됨)
   bot.on('message:text', async (ctx) => {
     const text = ctx.message.text
 
-    // 슬래시 커맨드는 무시
-    if (text.startsWith('/')) return
-
-    // 기존 커맨드 패턴은 무시
-    if (/^(현황|계좌|주가|환율|매수|매도|수입|예산설정)(\s|$)/i.test(text)) return
-    if (/^(소비|예산)\s*$/i.test(text)) return
-
-    // 숫자 포함 → 소비 입력 (expense fallback에서 처리)
-    if (/\d/.test(text)) return
-
     // 너무 짧은 메시지 무시 (2자 이하)
     if (text.trim().length <= 2) return
+
+    // AI 질문으로 인식하는 조건: 질문형 키워드 또는 ? 포함
+    const aiTrigger = /[?？]|어때|알려|분석|비교|추천|설명|요약|현황|어떻게|얼마|언제|왜|뭐|무엇/.test(text)
+    if (!aiTrigger) return
 
     try {
       await handleAiQuestion(ctx, text)
