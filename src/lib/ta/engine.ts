@@ -55,8 +55,8 @@ export async function generateTAReport(ticker: string): Promise<TAReport> {
   // === 가격 변동 ===
   const price5dAgo = closes.length >= 6 ? closes[closes.length - 6] : currentPrice
   const price20dAgo = closes.length >= 21 ? closes[closes.length - 21] : currentPrice
-  const high52w = Math.max(...closes.slice(-252))
-  const low52w = Math.min(...closes.slice(-252))
+  const high52w = Math.max(...highs.slice(-252))
+  const low52w = Math.min(...lows.slice(-252))
 
   // === RSI (14) ===
   const rsi = new RSI(14)

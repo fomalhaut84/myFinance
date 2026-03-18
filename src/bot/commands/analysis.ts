@@ -18,7 +18,7 @@ function formatPrice(price: number): string {
 
 async function handleAnalysis(ctx: Context): Promise<void> {
   const text = ctx.message?.text ?? ''
-  const ticker = text.replace(/^(\/analysis|\/분석|분석)\s*/i, '').trim().toUpperCase()
+  const ticker = text.replace(/^(\/analysis(?:@\w+)?|\/분석|분석)\s*/i, '').trim().toUpperCase()
 
   if (!ticker) {
     await ctx.reply(
