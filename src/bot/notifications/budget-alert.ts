@@ -34,18 +34,20 @@ export async function checkBudgetUsage(): Promise<void> {
   const warnPct = parseFloat(config?.value ?? '80')
   if (!Number.isFinite(warnPct)) return
 
-  // 이번 달 기준
+  // 이번 달 기준 (KST)
   const now = new Date()
-  const year = now.getUTCFullYear()
-  const month = now.getUTCMonth() + 1
-  const startDate = new Date(Date.UTC(year, month - 1, 1))
-  const endDate = new Date(Date.UTC(year, month, 1))
+  const kst = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Seoul' }))
+  const year = kst.getFullYear()
+  const month = kst.getMonth() + 1
+  // KST 00:00 → UTC 변환
+  const startDate = new Date(Date.UTC(year, month - 1, 1, -9))
+  const endDate = new Date(Date.UTC(year, month, 1, -9))
 
-  // 월 예산 (전체 카테고리 합산)
-  const budgets = await prisma.budget.findMany({
-    where: { year, month },
+  // 월 예산 (전체 예산 = categoryId null)
+  const budget = await prisma.budget.findFirst({
+    where: { categoryId: null, year, month },
   })
-  const totalBudget = budgets.reduce((sum, b) => sum + b.amount, 0)
+  const totalBudget = budget?.amount ?? 0
   if (totalBudget <= 0) return
 
   // 이번 달 소비 합산 (expense 카테고리만)
