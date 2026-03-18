@@ -108,10 +108,13 @@ export function scheduleNotifications(): void {
             where: { key: 'monthly_report_day' },
           })
           const rawDay = parseInt(config?.value ?? '1', 10)
-          const day = Number.isInteger(rawDay) && rawDay >= 1 && rawDay <= 28
+          const configDay = Number.isInteger(rawDay) && rawDay >= 1 && rawDay <= 31
             ? rawDay : 1
           const now = new Date()
           const kst = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Seoul' }))
+          // 말일 보정: 설정일이 해당 월 일수 초과 시 말일에 발송
+          const daysInMonth = new Date(kst.getFullYear(), kst.getMonth() + 1, 0).getDate()
+          const day = Math.min(configDay, daysInMonth)
           if (kst.getDate() === day) {
             await sendMonthlyReport(chatIds)
           }
