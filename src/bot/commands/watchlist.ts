@@ -28,7 +28,7 @@ function resolveStrategy(input: string): string {
  */
 async function handleWatch(ctx: Context): Promise<void> {
   const text = ctx.message?.text ?? ''
-  const args = text.replace(/^(\/watch|관심)(\s|$)/i, '').trim()
+  const args = text.replace(/^(\/watch(?:@\w+)?|관심)(\s|$)/i, '').trim()
 
   if (!args) {
     await ctx.reply(
@@ -118,7 +118,7 @@ async function handleWatch(ctx: Context): Promise<void> {
  */
 async function handleUnwatch(ctx: Context): Promise<void> {
   const text = ctx.message?.text ?? ''
-  const ticker = text.replace(/^(\/unwatch|관심삭제)\s*/i, '').trim().toUpperCase()
+  const ticker = text.replace(/^(\/unwatch(?:@\w+)?|관심삭제)\s*/i, '').trim().toUpperCase()
 
   if (!ticker) {
     await ctx.reply('사용법: 관심삭제 [종목]\n예: 관심삭제 SOFI')
