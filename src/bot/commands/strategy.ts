@@ -42,7 +42,7 @@ function formatStrategy(strategy: string): string {
  */
 async function handleStrategy(ctx: Context): Promise<void> {
   const text = ctx.message?.text ?? ''
-  const args = (ctx.match?.toString().trim()) || text.replace(/^(\/strategy|전략)\s*/, '').trim()
+  const args = text.replace(/^(\/strategy|전략)\s*/, '').trim()
 
   if (!args) {
     await ctx.reply(
@@ -63,20 +63,42 @@ async function handleStrategy(ctx: Context): Promise<void> {
   const tickerOrName = parts[0]
 
   // 종목 찾기 (ticker 또는 displayName)
-  const holding = await prisma.holding.findFirst({
+  // "계좌명 종목" 형태도 지원: 전략 세진 NVDA 스윙
+  let accountFilter: string | undefined
+  let tickerQuery = tickerOrName
+
+  // 첫 번째 인자가 계좌명인 경우
+  const accountNames = ['세진', '소담', '다솜']
+  if (accountNames.includes(tickerOrName) && parts.length >= 2) {
+    accountFilter = tickerOrName
+    tickerQuery = parts[1]
+    parts.splice(0, 1) // 계좌명 제거, parts[0]이 종목이 됨
+  }
+
+  const holdings = await prisma.holding.findMany({
     where: {
+      ...(accountFilter ? { account: { name: accountFilter } } : {}),
       OR: [
-        { ticker: tickerOrName.toUpperCase() },
-        { displayName: { equals: tickerOrName, mode: 'insensitive' } },
+        { ticker: tickerQuery.toUpperCase() },
+        { displayName: { equals: tickerQuery, mode: 'insensitive' } },
       ],
     },
     include: { strategy: true, account: { select: { name: true } } },
+    take: 5,
   })
 
-  if (!holding) {
-    await ctx.reply(`⚠️ 보유 종목을 찾을 수 없습니다: ${tickerOrName}`)
+  if (holdings.length === 0) {
+    await ctx.reply(`⚠️ 보유 종목을 찾을 수 없습니다: ${tickerQuery}`)
     return
   }
+
+  if (holdings.length > 1) {
+    const candidates = holdings.map((h) => `- ${h.account.name} / ${h.displayName} (${h.ticker})`).join('\n')
+    await ctx.reply(`여러 계좌에 같은 종목이 있습니다. 계좌명을 포함해주세요:\n\n${candidates}\n\n예: 전략 세진 ${tickerQuery} 스윙`)
+    return
+  }
+
+  const holding = holdings[0]
 
   // 인자 1개 = 종목만 → 현재 전략 표시
   if (parts.length === 1) {
