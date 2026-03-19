@@ -7,6 +7,11 @@ import {
 import { formatKRWCompact, formatPercent } from '../utils/formatter'
 import { replyHtml, escapeHtml, h } from '../utils/telegram'
 
+/** 쉼표 제거 후 숫자 파싱 (3,000,000 → 3000000) */
+function parseAmount(str: string): number {
+  return parseFloat(str.replace(/,/g, ''))
+}
+
 const CATEGORY_LABELS: Record<string, string> = {
   savings: '💰 예적금',
   insurance: '🛡️ 보험',
@@ -194,7 +199,7 @@ async function handleAssetAdd(ctx: Context): Promise<void> {
     return
   }
 
-  const value = parseFloat(valueStr)
+  const value = parseAmount(valueStr)
   if (!Number.isFinite(value) || value < 0) {
     await ctx.reply('⚠️ 유효한 금액을 입력해주세요.')
     return
@@ -242,21 +247,30 @@ async function handleAssetUpdate(ctx: Context): Promise<void> {
 
   const name = parts[0]
   const valueStr = parts[1]
-  const value = parseFloat(valueStr)
+  const value = parseAmount(valueStr)
 
   if (!Number.isFinite(value) || value < 0) {
     await ctx.reply('⚠️ 유효한 금액을 입력해주세요.')
     return
   }
 
-  const asset = await prisma.asset.findFirst({
+  const matches = await prisma.asset.findMany({
     where: { name: { equals: name, mode: 'insensitive' } },
+    take: 5,
   })
 
-  if (!asset) {
+  if (matches.length === 0) {
     await ctx.reply(`⚠️ 자산을 찾을 수 없습니다: ${name}\n자산목록 으로 확인해주세요.`)
     return
   }
+
+  if (matches.length > 1) {
+    const list = matches.map((a) => `- ${escapeHtml(a.name)} (${escapeHtml(a.owner)}, ${CATEGORY_LABELS[a.category] ?? a.category})`).join('\n')
+    await replyHtml(ctx, `⚠️ 동일 이름 자산이 여러 개 있습니다:\n${list}\n\n웹에서 수정하거나 이름을 구분해주세요.`)
+    return
+  }
+
+  const asset = matches[0]
 
   const oldValue = asset.value
   const updated = await prisma.asset.update({
