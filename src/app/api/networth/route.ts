@@ -69,6 +69,12 @@ export async function GET() {
       orderBy: { date: 'desc' },
     })
 
+    // 스냅샷 추이 (최근 12개월)
+    const snapshots = await prisma.netWorthSnapshot.findMany({
+      orderBy: { date: 'desc' },
+      take: 12,
+    })
+
     return NextResponse.json({
       netWorthKRW,
       stockValueKRW,
@@ -76,6 +82,7 @@ export async function GET() {
       liabilityKRW,
       breakdown,
       fxRate,
+      assets,
       previousSnapshot: latestSnapshot
         ? {
             date: latestSnapshot.date,
@@ -86,6 +93,13 @@ export async function GET() {
               : 0,
           }
         : null,
+      snapshots: snapshots.reverse().map((s) => ({
+        date: s.date,
+        netWorthKRW: s.netWorthKRW,
+        stockValueKRW: s.stockValueKRW,
+        assetValueKRW: s.assetValueKRW,
+        liabilityKRW: s.liabilityKRW,
+      })),
     })
   } catch (error) {
     console.error('GET /api/networth error:', error)
