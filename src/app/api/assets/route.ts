@@ -5,6 +5,18 @@ export const dynamic = 'force-dynamic'
 
 const VALID_CATEGORIES = ['savings', 'insurance', 'real_estate', 'pension', 'loan', 'cash', 'other']
 
+/** YYYY-MM-DD 엄격 파싱 (2026-02-30 같은 불가능 날짜 거부) */
+function parseStrictDate(str: string): Date | null {
+  const match = str.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (!match) return null
+  const [, y, m, d] = match.map(Number)
+  const date = new Date(Date.UTC(y, m - 1, d))
+  if (date.getUTCFullYear() !== y || date.getUTCMonth() !== m - 1 || date.getUTCDate() !== d) {
+    return null // 정규화 발생 = 불가능 날짜
+  }
+  return date
+}
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = request.nextUrl
@@ -64,7 +76,7 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       )
     }
-    if (!owner || typeof owner !== 'string') {
+    if (!owner || typeof owner !== 'string' || (owner as string).trim().length === 0) {
       return NextResponse.json({ error: '소유자를 입력해주세요.' }, { status: 400 })
     }
     if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
@@ -82,7 +94,7 @@ export async function POST(request: NextRequest) {
         value: Math.round(value),
         isLiability: isLiability === true,
         interestRate: typeof interestRate === 'number' && Number.isFinite(interestRate) ? interestRate : null,
-        maturityDate: typeof maturityDate === 'string' && !isNaN(new Date(maturityDate).getTime()) ? new Date(maturityDate) : null,
+        maturityDate: typeof maturityDate === 'string' ? parseStrictDate(maturityDate) : null,
         note: typeof note === 'string' ? note.trim() || null : null,
       },
     })

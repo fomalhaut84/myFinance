@@ -1,6 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 
+function parseStrictDate(str: string): Date | null {
+  const match = str.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (!match) return null
+  const [, y, m, d] = match.map(Number)
+  const date = new Date(Date.UTC(y, m - 1, d))
+  if (date.getUTCFullYear() !== y || date.getUTCMonth() !== m - 1 || date.getUTCDate() !== d) {
+    return null
+  }
+  return date
+}
+
 export async function PUT(
   request: NextRequest,
   { params }: { params: { id: string } }
@@ -63,9 +74,9 @@ export async function PUT(
       if (maturityDate === null) {
         data.maturityDate = null
       } else if (typeof maturityDate === 'string') {
-        const d = new Date(maturityDate)
-        if (isNaN(d.getTime())) {
-          return NextResponse.json({ error: '유효한 만기일을 입력해주세요.' }, { status: 400 })
+        const d = parseStrictDate(maturityDate)
+        if (!d) {
+          return NextResponse.json({ error: '유효한 만기일을 입력해주세요. (YYYY-MM-DD)' }, { status: 400 })
         }
         data.maturityDate = d
       }
