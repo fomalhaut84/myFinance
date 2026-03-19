@@ -38,10 +38,12 @@ export async function replyHtml(ctx: Context, html: string): Promise<void> {
   for (const chunk of chunks) {
     try {
       await ctx.reply(chunk, { parse_mode: 'HTML' })
-    } catch {
-      // HTML 파싱 실패 시 태그 제거 후 plain text
-      const plain = chunk.replace(/<[^>]+>/g, '')
-      await ctx.reply(plain)
+    } catch (error) {
+      // HTML 파싱 오류(400)만 fallback, 그 외는 재시도 안 함
+      if (isParseError(error)) {
+        const plain = chunk.replace(/<[^>]+>/g, '')
+        await ctx.reply(plain)
+      }
     }
   }
 }
@@ -58,9 +60,25 @@ export async function sendHtml(
   for (const chunk of chunks) {
     try {
       await bot.api.sendMessage(chatId, chunk, { parse_mode: 'HTML' })
-    } catch {
-      const plain = chunk.replace(/<[^>]+>/g, '')
-      await bot.api.sendMessage(chatId, plain)
+    } catch (error) {
+      if (isParseError(error)) {
+        const plain = chunk.replace(/<[^>]+>/g, '')
+        await bot.api.sendMessage(chatId, plain)
+      }
     }
   }
+}
+
+/**
+ * 텔레그램 API의 HTML 파싱 오류 여부 판별 (400 Bad Request)
+ */
+function isParseError(error: unknown): boolean {
+  if (error && typeof error === 'object' && 'error_code' in error) {
+    return (error as { error_code: number }).error_code === 400
+  }
+  // grammY의 HttpError
+  if (error instanceof Error && error.message.includes("can't parse")) {
+    return true
+  }
+  return false
 }
