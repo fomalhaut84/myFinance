@@ -34,7 +34,11 @@ export async function GET() {
       if (currentPrice != null) {
         const currentFxRate = h.currency === 'USD' ? fxRate : 1
         stockValueKRW += calcCurrentValueKRW(h, currentPrice, currentFxRate)
+      } else if (h.currency === 'USD' && h.avgPriceFx != null) {
+        // USD 종목 시세 없음 → 매입 USD 단가 × 현재 환율
+        stockValueKRW += Math.round(h.avgPriceFx * h.shares * fxRate)
       } else {
+        // KRW 종목 시세 없음 → 매입금 기준
         stockValueKRW += Math.round(h.avgPrice * h.shares)
       }
     }

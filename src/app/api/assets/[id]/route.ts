@@ -24,10 +24,24 @@ export async function PUT(
       return NextResponse.json({ error: '잘못된 요청 형식입니다.' }, { status: 400 })
     }
 
-    const { name, value, note, interestRate, maturityDate } = body as Record<string, unknown>
+    const { name, value, note, interestRate, maturityDate, owner, category, isLiability } =
+      body as Record<string, unknown>
+
+    const VALID_CATEGORIES = ['savings', 'insurance', 'real_estate', 'pension', 'loan', 'cash', 'other']
 
     const data: Record<string, unknown> = {}
     if (typeof name === 'string' && name.trim()) data.name = name.trim()
+    if (typeof owner === 'string' && owner.trim()) data.owner = owner.trim()
+    if (typeof category === 'string') {
+      if (!VALID_CATEGORIES.includes(category)) {
+        return NextResponse.json(
+          { error: `유효한 카테고리: ${VALID_CATEGORIES.join(', ')}` },
+          { status: 400 }
+        )
+      }
+      data.category = category
+    }
+    if (typeof isLiability === 'boolean') data.isLiability = isLiability
     if (typeof value === 'number') {
       if (!Number.isFinite(value) || value < 0) {
         return NextResponse.json({ error: '유효한 금액을 입력해주세요.' }, { status: 400 })
