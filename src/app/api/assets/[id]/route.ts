@@ -28,10 +28,26 @@ export async function PUT(
 
     const data: Record<string, unknown> = {}
     if (typeof name === 'string' && name.trim()) data.name = name.trim()
-    if (typeof value === 'number' && Number.isFinite(value)) data.value = Math.round(value)
+    if (typeof value === 'number') {
+      if (!Number.isFinite(value) || value < 0) {
+        return NextResponse.json({ error: '유효한 금액을 입력해주세요.' }, { status: 400 })
+      }
+      data.value = Math.round(value)
+    }
     if (note !== undefined) data.note = typeof note === 'string' ? note.trim() || null : null
-    if (typeof interestRate === 'number') data.interestRate = interestRate
-    if (typeof maturityDate === 'string') data.maturityDate = new Date(maturityDate)
+    if (typeof interestRate === 'number') {
+      if (!Number.isFinite(interestRate)) {
+        return NextResponse.json({ error: '유효한 이율을 입력해주세요.' }, { status: 400 })
+      }
+      data.interestRate = interestRate
+    }
+    if (typeof maturityDate === 'string') {
+      const d = new Date(maturityDate)
+      if (isNaN(d.getTime())) {
+        return NextResponse.json({ error: '유효한 만기일을 입력해주세요.' }, { status: 400 })
+      }
+      data.maturityDate = d
+    }
 
     if (Object.keys(data).length === 0) {
       return NextResponse.json({ error: '변경할 항목이 없습니다.' }, { status: 400 })

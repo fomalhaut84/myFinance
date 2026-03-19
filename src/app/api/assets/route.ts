@@ -78,8 +78,8 @@ export async function POST(request: NextRequest) {
         owner: (owner as string).trim(),
         value: Math.round(value),
         isLiability: isLiability === true,
-        interestRate: typeof interestRate === 'number' ? interestRate : null,
-        maturityDate: typeof maturityDate === 'string' ? new Date(maturityDate) : null,
+        interestRate: typeof interestRate === 'number' && Number.isFinite(interestRate) ? interestRate : null,
+        maturityDate: typeof maturityDate === 'string' && !isNaN(new Date(maturityDate).getTime()) ? new Date(maturityDate) : null,
         note: typeof note === 'string' ? note.trim() || null : null,
       },
     })
