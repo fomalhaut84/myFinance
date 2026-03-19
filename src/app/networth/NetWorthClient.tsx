@@ -73,8 +73,13 @@ export default function NetWorthClient() {
 
   useEffect(() => {
     fetch('/api/networth')
-      .then((r) => r.json())
-      .then((d) => setData(d))
+      .then((r) => {
+        if (!r.ok) throw new Error('API error')
+        return r.json()
+      })
+      .then((d) => {
+        if (d.breakdown) setData(d)
+      })
       .catch(console.error)
       .finally(() => setLoading(false))
   }, [])

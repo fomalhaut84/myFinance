@@ -61,9 +61,10 @@ export async function GET() {
       breakdown[key] = (breakdown[key] ?? 0) + a.value
     }
 
-    // 전월 스냅샷 (현재 월 제외, 직전 월)
+    // 전월 스냅샷 (KST 기준 현재 월 제외)
     const now = new Date()
-    const firstOfMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
+    const kst = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Seoul' }))
+    const firstOfMonth = new Date(Date.UTC(kst.getFullYear(), kst.getMonth(), 1))
     const latestSnapshot = await prisma.netWorthSnapshot.findFirst({
       where: { date: { lt: firstOfMonth } },
       orderBy: { date: 'desc' },
