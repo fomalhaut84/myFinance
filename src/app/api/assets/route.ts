@@ -86,6 +86,27 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'isLiability는 boolean이어야 합니다.' }, { status: 400 })
     }
 
+    // optional 필드 검증 (제공된 경우 타입/값 확인)
+    let validatedInterestRate: number | null = null
+    if (interestRate !== undefined && interestRate !== null) {
+      if (typeof interestRate !== 'number' || !Number.isFinite(interestRate)) {
+        return NextResponse.json({ error: '이율은 숫자여야 합니다.' }, { status: 400 })
+      }
+      validatedInterestRate = interestRate
+    }
+
+    let validatedMaturityDate: Date | null = null
+    if (maturityDate !== undefined && maturityDate !== null) {
+      if (typeof maturityDate !== 'string') {
+        return NextResponse.json({ error: '만기일은 YYYY-MM-DD 형식이어야 합니다.' }, { status: 400 })
+      }
+      const d = parseStrictDate(maturityDate)
+      if (!d) {
+        return NextResponse.json({ error: '유효하지 않은 만기일입니다.' }, { status: 400 })
+      }
+      validatedMaturityDate = d
+    }
+
     const asset = await prisma.asset.create({
       data: {
         name: name.trim(),
@@ -93,8 +114,8 @@ export async function POST(request: NextRequest) {
         owner: (owner as string).trim(),
         value: Math.round(value),
         isLiability: isLiability === true,
-        interestRate: typeof interestRate === 'number' && Number.isFinite(interestRate) ? interestRate : null,
-        maturityDate: typeof maturityDate === 'string' ? parseStrictDate(maturityDate) : null,
+        interestRate: interestRate !== undefined && interestRate !== null ? validatedInterestRate : null,
+        maturityDate: maturityDate !== undefined && maturityDate !== null ? validatedMaturityDate : null,
         note: typeof note === 'string' ? note.trim() || null : null,
       },
     })

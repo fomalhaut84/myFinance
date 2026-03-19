@@ -41,9 +41,19 @@ export async function PUT(
     const VALID_CATEGORIES = ['savings', 'insurance', 'real_estate', 'pension', 'loan', 'cash', 'other']
 
     const data: Record<string, unknown> = {}
-    if (typeof name === 'string' && name.trim()) data.name = name.trim()
-    if (typeof owner === 'string' && owner.trim()) data.owner = owner.trim()
-    if (typeof category === 'string') {
+    if (name !== undefined) {
+      if (typeof name !== 'string' || !name.trim()) {
+        return NextResponse.json({ error: '유효한 자산명을 입력해주세요.' }, { status: 400 })
+      }
+      data.name = name.trim()
+    }
+    if (owner !== undefined) {
+      if (typeof owner !== 'string' || !owner.trim()) {
+        return NextResponse.json({ error: '유효한 소유자를 입력해주세요.' }, { status: 400 })
+      }
+      data.owner = owner.trim()
+    }
+    if (category !== undefined && typeof category === 'string') {
       if (!VALID_CATEGORIES.includes(category)) {
         return NextResponse.json(
           { error: `유효한 카테고리: ${VALID_CATEGORIES.join(', ')}` },
@@ -52,9 +62,14 @@ export async function PUT(
       }
       data.category = category
     }
-    if (typeof isLiability === 'boolean') data.isLiability = isLiability
-    if (typeof value === 'number') {
-      if (!Number.isFinite(value) || value < 0) {
+    if (isLiability !== undefined) {
+      if (typeof isLiability !== 'boolean') {
+        return NextResponse.json({ error: 'isLiability는 boolean이어야 합니다.' }, { status: 400 })
+      }
+      data.isLiability = isLiability
+    }
+    if (value !== undefined) {
+      if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
         return NextResponse.json({ error: '유효한 금액을 입력해주세요.' }, { status: 400 })
       }
       data.value = Math.round(value)
@@ -63,11 +78,10 @@ export async function PUT(
     if (interestRate !== undefined) {
       if (interestRate === null) {
         data.interestRate = null
-      } else if (typeof interestRate === 'number') {
-        if (!Number.isFinite(interestRate)) {
-          return NextResponse.json({ error: '유효한 이율을 입력해주세요.' }, { status: 400 })
-        }
+      } else if (typeof interestRate === 'number' && Number.isFinite(interestRate)) {
         data.interestRate = interestRate
+      } else {
+        return NextResponse.json({ error: '이율은 숫자여야 합니다.' }, { status: 400 })
       }
     }
     if (maturityDate !== undefined) {
