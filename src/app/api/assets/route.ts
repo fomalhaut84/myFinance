@@ -70,6 +70,9 @@ export async function POST(request: NextRequest) {
     if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
       return NextResponse.json({ error: '유효한 금액을 입력해주세요.' }, { status: 400 })
     }
+    if (isLiability !== undefined && typeof isLiability !== 'boolean') {
+      return NextResponse.json({ error: 'isLiability는 boolean이어야 합니다.' }, { status: 400 })
+    }
 
     const asset = await prisma.asset.create({
       data: {

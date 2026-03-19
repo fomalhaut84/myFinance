@@ -35,18 +35,26 @@ export async function PUT(
       data.value = Math.round(value)
     }
     if (note !== undefined) data.note = typeof note === 'string' ? note.trim() || null : null
-    if (typeof interestRate === 'number') {
-      if (!Number.isFinite(interestRate)) {
-        return NextResponse.json({ error: '유효한 이율을 입력해주세요.' }, { status: 400 })
+    if (interestRate !== undefined) {
+      if (interestRate === null) {
+        data.interestRate = null
+      } else if (typeof interestRate === 'number') {
+        if (!Number.isFinite(interestRate)) {
+          return NextResponse.json({ error: '유효한 이율을 입력해주세요.' }, { status: 400 })
+        }
+        data.interestRate = interestRate
       }
-      data.interestRate = interestRate
     }
-    if (typeof maturityDate === 'string') {
-      const d = new Date(maturityDate)
-      if (isNaN(d.getTime())) {
-        return NextResponse.json({ error: '유효한 만기일을 입력해주세요.' }, { status: 400 })
+    if (maturityDate !== undefined) {
+      if (maturityDate === null) {
+        data.maturityDate = null
+      } else if (typeof maturityDate === 'string') {
+        const d = new Date(maturityDate)
+        if (isNaN(d.getTime())) {
+          return NextResponse.json({ error: '유효한 만기일을 입력해주세요.' }, { status: 400 })
+        }
+        data.maturityDate = d
       }
-      data.maturityDate = d
     }
 
     if (Object.keys(data).length === 0) {
