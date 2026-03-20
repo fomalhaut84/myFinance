@@ -25,13 +25,14 @@ interface TransactionFormProps {
   onSaved: () => void
 }
 
-function toLocalDateString(isoString?: string): string {
-  if (!isoString) return new Date().toISOString().slice(0, 10)
-  const d = new Date(isoString)
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
+function toDateInputValue(isoString?: string): string {
+  if (!isoString) {
+    // KST 기준 오늘 날짜
+    const now = new Date(Date.now() + 9 * 60 * 60 * 1000)
+    return now.toISOString().slice(0, 10)
+  }
+  // UTC ISO 문자열에서 날짜 부분만 추출
+  return isoString.slice(0, 10)
 }
 
 export default function TransactionForm({
@@ -47,7 +48,7 @@ export default function TransactionForm({
   const [amount, setAmount] = useState(transaction ? String(transaction.amount) : '')
   const [description, setDescription] = useState(transaction?.description ?? '')
   const [categoryId, setCategoryId] = useState(transaction?.categoryId ?? '')
-  const [transactedAt, setTransactedAt] = useState(toLocalDateString(transaction?.transactedAt))
+  const [transactedAt, setTransactedAt] = useState(toDateInputValue(transaction?.transactedAt))
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
@@ -95,7 +96,7 @@ export default function TransactionForm({
           amount: parsedAmount,
           description: description.trim(),
           categoryId,
-          transactedAt: new Date(transactedAt).toISOString(),
+          transactedAt: `${transactedAt}T00:00:00.000Z`,
         }),
       })
 

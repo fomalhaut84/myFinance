@@ -77,8 +77,9 @@ export default function ExpensesClient({ initialData }: ExpensesClientProps) {
   // 카테고리 목록 fetch (폼 select용)
   useEffect(() => {
     fetch('/api/categories')
-      .then((res) => res.ok ? res.json() : [])
-      .then((cats) => {
+      .then((res) => res.ok ? res.json() : null)
+      .then((data) => {
+        const cats = data?.categories
         if (Array.isArray(cats)) {
           setCategories(cats.map((c: { id: string; name: string; icon: string | null; type: string }) => ({
             id: c.id,
