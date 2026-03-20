@@ -133,14 +133,17 @@ export async function POST(request: NextRequest) {
     const month = body.month as number
     const categoryId = (body.categoryId as string | null) ?? null
 
-    // 카테고리 존재 확인 (null이 아닌 경우)
+    // 카테고리 존재 + expense 타입 확인 (null이 아닌 경우)
     if (categoryId) {
       const cat = await prisma.category.findUnique({
         where: { id: categoryId },
-        select: { id: true },
+        select: { id: true, type: true },
       })
       if (!cat) {
         return NextResponse.json({ error: '존재하지 않는 카테고리입니다.' }, { status: 400 })
+      }
+      if (cat.type !== 'expense') {
+        return NextResponse.json({ error: '예산은 소비 카테고리에만 설정할 수 있습니다.' }, { status: 400 })
       }
     }
 
