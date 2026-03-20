@@ -33,6 +33,7 @@ interface BacktestResult {
   }
   benchmarkReturn: number
   equityCurve: { date: string; value: number }[]
+  currency?: string
 }
 
 const STRATEGIES = [
@@ -54,10 +55,13 @@ function formatPct(n: number): string {
   return `${n >= 0 ? '+' : ''}${n.toFixed(1)}%`
 }
 
-function formatKRW(n: number): string {
-  if (Math.abs(n) >= 1_0000_0000) return `${(n / 1_0000_0000).toFixed(1)}억`
-  if (Math.abs(n) >= 1_0000) return `${Math.round(n / 1_0000).toLocaleString('ko-KR')}만`
-  return `${Math.round(n).toLocaleString('ko-KR')}`
+function formatAmount(n: number, currency: string): string {
+  if (currency === 'USD') {
+    return `$${n >= 0 ? '' : '-'}${Math.abs(n).toLocaleString('en-US', { maximumFractionDigits: 0 })}`
+  }
+  if (Math.abs(n) >= 1_0000_0000) return `${(n / 1_0000_0000).toFixed(1)}억원`
+  if (Math.abs(n) >= 1_0000) return `${Math.round(n / 1_0000).toLocaleString('ko-KR')}만원`
+  return `${Math.round(n).toLocaleString('ko-KR')}원`
 }
 
 export default function BacktestClient() {
@@ -90,10 +94,12 @@ export default function BacktestClient() {
     }
   }
 
-  // 차트용 데이터 (만원 단위)
+  const cur = result?.currency ?? 'KRW'
+  const isUSD = cur === 'USD'
+
   const chartData = result?.equityCurve.map((p) => ({
-    date: p.date.slice(5), // MM-DD
-    자산: Math.round(p.value / 10000),
+    date: p.date.slice(5),
+    자산: isUSD ? Math.round(p.value) : Math.round(p.value / 10000),
   })) ?? []
 
   return (
@@ -147,7 +153,7 @@ export default function BacktestClient() {
         </div>
         <div className="text-[11px] text-dim mt-2">
           {STRATEGIES.find((s) => s.key === strategyKey)?.desc}
-          {' · '}초기 자본 1,000만원 · 수수료 0.25%
+          {' · '}초기 자본 (USD: $10,000 / KRW: 1,000만원) · 수수료 0.25%
         </div>
       </Card>
 
@@ -198,9 +204,9 @@ export default function BacktestClient() {
               <LineChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
                 <XAxis dataKey="date" tick={{ fill: '#9494a8', fontSize: 10 }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
-                <YAxis tick={{ fill: '#9494a8', fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v) => `${v}만`} />
+                <YAxis tick={{ fill: '#9494a8', fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v) => isUSD ? `$${v}` : `${v}만`} />
                 <Tooltip
-                  formatter={(val) => [`${Number(val).toLocaleString('ko-KR')}만원`, '자산']}
+                  formatter={(val) => [isUSD ? `$${Number(val).toLocaleString()}` : `${Number(val).toLocaleString('ko-KR')}만원`, '자산']}
                   contentStyle={{ background: '#1a1a2e', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 12 }}
                 />
                 <Line type="monotone" dataKey="자산" stroke="#34d399" strokeWidth={1.5} dot={false} />
@@ -238,7 +244,7 @@ export default function BacktestClient() {
                         <td className="py-2 px-2 text-right text-text">{t.price.toFixed(2)}</td>
                         <td className="py-2 px-2 text-right text-text">{t.shares}</td>
                         <td className={`py-2 px-2 text-right ${(t.pnl ?? 0) >= 0 ? 'text-sejin' : 'text-red-400'}`}>
-                          {t.pnl != null ? `${formatKRW(t.pnl)}원` : '-'}
+                          {t.pnl != null ? formatAmount(t.pnl, cur) : '-'}
                         </td>
                         <td className="py-2 px-2 text-dim">{t.reason}</td>
                       </tr>
