@@ -151,11 +151,12 @@ export async function runBacktest(config: BacktestConfig): Promise<BacktestResul
 
     if (position === 'NONE' && evaluateConditions(config.strategy.buyConditions, ind)) {
       const investAmount = capital * config.positionSize
-      const cost = investAmount * config.commission
-      shares = Math.floor((investAmount - cost) / ind.close)
+      shares = Math.floor(investAmount / ind.close)
       if (shares > 0) {
+        const buyCost = shares * ind.close
+        const buyCommission = buyCost * config.commission
         entryPrice = ind.close
-        capital -= shares * ind.close + cost
+        capital -= buyCost + buyCommission
         position = 'LONG'
         trades.push({
           type: 'BUY',
@@ -167,9 +168,10 @@ export async function runBacktest(config: BacktestConfig): Promise<BacktestResul
       }
     } else if (position === 'LONG' && evaluateConditions(config.strategy.sellConditions, ind)) {
       const proceeds = shares * ind.close
-      const cost = proceeds * config.commission
-      const pnl = proceeds - cost - shares * entryPrice
-      capital += proceeds - cost
+      const sellCommission = proceeds * config.commission
+      const buyCommission = shares * entryPrice * config.commission
+      const pnl = proceeds - sellCommission - shares * entryPrice - buyCommission
+      capital += proceeds - sellCommission
       trades.push({
         type: 'SELL',
         date: dateStr,

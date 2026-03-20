@@ -9,9 +9,9 @@ export const RSI_REVERSAL: StrategyRule = {
 
 export const GOLDEN_CROSS: StrategyRule = {
   name: '골든크로스',
-  description: 'SMA50 > SMA200 상향돌파 매수, 하향돌파 매도',
-  buyConditions: [{ type: 'macd_cross', direction: 'golden' }],
-  sellConditions: [{ type: 'macd_cross', direction: 'dead' }],
+  description: '가격이 SMA50과 SMA200 위일 때 매수, SMA50 아래로 이탈 시 매도',
+  buyConditions: [{ type: 'price_above_sma', period: 50 }, { type: 'price_above_sma', period: 200 }],
+  sellConditions: [{ type: 'price_below_sma', period: 50 }],
 }
 
 export const BB_BOUNCE: StrategyRule = {
