@@ -25,7 +25,9 @@ export async function GET(
       return NextResponse.json({ error: 'PDF가 아직 생성되지 않았습니다.' }, { status: 404 })
     }
 
-    const filePath = path.join(REPORTS_DIR, report.pdfPath)
+    // path traversal 방지: basename만 사용
+    const safeName = path.basename(report.pdfPath)
+    const filePath = path.join(REPORTS_DIR, safeName)
 
     try {
       const buffer = await fs.readFile(filePath)

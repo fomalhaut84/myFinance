@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma'
 import { generateReportPDF } from '@/lib/report/pdf-generator'
 
 export const dynamic = 'force-dynamic'
+export const maxDuration = 300
 
 /**
  * GET /api/reports — 리포트 목록
