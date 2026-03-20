@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import BudgetProgress from '@/components/expense/BudgetProgress'
 import BudgetManager from '@/components/expense/BudgetManager'
 
@@ -46,18 +46,26 @@ export default function BudgetsClient() {
   const [data, setData] = useState<BudgetData | null>(null)
   const [categories, setCategories] = useState<CategoryOption[]>([])
   const [loading, setLoading] = useState(true)
+  const abortRef = useRef<AbortController | null>(null)
 
   const fetchBudgets = useCallback(async () => {
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+
     setLoading(true)
     try {
-      const res = await fetch(`/api/budgets?year=${year}&month=${month}`)
+      const res = await fetch(`/api/budgets?year=${year}&month=${month}`, { signal: controller.signal })
       if (res.ok) {
         setData(await res.json())
       }
     } catch (e) {
+      if (e instanceof DOMException && e.name === 'AbortError') return
       console.error('[budgets] 조회 실패:', e)
     } finally {
-      setLoading(false)
+      if (!controller.signal.aborted) {
+        setLoading(false)
+      }
     }
   }, [year, month])
 
