@@ -127,7 +127,7 @@ export async function collectQuarterlyData(
         where: { accountId: account.id },
         select: { amount: true, source: true, depositedAt: true },
       })
-      const summary = calcGiftTaxSummary(deposits, true)
+      const summary = calcGiftTaxSummary(deposits, true, end)
       return {
         accountName: account.name,
         totalGifted: summary.totalGifted,
