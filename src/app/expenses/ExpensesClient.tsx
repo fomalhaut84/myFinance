@@ -103,7 +103,8 @@ export default function ExpensesClient({ initialData }: ExpensesClientProps) {
     fetch('/api/assets')
       .then((res) => res.ok ? res.json() : null)
       .then((data) => {
-        if (Array.isArray(data)) setAssets(data)
+        const list = data?.assets ?? data
+        if (Array.isArray(list)) setAssets(list)
       })
       .catch(() => {})
   }, [])
