@@ -26,7 +26,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: '잘못된 요청 형식입니다.' }, { status: 400 })
     }
 
-    const { name, type, icon, keywords, sortOrder } = body as Record<string, unknown>
+    const { name, type, icon, keywords, sortOrder, groupId } = body as Record<string, unknown>
     const isTypeChange = type !== undefined && type !== existing.type
 
     // type 검증 (트랜잭션 전에)
@@ -78,6 +78,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       icon: icon !== undefined ? (typeof icon === 'string' ? (icon.trim() || null) : null) : undefined,
       keywords: cleanedKeywords,
       sortOrder: typeof sortOrder === 'number' ? Math.round(sortOrder) : undefined,
+      groupId: groupId !== undefined ? (typeof groupId === 'string' ? groupId : null) : undefined,
     }
 
     // type 변경 시 트랜잭션으로 체크+업데이트 원자 실행
