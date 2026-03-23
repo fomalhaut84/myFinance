@@ -23,12 +23,23 @@ function CompareBadge({ current, previous, invertColor }: { current: number; pre
   if (diff === 0) {
     return <div className="text-[11px] font-semibold text-dim mt-1.5 tabular-nums">— 변동 없음</div>
   }
-  const pct = previous > 0 ? ((diff / previous) * 100).toFixed(1) : '—'
   const isUp = diff > 0
   // invertColor: 소비 증가 = bad(red), 수입 증가 = good(green)
   const isBad = invertColor ? isUp : !isUp
   const color = isBad ? 'text-red-400' : 'text-emerald-400'
   const arrow = isUp ? '▲' : '▼'
+
+  // previous가 0이거나 음수 → 퍼센트 대신 금액 차이만 표시
+  if (previous <= 0) {
+    const absDiff = Math.abs(diff)
+    return (
+      <div className={`text-[11px] font-semibold mt-1.5 tabular-nums ${color}`}>
+        {arrow} {isUp ? '+' : '-'}{formatKRW(absDiff)} 전월 대비
+      </div>
+    )
+  }
+
+  const pct = ((diff / previous) * 100).toFixed(1)
 
   return (
     <div className={`text-[11px] font-semibold mt-1.5 tabular-nums ${color}`}>

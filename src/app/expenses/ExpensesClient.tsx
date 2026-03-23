@@ -137,6 +137,7 @@ export default function ExpensesClient({ initialData }: ExpensesClientProps) {
     } catch (e) {
       if (e instanceof DOMException && e.name === 'AbortError') return
       console.error('[expenses] 데이터 조회 실패:', e)
+      setAnalysisData(null)
     } finally {
       if (!controller.signal.aborted) {
         setLoading(false)
@@ -320,8 +321,8 @@ export default function ExpensesClient({ initialData }: ExpensesClientProps) {
         </div>
       </div>
 
-      {/* 분석 섹션 (월 선택 시) */}
-      {analysisData && month && (
+      {/* 분석 섹션 (월 선택 + 전체/소비 탭) */}
+      {analysisData && month && tab !== 'income' && (
         <div className="flex flex-col gap-5 mb-5">
           <MonthCompare
             data={analysisData.monthCompare}

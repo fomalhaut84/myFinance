@@ -104,8 +104,8 @@ export async function GET(request: NextRequest) {
       }
     }).sort((a, b) => Math.abs(b.change) - Math.abs(a.change))
 
-    // 전월 소비 합계
-    const prevExpenseTotal = Array.from(prevGroupSpent.values()).reduce((sum, g) => sum + g.total, 0)
+    // 전월 소비 합계 (그룹 무관, 전체 expense 카테고리 기준)
+    const prevExpenseTotal = prevSpent.reduce((sum, s) => sum + (s._sum.amount ?? 0), 0)
 
     // === 트렌드 (최근 6개월) ===
     const trendMonths: { year: number; month: number }[] = []
