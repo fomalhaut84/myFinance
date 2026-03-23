@@ -118,11 +118,18 @@ export default function ExpensesClient({ initialData }: ExpensesClientProps) {
         setData(json)
         setOffset(0)
       }
-      // 월 선택 시 분석 데이터도 조회
-      if (m) {
-        const analysisRes = await fetch(`/api/transactions/analysis?year=${y}&month=${m}`, { signal: controller.signal })
-        if (analysisRes.ok) {
-          setAnalysisData(await analysisRes.json())
+      // 월 선택 시 분석 데이터도 조회 (소비 탭 또는 전체 탭에서만)
+      if (m && t !== 'income') {
+        try {
+          const analysisRes = await fetch(`/api/transactions/analysis?year=${y}&month=${m}`, { signal: controller.signal })
+          if (analysisRes.ok) {
+            setAnalysisData(await analysisRes.json())
+          } else {
+            setAnalysisData(null)
+          }
+        } catch (ae) {
+          if (ae instanceof DOMException && ae.name === 'AbortError') return
+          setAnalysisData(null)
         }
       } else {
         setAnalysisData(null)
