@@ -125,6 +125,9 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       if (error.code === 'P2025') {
         return NextResponse.json({ error: '카테고리를 찾을 수 없습니다.' }, { status: 404 })
       }
+      if (error.code === 'P2003') {
+        return NextResponse.json({ error: '존재하지 않는 그룹입니다.' }, { status: 400 })
+      }
     }
     console.error('PUT /api/categories/[id] error:', error)
     return NextResponse.json({ error: '카테고리 수정에 실패했습니다.' }, { status: 500 })

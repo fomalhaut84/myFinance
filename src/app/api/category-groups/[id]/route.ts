@@ -56,9 +56,15 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params
 
-    const count = await prisma.category.count({ where: { groupId: id } })
-    if (count > 0) {
-      return NextResponse.json({ error: `${count}개의 카테고리가 연결되어 삭제할 수 없습니다.` }, { status: 400 })
+    const [catCount, budgetCount] = await Promise.all([
+      prisma.category.count({ where: { groupId: id } }),
+      prisma.budget.count({ where: { groupId: id } }),
+    ])
+    if (catCount > 0 || budgetCount > 0) {
+      const parts: string[] = []
+      if (catCount > 0) parts.push(`${catCount}개의 카테고리`)
+      if (budgetCount > 0) parts.push(`${budgetCount}개의 예산`)
+      return NextResponse.json({ error: `${parts.join(', ')}이 연결되어 삭제할 수 없습니다.` }, { status: 400 })
     }
 
     await prisma.categoryGroup.delete({ where: { id } })

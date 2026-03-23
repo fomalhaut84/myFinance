@@ -73,15 +73,15 @@ export async function GET(request: NextRequest) {
     const spentMap = new Map(spentByCategory.map((s) => [s.categoryId, s._sum.amount ?? 0]))
     const totalSpent = totalSpentAgg._sum.amount ?? 0
 
-    // 전체 예산
-    const totalBudgetRecord = budgets.find((b) => b.categoryId === null)
+    // 전체 예산 (categoryId=null AND groupId=null)
+    const totalBudgetRecord = budgets.find((b) => b.categoryId === null && b.groupId === null)
     const totalBudget = totalBudgetRecord
       ? { id: totalBudgetRecord.id, amount: totalBudgetRecord.amount, spent: totalSpent }
       : null
 
-    // 카테고리별 예산
+    // 카테고리별 예산 (groupId가 null인 것만)
     const categoryBudgets = budgets
-      .filter((b) => b.categoryId !== null)
+      .filter((b) => b.categoryId !== null && b.groupId === null)
       .map((b) => {
         const spent = spentMap.get(b.categoryId!) ?? 0
         return {
@@ -285,14 +285,22 @@ async function handleCopy(body: Record<string, unknown>) {
   const copied = await prisma.$transaction(async (tx) => {
     let count = 0
     for (const b of sourceBudgets) {
-      const existing = await tx.budget.findFirst({
-        where: { categoryId: b.categoryId, year: targetYear, month: targetMonth },
-      })
+      // categoryId와 groupId 모두 보존하여 복사
+      const findWhere = b.groupId
+        ? { groupId: b.groupId, year: targetYear, month: targetMonth, categoryId: null as string | null }
+        : { categoryId: b.categoryId, year: targetYear, month: targetMonth, groupId: null as string | null }
+      const existing = await tx.budget.findFirst({ where: findWhere })
       if (existing) {
         await tx.budget.update({ where: { id: existing.id }, data: { amount: b.amount } })
       } else {
         await tx.budget.create({
-          data: { categoryId: b.categoryId, year: targetYear, month: targetMonth, amount: b.amount },
+          data: {
+            categoryId: b.categoryId,
+            groupId: b.groupId,
+            year: targetYear,
+            month: targetMonth,
+            amount: b.amount,
+          },
         })
       }
       count++
