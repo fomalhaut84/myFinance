@@ -35,10 +35,13 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
     const category = await prisma.category.findUnique({
       where: { id: categoryId },
-      select: { id: true },
+      select: { id: true, type: true },
     })
     if (!category) {
       return NextResponse.json({ error: '존재하지 않는 카테고리입니다.' }, { status: 400 })
+    }
+    if (txType && category.type !== 'expense') {
+      return NextResponse.json({ error: '출금/입금은 소비 카테고리에서만 사용할 수 있습니다.' }, { status: 400 })
     }
 
     const existing = await prisma.transaction.findUnique({ where: { id } })
