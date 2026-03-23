@@ -83,7 +83,12 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
     // type 변경 시 트랜잭션으로 체크+업데이트 원자 실행
     if (isTypeChange) {
-      const updateDataWithType = { ...baseUpdateData, type: type as string }
+      // income으로 변경 시 groupId 초기화 (그룹은 expense 전용)
+      const updateDataWithType = {
+        ...baseUpdateData,
+        type: type as string,
+        ...(type === 'income' ? { groupId: null } : {}),
+      }
       const updated = await prisma.$transaction(async (tx) => {
         const fresh = await tx.category.findUnique({
           where: { id: params.id },
