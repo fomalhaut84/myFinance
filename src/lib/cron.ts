@@ -187,7 +187,7 @@ export function scheduleRecurring(): void {
   const guard = createCronGuard('반복거래', 5 * 60 * 1000)
 
   cron.schedule(
-    '5 0 * * *',
+    '5 9 * * *',
     () => {
       void guard(async () => {
         const now = new Date()
@@ -254,5 +254,5 @@ export function scheduleRecurring(): void {
     { timezone: 'Asia/Seoul' }
   )
 
-  console.log('[cron] 반복 거래 스케줄러 등록 (매일 00:05 KST)')
+  console.log('[cron] 반복 거래 스케줄러 등록 (매일 09:05 KST)')
 }

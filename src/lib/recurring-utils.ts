@@ -96,7 +96,15 @@ export function calculateNextRunAt(
       return kstMidnightToUTC(nextYear, nextMonth, Math.min(day, lastDay))
     }
     case 'weekly': {
-      d.setUTCDate(d.getUTCDate() + 7)
+      // 다음 주 같은 요일로 이동 (dayOfWeek 기준)
+      if (dayOfWeek !== null && dayOfWeek !== undefined) {
+        const currentDay = d.getUTCDay() // 0=일~6=토
+        let daysToAdd = dayOfWeek - currentDay
+        if (daysToAdd <= 0) daysToAdd += 7
+        d.setUTCDate(d.getUTCDate() + daysToAdd)
+      } else {
+        d.setUTCDate(d.getUTCDate() + 7)
+      }
       return d
     }
     case 'yearly': {
