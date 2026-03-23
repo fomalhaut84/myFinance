@@ -76,27 +76,24 @@ export function calculateNextRunAt(
 
   switch (frequency) {
     case 'monthly': {
-      d.setUTCMonth(d.getUTCMonth() + 1)
-      if (dayOfMonth) {
-        const lastDay = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate()
-        d.setUTCDate(Math.min(dayOfMonth, lastDay))
-      }
-      break
+      // 다음 달 계산: 연/월을 먼저 결정 후 날짜 보정 (2월 스킵 방지)
+      let nextYear = d.getUTCFullYear()
+      let nextMonth = d.getUTCMonth() + 1
+      if (nextMonth > 11) { nextMonth = 0; nextYear++ }
+      const day = dayOfMonth ?? d.getUTCDate()
+      const lastDay = new Date(Date.UTC(nextYear, nextMonth + 1, 0)).getUTCDate()
+      return new Date(Date.UTC(nextYear, nextMonth, Math.min(day, lastDay)))
     }
     case 'weekly': {
       d.setUTCDate(d.getUTCDate() + 7)
       break
     }
     case 'yearly': {
-      d.setUTCFullYear(d.getUTCFullYear() + 1)
-      if (monthOfYear) {
-        d.setUTCMonth(monthOfYear - 1)
-      }
-      if (dayOfMonth) {
-        const lastDay = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate()
-        d.setUTCDate(Math.min(dayOfMonth, lastDay))
-      }
-      break
+      const nextYear = d.getUTCFullYear() + 1
+      const month = monthOfYear ? monthOfYear - 1 : d.getUTCMonth()
+      const day = dayOfMonth ?? d.getUTCDate()
+      const lastDay = new Date(Date.UTC(nextYear, month + 1, 0)).getUTCDate()
+      return new Date(Date.UTC(nextYear, month, Math.min(day, lastDay)))
     }
   }
 

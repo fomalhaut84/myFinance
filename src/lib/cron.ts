@@ -203,17 +203,7 @@ export function scheduleRecurring(): void {
         let created = 0
         for (const item of items) {
           try {
-            // Transaction 생성
-            const tx = await prisma.transaction.create({
-              data: {
-                amount: item.amount,
-                description: item.description,
-                categoryId: item.categoryId,
-                transactedAt: item.nextRunAt,
-              },
-            })
-
-            // nextRunAt 갱신
+            // Transaction 생성 + nextRunAt 갱신을 트랜잭션으로 묶기
             const nextRun = calculateNextRunAt(
               item.frequency as Frequency,
               item.nextRunAt,
@@ -221,12 +211,24 @@ export function scheduleRecurring(): void {
               item.dayOfWeek,
               item.monthOfYear,
             )
-            await prisma.recurringTransaction.update({
-              where: { id: item.id },
-              data: { nextRunAt: nextRun, lastRunAt: now },
+
+            const tx = await prisma.$transaction(async (db) => {
+              const created = await db.transaction.create({
+                data: {
+                  amount: item.amount,
+                  description: item.description,
+                  categoryId: item.categoryId,
+                  transactedAt: item.nextRunAt,
+                },
+              })
+              await db.recurringTransaction.update({
+                where: { id: item.id },
+                data: { nextRunAt: nextRun, lastRunAt: now },
+              })
+              return created
             })
 
-            // 후잉 웹훅 (비차단)
+            // 후잉 웹훅 (트랜잭션 외부, 비차단)
             try {
               await sendToWhooing({
                 amount: tx.amount,

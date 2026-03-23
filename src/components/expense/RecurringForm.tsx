@@ -59,7 +59,7 @@ export default function RecurringForm({ mode, item, categories, onClose, onSaved
       description: description.trim(),
       categoryId,
       frequency,
-      nextRunAt: `${nextRunAt}T00:00:00.000Z`,
+      nextRunAt: `${nextRunAt}T00:00:00+09:00`,
     }
     if (frequency === 'monthly') body.dayOfMonth = dayOfMonth
     if (frequency === 'weekly') body.dayOfWeek = dayOfWeek
