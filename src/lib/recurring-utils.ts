@@ -62,6 +62,16 @@ export function validateRecurringInput(body: Record<string, unknown>): Recurring
   return errors
 }
 
+/** UTC Date를 KST로 변환 (UTC+9) */
+function toKST(d: Date): Date {
+  return new Date(d.getTime() + 9 * 60 * 60 * 1000)
+}
+
+/** 해당 날짜의 UTC 정오(12:00)로 생성 — 어느 타임존에서든 같은 날짜 */
+function kstMidnightToUTC(year: number, month: number, day: number): Date {
+  return new Date(Date.UTC(year, month, day, 0, 0, 0))
+}
+
 /**
  * 현재 nextRunAt 기준으로 다음 실행일을 계산한다.
  */
@@ -76,24 +86,26 @@ export function calculateNextRunAt(
 
   switch (frequency) {
     case 'monthly': {
-      // 다음 달 계산: 연/월을 먼저 결정 후 날짜 보정 (2월 스킵 방지)
-      let nextYear = d.getUTCFullYear()
-      let nextMonth = d.getUTCMonth() + 1
+      // KST 기준으로 연/월 결정 후 날짜 보정
+      const kst = toKST(current)
+      let nextYear = kst.getUTCFullYear()
+      let nextMonth = kst.getUTCMonth() + 1
       if (nextMonth > 11) { nextMonth = 0; nextYear++ }
-      const day = dayOfMonth ?? d.getUTCDate()
+      const day = dayOfMonth ?? kst.getUTCDate()
       const lastDay = new Date(Date.UTC(nextYear, nextMonth + 1, 0)).getUTCDate()
-      return new Date(Date.UTC(nextYear, nextMonth, Math.min(day, lastDay)))
+      return kstMidnightToUTC(nextYear, nextMonth, Math.min(day, lastDay))
     }
     case 'weekly': {
       d.setUTCDate(d.getUTCDate() + 7)
-      break
+      return d
     }
     case 'yearly': {
-      const nextYear = d.getUTCFullYear() + 1
-      const month = monthOfYear ? monthOfYear - 1 : d.getUTCMonth()
-      const day = dayOfMonth ?? d.getUTCDate()
+      const kst = toKST(current)
+      const nextYear = kst.getUTCFullYear() + 1
+      const month = monthOfYear ? monthOfYear - 1 : kst.getUTCMonth()
+      const day = dayOfMonth ?? kst.getUTCDate()
       const lastDay = new Date(Date.UTC(nextYear, month + 1, 0)).getUTCDate()
-      return new Date(Date.UTC(nextYear, month, Math.min(day, lastDay)))
+      return kstMidnightToUTC(nextYear, month, Math.min(day, lastDay))
     }
   }
 
