@@ -294,7 +294,7 @@ export default function ExpensesClient({ initialData }: ExpensesClientProps) {
           count={data.summary.count}
           year={year}
           month={month}
-          prevMonth={analysisData?.prevMonthSummary}
+          prevMonth={tab === 'all' ? analysisData?.prevMonthSummary : undefined}
         />
       </div>
 
