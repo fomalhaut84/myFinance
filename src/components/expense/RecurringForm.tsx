@@ -33,7 +33,11 @@ export default function RecurringForm({ mode, item, categories, onClose, onSaved
   const [dayOfMonth, setDayOfMonth] = useState(item?.dayOfMonth ?? 1)
   const [dayOfWeek, setDayOfWeek] = useState(item?.dayOfWeek ?? 1)
   const [monthOfYear, setMonthOfYear] = useState(item?.monthOfYear ?? 1)
-  const [nextRunAt, setNextRunAt] = useState(item?.nextRunAt?.slice(0, 10) ?? new Date().toISOString().slice(0, 10))
+  const [nextRunAt, setNextRunAt] = useState(() => {
+    if (item?.nextRunAt) return item.nextRunAt.slice(0, 10)
+    const kst = new Date(Date.now() + 9 * 60 * 60 * 1000)
+    return kst.toISOString().slice(0, 10)
+  })
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
