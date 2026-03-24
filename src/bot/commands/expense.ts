@@ -282,6 +282,20 @@ async function createTransaction(
       },
     })
 
+    const catLabel = category?.icon
+      ? `${category.icon} ${category.name}`
+      : pending.categoryName
+
+    // 텔레그램 콜백 응답 먼저 (UX 우선)
+    await ctx.answerCallbackQuery({ text: '기록 완료!' })
+    await ctx.editMessageReplyMarkup({ reply_markup: undefined })
+    await ctx.editMessageText(
+      `✅ ${typeLabel} 기록 완료\n\n` +
+        `내용: ${pending.description}\n` +
+        `금액: ${formatKRWFull(pending.amount)}\n` +
+        `카테고리: ${catLabel}`
+    )
+
     // 후잉 웹훅 전송 (실패해도 거래 기록은 정상 완료)
     try {
       await sendToWhooing({
@@ -300,21 +314,8 @@ async function createTransaction(
         console.error('[bot/expense] 예산 경고 체크 실패:', error)
       )
     }
-
-    const catLabel = category?.icon
-      ? `${category.icon} ${category.name}`
-      : pending.categoryName
-
-    await ctx.answerCallbackQuery({ text: '기록 완료!' })
-    await ctx.editMessageReplyMarkup({ reply_markup: undefined })
-    await ctx.editMessageText(
-      `✅ ${typeLabel} 기록 완료\n\n` +
-        `내용: ${pending.description}\n` +
-        `금액: ${formatKRWFull(pending.amount)}\n` +
-        `카테고리: ${catLabel}`
-    )
   } catch (error) {
-    console.error('[bot] 거래 기록 실패:', error)
+    console.error('[bot/expense] 거래 기록 실패:', error)
     await ctx.answerCallbackQuery({ text: '⚠️ 기록에 실패했습니다.' })
     await ctx.editMessageReplyMarkup({ reply_markup: undefined })
     await ctx.editMessageText(`⚠️ ${typeLabel} 기록에 실패했습니다. 잠시 후 다시 시도해주세요.`)
