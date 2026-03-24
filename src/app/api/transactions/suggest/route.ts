@@ -42,15 +42,19 @@ export async function GET(request: NextRequest) {
       source: 'keyword' as const,
     }))
 
-    // 2. 히스토리 매칭: 과거 거래에서 description 유사 → categoryId별 count
+    // 2. 히스토리 매칭: 최근 6개월 거래에서 description 유사 → categoryId별 count
+    const sixMonthsAgo = new Date()
+    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6)
+
     const historyRows = await prisma.transaction.groupBy({
       by: ['categoryId'],
       where: {
         description: { contains: q, mode: 'insensitive' },
+        transactedAt: { gte: sixMonthsAgo },
       },
       _count: { categoryId: true },
       orderBy: { _count: { categoryId: 'desc' } },
-      take: MAX_SUGGESTIONS,
+      take: MAX_SUGGESTIONS * 3,
     })
 
     const keywordCategoryIds = new Set(keywordSuggestions.map((s) => s.categoryId))

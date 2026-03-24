@@ -104,9 +104,12 @@ export default function TransactionForm({
         if (res.ok) {
           const data = await res.json()
           setSuggestions(data.suggestions ?? [])
+        } else {
+          setSuggestions([])
         }
-      } catch {
-        // AbortError or network error — ignore
+      } catch (err) {
+        if (err instanceof DOMException && err.name === 'AbortError') return
+        setSuggestions([])
       }
     }, 300)
   }, [])
