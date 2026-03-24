@@ -272,7 +272,7 @@ async function createTransaction(
       select: { icon: true, name: true },
     })
 
-    await prisma.transaction.create({
+    const created = await prisma.transaction.create({
       data: {
         amount: pending.amount,
         description: pending.description,
@@ -281,6 +281,21 @@ async function createTransaction(
         transactedAt: new Date(),
       },
     })
+
+    // 후잉 웹훅 전송 (실패해도 거래 기록은 정상 완료)
+    sendToWhooing({
+      amount: created.amount,
+      description: created.description,
+      categoryId: created.categoryId,
+      transactedAt: created.transactedAt,
+    }).catch((error) => console.error('[bot/expense] 후잉 전송 실패:', error))
+
+    // 소비 기록 후 예산 사용률 체크 (비동기, 실패해도 무시)
+    if (pending.type === 'expense') {
+      checkBudgetUsage().catch((error) =>
+        console.error('[bot/expense] 예산 경고 체크 실패:', error)
+      )
+    }
 
     const catLabel = category?.icon
       ? `${category.icon} ${category.name}`
@@ -294,21 +309,6 @@ async function createTransaction(
         `금액: ${formatKRWFull(pending.amount)}\n` +
         `카테고리: ${catLabel}`
     )
-
-    // 후잉 웹훅 전송 (실패해도 거래 기록은 정상 완료)
-    sendToWhooing({
-      amount: pending.amount,
-      description: pending.description,
-      categoryId: pending.categoryId,
-      transactedAt: new Date(),
-    }).catch((err) => console.error('[bot/expense] 후잉 전송 실패:', err))
-
-    // 소비 기록 후 예산 사용률 체크 (비동기, 실패해도 무시)
-    if (pending.type === 'expense') {
-      checkBudgetUsage().catch((e) =>
-        console.error('[bot] 예산 경고 체크 실패:', e)
-      )
-    }
   } catch (error) {
     console.error('[bot] 거래 기록 실패:', error)
     await ctx.answerCallbackQuery({ text: '⚠️ 기록에 실패했습니다.' })
