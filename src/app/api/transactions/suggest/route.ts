@@ -60,6 +60,7 @@ export async function GET(request: NextRequest) {
       where: {
         description: { contains: q, mode: 'insensitive' },
         transactedAt: { gte: sixMonthsAgo },
+        ...(types.length === 1 ? { category: { type: types[0] } } : {}),
       },
       _count: { categoryId: true },
       orderBy: { _count: { categoryId: 'desc' } },

@@ -229,7 +229,14 @@ export default function TransactionForm({
                 <button
                   key={t.value}
                   type="button"
-                  onClick={() => setTxType(t.value)}
+                  onClick={() => {
+                    setTxType(t.value)
+                    if (description.trim().length >= 2) {
+                      fetchSuggestions(description, t.value)
+                    } else {
+                      setSuggestions([])
+                    }
+                  }}
                   className={`flex-1 py-2 rounded-md text-[12px] font-semibold transition-all ${
                     txType === t.value ? t.activeClass : 'text-sub'
                   }`}
