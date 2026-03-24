@@ -178,6 +178,7 @@ async function handleExpenseInput(ctx: Context): Promise<void> {
  * tx:cancel:{txId} — 취소
  * tx:cat:{txId}:{categoryId} — 카테고리 선택
  * tx:change:{txId} — 카테고리 변경
+ * tx:allcat:{txId} — 전체 카테고리 보기
  */
 async function handleExpenseCallback(ctx: Context): Promise<void> {
   const data = ctx.callbackQuery?.data
