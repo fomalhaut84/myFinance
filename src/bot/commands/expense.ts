@@ -282,13 +282,17 @@ async function createTransaction(
       },
     })
 
-    // 후잉 웹훅 전송 (DB 직후 비차단, 실패해도 거래 기록은 정상 완료)
-    void sendToWhooing({
-      amount: created.amount,
-      description: created.description,
-      categoryId: created.categoryId,
-      transactedAt: created.transactedAt,
-    }).catch((error) => console.error('[bot/expense] 후잉 전송 실패:', error))
+    // 후잉 웹훅 전송 (별도 try-catch, 실패해도 거래 기록·텔레그램 응답에 영향 없음)
+    try {
+      await sendToWhooing({
+        amount: created.amount,
+        description: created.description,
+        categoryId: created.categoryId,
+        transactedAt: created.transactedAt,
+      })
+    } catch (error) {
+      console.error('[bot/expense] 후잉 전송 실패:', error)
+    }
 
     const catLabel = category?.icon
       ? `${category.icon} ${category.name}`
