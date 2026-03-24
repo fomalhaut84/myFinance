@@ -51,12 +51,25 @@ export default function AccountEditor({ accounts, onRefresh }: AccountEditorProp
     setError(null)
 
     try {
+      const parsedHorizon = form.horizon ? parseInt(form.horizon) : null
+      const parsedAge = form.ownerAge ? parseInt(form.ownerAge) : null
+      if (form.horizon && (isNaN(parsedHorizon!) || parsedHorizon! <= 0)) {
+        setError('투자 기간은 양의 정수여야 합니다.')
+        setSaving(false)
+        return
+      }
+      if (form.ownerAge && (isNaN(parsedAge!) || parsedAge! < 0)) {
+        setError('나이는 0 이상의 정수여야 합니다.')
+        setSaving(false)
+        return
+      }
+
       const body: Record<string, unknown> = {
         name: form.name.trim(),
         strategy: form.strategy.trim() || null,
         benchmarkTicker: form.benchmarkTicker.trim() || null,
-        horizon: form.horizon ? parseInt(form.horizon) : null,
-        ownerAge: form.ownerAge ? parseInt(form.ownerAge) : null,
+        horizon: parsedHorizon,
+        ownerAge: parsedAge,
       }
 
       const res = await fetch(`/api/accounts/${id}`, {

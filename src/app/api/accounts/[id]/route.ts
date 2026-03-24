@@ -64,6 +64,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     }
 
     if (body.strategy !== undefined) {
+      if (body.strategy !== null && typeof body.strategy !== 'string') {
+        return NextResponse.json({ error: '전략은 문자열이어야 합니다.' }, { status: 400 })
+      }
       data.strategy = typeof body.strategy === 'string' ? body.strategy.trim() || null : null
     }
 
@@ -78,6 +81,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     }
 
     if (body.benchmarkTicker !== undefined) {
+      if (body.benchmarkTicker !== null && typeof body.benchmarkTicker !== 'string') {
+        return NextResponse.json({ error: '벤치마크는 문자열이어야 합니다.' }, { status: 400 })
+      }
       data.benchmarkTicker = typeof body.benchmarkTicker === 'string' ? body.benchmarkTicker.trim() || null : null
     }
 
