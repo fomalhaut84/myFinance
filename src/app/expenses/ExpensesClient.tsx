@@ -220,6 +220,7 @@ export default function ExpensesClient({ initialData }: ExpensesClientProps) {
   }
 
   const handleRegisterRecurring = (tx: TransactionRow) => {
+    if (tx.type === 'transfer_in' || tx.type === 'transfer_out') return
     setShowForm(false)
     setEditingTx(null)
     setRecurringPrefill({
@@ -411,6 +412,7 @@ export default function ExpensesClient({ initialData }: ExpensesClientProps) {
       {/* 반복 거래 등록 폼 */}
       {recurringPrefill && (
         <RecurringForm
+          key={`${recurringPrefill.description}-${recurringPrefill.amount}`}
           mode="create"
           prefill={recurringPrefill}
           categories={categories}
