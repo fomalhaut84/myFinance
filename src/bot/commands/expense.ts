@@ -282,8 +282,8 @@ async function createTransaction(
       },
     })
 
-    // 후잉 웹훅 전송 시작 (DB 직후, 텔레그램 응답과 병렬 실행)
-    const whooingPromise = sendToWhooing({
+    // 후잉 웹훅 전송 (DB 직후 비차단, 실패해도 거래 기록은 정상 완료)
+    void sendToWhooing({
       amount: created.amount,
       description: created.description,
       categoryId: created.categoryId,
@@ -302,9 +302,6 @@ async function createTransaction(
         `금액: ${formatKRWFull(pending.amount)}\n` +
         `카테고리: ${catLabel}`
     )
-
-    // 후잉 전송 완료 대기 (이미 병렬 실행 중)
-    await whooingPromise
 
     // 소비 기록 후 예산 사용률 체크 (비동기, 실패해도 무시)
     if (pending.type === 'expense') {
