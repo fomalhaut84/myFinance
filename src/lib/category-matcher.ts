@@ -10,6 +10,7 @@ export interface MatchedCategory {
   name: string
   icon: string | null
   type: string
+  count?: number
 }
 
 /**
@@ -58,13 +59,16 @@ export async function suggestByHistory(
   type: 'expense' | 'income',
   excludeIds?: string[]
 ): Promise<MatchedCategory[]> {
+  const trimmed = description.trim().slice(0, 100)
+  if (trimmed.length < 2) return []
+
   const sixMonthsAgo = new Date()
   sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6)
 
   const historyRows = await prisma.transaction.groupBy({
     by: ['categoryId'],
     where: {
-      description: { contains: description, mode: 'insensitive' },
+      description: { contains: trimmed, mode: 'insensitive' },
       transactedAt: { gte: sixMonthsAgo },
       category: { type },
     },
@@ -92,7 +96,7 @@ export async function suggestByHistory(
     .slice(0, MAX_HISTORY_SUGGESTIONS)
     .map((r) => {
       const cat = catMap.get(r.categoryId)!
-      return { id: cat.id, name: cat.name, icon: cat.icon, type: cat.type }
+      return { id: cat.id, name: cat.name, icon: cat.icon, type: cat.type, count: r._count.categoryId }
     })
 }
 

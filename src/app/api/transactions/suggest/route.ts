@@ -8,6 +8,7 @@ interface Suggestion {
   categoryName: string
   categoryIcon: string | null
   source: 'keyword' | 'history'
+  count?: number
 }
 
 const MAX_SUGGESTIONS = 5
@@ -57,12 +58,15 @@ export async function GET(request: NextRequest) {
       types.map((t) => suggestByHistory(q, t, keywordCategoryIds))
     )
 
-    const historySuggestions: Suggestion[] = historyMatchResults.flat().map((m) => ({
-      categoryId: m.id,
-      categoryName: m.name,
-      categoryIcon: m.icon,
-      source: 'history' as const,
-    }))
+    const historySuggestions: Suggestion[] = historyMatchResults.flat()
+      .sort((a, b) => (b.count ?? 0) - (a.count ?? 0))
+      .map((m) => ({
+        categoryId: m.id,
+        categoryName: m.name,
+        categoryIcon: m.icon,
+        source: 'history' as const,
+        count: m.count,
+      }))
 
     const suggestions = [...keywordSuggestions, ...historySuggestions].slice(0, MAX_SUGGESTIONS)
 
