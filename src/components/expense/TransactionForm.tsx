@@ -84,7 +84,7 @@ export default function TransactionForm({
   const abortRef = useRef<AbortController | null>(null)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const fetchSuggestions = useCallback((query: string) => {
+  const fetchSuggestions = useCallback((query: string, type: TxType) => {
     if (timerRef.current) clearTimeout(timerRef.current)
     if (abortRef.current) abortRef.current.abort()
 
@@ -93,12 +93,14 @@ export default function TransactionForm({
       return
     }
 
+    const catType = type === 'income' ? 'income' : 'expense'
+
     timerRef.current = setTimeout(async () => {
       const controller = new AbortController()
       abortRef.current = controller
       try {
         const res = await fetch(
-          `/api/transactions/suggest?q=${encodeURIComponent(query.trim())}`,
+          `/api/transactions/suggest?q=${encodeURIComponent(query.trim())}&type=${catType}`,
           { signal: controller.signal }
         )
         if (res.ok) {
@@ -260,7 +262,7 @@ export default function TransactionForm({
               value={description}
               onChange={(e) => {
                 setDescription(e.target.value)
-                fetchSuggestions(e.target.value)
+                fetchSuggestions(e.target.value, txType)
               }}
               placeholder="점심, 택시, 월급 등"
               maxLength={200}

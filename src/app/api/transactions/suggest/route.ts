@@ -14,8 +14,11 @@ interface Suggestion {
 
 const MAX_SUGGESTIONS = 5
 
+const VALID_TYPES = new Set(['expense', 'income'])
+const MAX_QUERY_LENGTH = 100
+
 /**
- * GET /api/transactions/suggest?q=점심
+ * GET /api/transactions/suggest?q=점심&type=expense
  *
  * description 기반 카테고리 추천.
  * 1. 키워드 매칭 (category-matcher.ts 재사용)
@@ -24,18 +27,24 @@ const MAX_SUGGESTIONS = 5
  */
 export async function GET(request: NextRequest) {
   try {
-    const q = request.nextUrl.searchParams.get('q')?.trim()
+    const sp = request.nextUrl.searchParams
+    const q = sp.get('q')?.trim()?.slice(0, MAX_QUERY_LENGTH)
     if (!q || q.length < 2) {
       return NextResponse.json({ suggestions: [] })
     }
 
-    // 1. 키워드 매칭
-    const [expenseMatches, incomeMatches] = await Promise.all([
-      matchCategory(q, 'expense'),
-      matchCategory(q, 'income'),
-    ])
+    const rawType = sp.get('type')
+    const types: Array<'expense' | 'income'> =
+      rawType && VALID_TYPES.has(rawType)
+        ? [rawType as 'expense' | 'income']
+        : ['expense', 'income']
 
-    const keywordSuggestions: Suggestion[] = [...expenseMatches, ...incomeMatches].map((m) => ({
+    // 1. 키워드 매칭
+    const keywordMatchResults = await Promise.all(
+      types.map((t) => matchCategory(q, t))
+    )
+
+    const keywordSuggestions: Suggestion[] = keywordMatchResults.flat().map((m) => ({
       categoryId: m.id,
       categoryName: m.name,
       categoryIcon: m.icon,
