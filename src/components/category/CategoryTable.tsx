@@ -41,11 +41,12 @@ function ArrowDownIcon({ size = 14 }: { size?: number }) {
 }
 
 function CategoryRowDesktop({
-  c, isFirst, isLast, onMoveUp, onMoveDown, onEdit, onDelete,
+  c, isFirst, isLast, isReordering, onMoveUp, onMoveDown, onEdit, onDelete,
 }: {
   c: CategoryRow
   isFirst: boolean
   isLast: boolean
+  isReordering: boolean
   onMoveUp: () => void
   onMoveDown: () => void
   onEdit: (c: CategoryRow) => void
@@ -80,7 +81,7 @@ function CategoryRowDesktop({
         <div className="flex items-center gap-1">
           <button
             onClick={onMoveUp}
-            disabled={isFirst}
+            disabled={isFirst || isReordering}
             className="p-1.5 rounded-md text-dim hover:text-muted hover:bg-surface transition-all disabled:opacity-20 disabled:cursor-not-allowed"
             title="위로"
           >
@@ -88,7 +89,7 @@ function CategoryRowDesktop({
           </button>
           <button
             onClick={onMoveDown}
-            disabled={isLast}
+            disabled={isLast || isReordering}
             className="p-1.5 rounded-md text-dim hover:text-muted hover:bg-surface transition-all disabled:opacity-20 disabled:cursor-not-allowed"
             title="아래로"
           >
@@ -175,19 +176,23 @@ export default function CategoryTable({ categories, activeTab, onTabChange }: Ca
       const swapIdx = direction === 'up' ? idx - 1 : idx + 1
       if (swapIdx < 0 || swapIdx >= list.length) return
 
-      const current = list[idx]
-      const target = list[swapIdx]
+      // 스왑 후 전체 리스트 재인덱싱 (sortOrder 중복 방지)
+      const reordered = [...list]
+      const [moved] = reordered.splice(idx, 1)
+      reordered.splice(swapIdx, 0, moved)
 
-      await fetch('/api/categories/reorder', {
+      const items = reordered.map((c, i) => ({ id: c.id, sortOrder: i }))
+
+      const res = await fetch('/api/categories/reorder', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          items: [
-            { id: current.id, sortOrder: target.sortOrder },
-            { id: target.id, sortOrder: current.sortOrder },
-          ],
-        }),
+        body: JSON.stringify({ items }),
       })
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error ?? '정렬 변경 실패')
+      }
 
       router.refresh()
     } catch (error) {
@@ -276,6 +281,7 @@ export default function CategoryTable({ categories, activeTab, onTabChange }: Ca
                             c={c}
                             isFirst={idx === 0}
                             isLast={idx === g.categories.length - 1}
+                            isReordering={reordering}
                             onMoveUp={() => handleReorder(c.id, 'up')}
                             onMoveDown={() => handleReorder(c.id, 'down')}
                             onEdit={setEditItem}
@@ -290,6 +296,7 @@ export default function CategoryTable({ categories, activeTab, onTabChange }: Ca
                       c={c}
                       isFirst={idx === 0}
                       isLast={idx === filtered.length - 1}
+                      isReordering={reordering}
                       onMoveUp={() => handleReorder(c.id, 'up')}
                       onMoveDown={() => handleReorder(c.id, 'down')}
                       onEdit={setEditItem}
@@ -302,65 +309,89 @@ export default function CategoryTable({ categories, activeTab, onTabChange }: Ca
 
             {/* Mobile card view */}
             <div className="sm:hidden divide-y divide-border">
-              {filtered.map((c, idx) => (
-                <div key={c.id} className="px-4 py-3.5 hover:bg-card">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[16px]">{c.icon ?? '📦'}</span>
-                      <span className="text-[13px] font-bold text-bright">{c.name}</span>
-                      {c._count.transactions > 0 && (
-                        <span className="text-[11px] text-dim px-1.5 py-0.5 rounded bg-surface-dim">
-                          {c._count.transactions}건
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => handleReorder(c.id, 'up')}
-                        disabled={idx === 0 || reordering}
-                        className="p-1.5 rounded-md text-dim hover:text-muted hover:bg-surface transition-all disabled:opacity-20 disabled:cursor-not-allowed"
-                      >
-                        <ArrowUpIcon size={12} />
-                      </button>
-                      <button
-                        onClick={() => handleReorder(c.id, 'down')}
-                        disabled={idx === filtered.length - 1 || reordering}
-                        className="p-1.5 rounded-md text-dim hover:text-muted hover:bg-surface transition-all disabled:opacity-20 disabled:cursor-not-allowed"
-                      >
-                        <ArrowDownIcon size={12} />
-                      </button>
-                      <button
-                        onClick={() => setEditItem(c)}
-                        className="p-1.5 rounded-md text-dim hover:text-muted hover:bg-surface transition-all"
-                      >
-                        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-                          <path d="M11.5 1.5l3 3L5 14H2v-3L11.5 1.5z" />
-                        </svg>
-                      </button>
-                      <button
-                        onClick={() => setDeleteItem(c)}
-                        className="p-1.5 rounded-md text-dim hover:text-red-400 hover:bg-red-500/10 transition-all"
-                      >
-                        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-                          <path d="M2 4h12M5.333 4V2.667a1.333 1.333 0 011.334-1.334h2.666a1.333 1.333 0 011.334 1.334V4m2 0v9.333a1.333 1.333 0 01-1.334 1.334H4.667a1.333 1.333 0 01-1.334-1.334V4h9.334z" />
-                        </svg>
-                      </button>
-                    </div>
-                  </div>
-                  {c.keywords.length > 0 && (
-                    <div className="flex flex-wrap gap-1">
-                      {c.keywords.map((k) => (
-                        <span
-                          key={k}
-                          className="px-1.5 py-0.5 rounded bg-surface-dim text-[11px] text-dim"
+              {(() => {
+                const renderCard = (c: CategoryRow, isFirst: boolean, isLast: boolean) => (
+                  <div key={c.id} className="px-4 py-3.5 hover:bg-card">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[16px]">{c.icon ?? '📦'}</span>
+                        <span className="text-[13px] font-bold text-bright">{c.name}</span>
+                        {c._count.transactions > 0 && (
+                          <span className="text-[11px] text-dim px-1.5 py-0.5 rounded bg-surface-dim">
+                            {c._count.transactions}건
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => handleReorder(c.id, 'up')}
+                          disabled={isFirst || reordering}
+                          className="p-1.5 rounded-md text-dim hover:text-muted hover:bg-surface transition-all disabled:opacity-20 disabled:cursor-not-allowed"
                         >
-                          {k}
-                        </span>
-                      ))}
+                          <ArrowUpIcon size={12} />
+                        </button>
+                        <button
+                          onClick={() => handleReorder(c.id, 'down')}
+                          disabled={isLast || reordering}
+                          className="p-1.5 rounded-md text-dim hover:text-muted hover:bg-surface transition-all disabled:opacity-20 disabled:cursor-not-allowed"
+                        >
+                          <ArrowDownIcon size={12} />
+                        </button>
+                        <button
+                          onClick={() => setEditItem(c)}
+                          className="p-1.5 rounded-md text-dim hover:text-muted hover:bg-surface transition-all"
+                        >
+                          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+                            <path d="M11.5 1.5l3 3L5 14H2v-3L11.5 1.5z" />
+                          </svg>
+                        </button>
+                        <button
+                          onClick={() => setDeleteItem(c)}
+                          className="p-1.5 rounded-md text-dim hover:text-red-400 hover:bg-red-500/10 transition-all"
+                        >
+                          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+                            <path d="M2 4h12M5.333 4V2.667a1.333 1.333 0 011.334-1.334h2.666a1.333 1.333 0 011.334 1.334V4m2 0v9.333a1.333 1.333 0 01-1.334 1.334H4.667a1.333 1.333 0 01-1.334-1.334V4h9.334z" />
+                          </svg>
+                        </button>
+                      </div>
                     </div>
-                  )}
-                </div>
-              ))}
+                    {c.keywords.length > 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        {c.keywords.map((k) => (
+                          <span
+                            key={k}
+                            className="px-1.5 py-0.5 rounded bg-surface-dim text-[11px] text-dim"
+                          >
+                            {k}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )
+
+                if (grouped) {
+                  return grouped.map((g) => (
+                    <React.Fragment key={g.groupId ?? '_ungrouped'}>
+                      <div className="px-4 py-2.5 bg-white/[0.018]">
+                        <span className="text-[12px] font-bold text-bright">
+                          {g.groupIcon ? `${g.groupIcon} ` : ''}{g.groupName}
+                        </span>
+                        <span className="ml-2 text-[10px] font-semibold text-sub bg-surface px-2 py-0.5 rounded">
+                          {g.categories.length}
+                        </span>
+                      </div>
+                      {g.categories.map((c, idx) =>
+                        renderCard(c, idx === 0, idx === g.categories.length - 1)
+                      )}
+                    </React.Fragment>
+                  ))
+                }
+
+                return filtered.map((c, idx) =>
+                  renderCard(c, idx === 0, idx === filtered.length - 1)
+                )
+              })()}
             </div>
           </>
         )}

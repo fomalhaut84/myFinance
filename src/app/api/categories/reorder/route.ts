@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 
 export const dynamic = 'force-dynamic'
@@ -57,6 +58,12 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true })
   } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+      return NextResponse.json(
+        { error: '존재하지 않는 카테고리가 포함되어 있습니다.' },
+        { status: 404 }
+      )
+    }
     console.error('POST /api/categories/reorder error:', error)
     return NextResponse.json(
       { error: '정렬 순서 변경에 실패했습니다.' },
