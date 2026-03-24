@@ -11,9 +11,15 @@ interface RouteParams {
  */
 export async function PUT(request: NextRequest, { params }: RouteParams) {
   try {
-    const { vid } = await params
+    const { id, vid } = await params
     let body: Record<string, unknown>
     try { body = await request.json() } catch { return NextResponse.json({ error: '유효한 JSON 형식이 아닙니다.' }, { status: 400 }) }
+
+    // parent 검증
+    const existing = await prisma.stockOptionVesting.findUnique({ where: { id: vid } })
+    if (!existing || existing.stockOptionId !== id) {
+      return NextResponse.json({ error: '존재하지 않는 행사 스케줄입니다.' }, { status: 404 })
+    }
 
     const data: Record<string, unknown> = {}
     if (typeof body.vestingDate === 'string') data.vestingDate = new Date(body.vestingDate)
@@ -36,7 +42,14 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
  */
 export async function DELETE(_request: NextRequest, { params }: RouteParams) {
   try {
-    const { vid } = await params
+    const { id, vid } = await params
+
+    // parent 검증
+    const existing = await prisma.stockOptionVesting.findUnique({ where: { id: vid } })
+    if (!existing || existing.stockOptionId !== id) {
+      return NextResponse.json({ error: '존재하지 않는 행사 스케줄입니다.' }, { status: 404 })
+    }
+
     await prisma.stockOptionVesting.delete({ where: { id: vid } })
     return new NextResponse(null, { status: 204 })
   } catch (error) {

@@ -26,8 +26,8 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     if (typeof body.adjustedShares === 'number') data.adjustedShares = body.adjustedShares
     if (body.note !== undefined) data.note = typeof body.note === 'string' ? body.note.trim() || null : null
 
-    // remainingShares 재계산
-    if (data.totalShares || data.cancelledShares || data.adjustedShares) {
+    // remainingShares 재계산 (0 포함하므로 !== undefined 체크)
+    if (data.totalShares !== undefined || data.cancelledShares !== undefined || data.adjustedShares !== undefined) {
       const existing = await prisma.stockOption.findUnique({ where: { id } })
       if (!existing) return NextResponse.json({ error: '존재하지 않는 스톡옵션입니다.' }, { status: 404 })
       const total = (data.totalShares as number | undefined) ?? existing.totalShares
