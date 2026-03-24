@@ -282,11 +282,18 @@ async function createTransaction(
       },
     })
 
+    // 후잉 웹훅 전송 시작 (DB 직후, 텔레그램 응답과 병렬 실행)
+    const whooingPromise = sendToWhooing({
+      amount: created.amount,
+      description: created.description,
+      categoryId: created.categoryId,
+      transactedAt: created.transactedAt,
+    }).catch((error) => console.error('[bot/expense] 후잉 전송 실패:', error))
+
     const catLabel = category?.icon
       ? `${category.icon} ${category.name}`
       : pending.categoryName
 
-    // 텔레그램 콜백 응답 먼저 (UX 우선)
     await ctx.answerCallbackQuery({ text: '기록 완료!' })
     await ctx.editMessageReplyMarkup({ reply_markup: undefined })
     await ctx.editMessageText(
@@ -296,17 +303,8 @@ async function createTransaction(
         `카테고리: ${catLabel}`
     )
 
-    // 후잉 웹훅 전송 (실패해도 거래 기록은 정상 완료)
-    try {
-      await sendToWhooing({
-        amount: created.amount,
-        description: created.description,
-        categoryId: created.categoryId,
-        transactedAt: created.transactedAt,
-      })
-    } catch (error) {
-      console.error('[bot/expense] 후잉 전송 실패:', error)
-    }
+    // 후잉 전송 완료 대기 (이미 병렬 실행 중)
+    await whooingPromise
 
     // 소비 기록 후 예산 사용률 체크 (비동기, 실패해도 무시)
     if (pending.type === 'expense') {
