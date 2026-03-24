@@ -176,12 +176,19 @@ export default function CategoryTable({ categories, activeTab, onTabChange }: Ca
       const swapIdx = direction === 'up' ? idx - 1 : idx + 1
       if (swapIdx < 0 || swapIdx >= list.length) return
 
-      // 스왑 후 전체 리스트 재인덱싱 (sortOrder 중복 방지)
-      const reordered = [...list]
-      const [moved] = reordered.splice(idx, 1)
-      reordered.splice(swapIdx, 0, moved)
+      const current = list[idx]
+      const target = list[swapIdx]
 
-      const items = reordered.map((c, i) => ({ id: c.id, sortOrder: i }))
+      // sortOrder가 같으면 강제 분리 (인접 스왑)
+      const currentOrder = current.sortOrder
+      const targetOrder = target.sortOrder !== currentOrder
+        ? target.sortOrder
+        : direction === 'up' ? currentOrder - 1 : currentOrder + 1
+
+      const items = [
+        { id: current.id, sortOrder: targetOrder },
+        { id: target.id, sortOrder: currentOrder },
+      ]
 
       const res = await fetch('/api/categories/reorder', {
         method: 'POST',

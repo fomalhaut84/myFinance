@@ -47,6 +47,12 @@ export async function POST(request: NextRequest) {
       validItems.push({ id: (item as ReorderItem).id, sortOrder: (item as ReorderItem).sortOrder })
     }
 
+    // id 유니크 검증
+    const uniqueIds = new Set(validItems.map((item) => item.id))
+    if (uniqueIds.size !== validItems.length) {
+      return NextResponse.json({ error: '중복된 카테고리 ID가 있습니다.' }, { status: 400 })
+    }
+
     await prisma.$transaction(
       validItems.map((item) =>
         prisma.category.update({
