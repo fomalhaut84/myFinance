@@ -283,12 +283,16 @@ async function createTransaction(
     })
 
     // 후잉 웹훅 전송 (실패해도 거래 기록은 정상 완료)
-    sendToWhooing({
-      amount: created.amount,
-      description: created.description,
-      categoryId: created.categoryId,
-      transactedAt: created.transactedAt,
-    }).catch((error) => console.error('[bot/expense] 후잉 전송 실패:', error))
+    try {
+      await sendToWhooing({
+        amount: created.amount,
+        description: created.description,
+        categoryId: created.categoryId,
+        transactedAt: created.transactedAt,
+      })
+    } catch (error) {
+      console.error('[bot/expense] 후잉 전송 실패:', error)
+    }
 
     // 소비 기록 후 예산 사용률 체크 (비동기, 실패해도 무시)
     if (pending.type === 'expense') {
