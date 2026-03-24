@@ -287,6 +287,8 @@ export default function TransactionForm({
                     key={s.categoryId}
                     type="button"
                     onClick={() => {
+                      if (timerRef.current) clearTimeout(timerRef.current)
+                      if (abortRef.current) abortRef.current.abort()
                       setCategoryId(s.categoryId)
                       setSuggestions([])
                     }}

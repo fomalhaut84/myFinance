@@ -34,10 +34,11 @@ export async function GET(request: NextRequest) {
     }
 
     const rawType = sp.get('type')
+    if (rawType && !VALID_TYPES.has(rawType)) {
+      return NextResponse.json({ error: 'type은 expense 또는 income이어야 합니다.' }, { status: 400 })
+    }
     const types: Array<'expense' | 'income'> =
-      rawType && VALID_TYPES.has(rawType)
-        ? [rawType as 'expense' | 'income']
-        : ['expense', 'income']
+      rawType ? [rawType as 'expense' | 'income'] : ['expense', 'income']
 
     // 1. 키워드 매칭
     const keywordMatchResults = await Promise.all(
