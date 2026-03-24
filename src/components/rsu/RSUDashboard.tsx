@@ -12,6 +12,7 @@ interface RSUSchedule {
   vestingDate: string
   shares: number
   basisValue: number
+  basisDate: string | null
   vestPrice: number | null
   status: string
   sellShares: number | null
@@ -280,7 +281,7 @@ export default function RSUDashboard({ schedules: initialSchedules, accounts = [
             vestingDate: editingItem.vestingDate,
             shares: editingItem.shares,
             basisValue: editingItem.basisValue,
-            basisDate: null,
+            basisDate: editingItem.basisDate,
             sellShares: editingItem.sellShares,
             keepShares: editingItem.keepShares,
             note: editingItem.note,

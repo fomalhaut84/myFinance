@@ -46,6 +46,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '기준금액은 0 이상이어야 합니다.' }, { status: 400 })
     }
 
+    const shares = body.shares as number
+    if (typeof body.sellShares === 'number' && (body.sellShares < 0 || body.sellShares > shares)) {
+      return NextResponse.json({ error: '매도 예정 수량은 0 이상, 총 수량 이하여야 합니다.' }, { status: 400 })
+    }
+    if (typeof body.keepShares === 'number' && (body.keepShares < 0 || body.keepShares > shares)) {
+      return NextResponse.json({ error: '보유 예정 수량은 0 이상, 총 수량 이하여야 합니다.' }, { status: 400 })
+    }
+
     const schedule = await prisma.rSUSchedule.create({
       data: {
         accountId: body.accountId as string,
