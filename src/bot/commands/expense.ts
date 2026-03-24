@@ -156,6 +156,10 @@ async function handleExpenseInput(ctx: Context): Promise<void> {
         : `카테고리를 선택해주세요:`
 
   const keyboard = buildCategoryKeyboard(categories, txId)
+  if (suggestionSource === 'history') {
+    keyboard.text('📋 전체 카테고리', `tx:allcat:${txId}`)
+    keyboard.row()
+  }
   const sent = await ctx.reply(
     `📝 ${typeLabel} 기록\n\n` +
       `내용: ${description}\n` +
@@ -239,6 +243,27 @@ async function handleExpenseCallback(ctx: Context): Promise<void> {
     }
 
     await createTransaction(ctx, { ...pending, categoryId: category.id, categoryName: category.name })
+    return
+  }
+
+  if (action === 'allcat') {
+    // 전체 카테고리 목록 표시 (히스토리 추천에서 "전체 보기" 클릭)
+    const categories = await getAllCategories(pending.type)
+    if (categories.length === 0) {
+      await ctx.answerCallbackQuery({ text: '⚠️ 카테고리가 없습니다.' })
+      return
+    }
+
+    const typeLabel = pending.type === 'expense' ? '소비' : '수입'
+    const keyboard = buildCategoryKeyboard(categories, txId)
+    await ctx.answerCallbackQuery()
+    await ctx.editMessageText(
+      `📝 ${typeLabel} 기록\n\n` +
+        `내용: ${pending.description}\n` +
+        `금액: ${formatKRWFull(pending.amount)}\n\n` +
+        `카테고리를 선택해주세요:`,
+      { reply_markup: keyboard }
+    )
     return
   }
 

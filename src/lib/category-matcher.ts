@@ -56,7 +56,7 @@ const MAX_HISTORY_SUGGESTIONS = 5
  */
 export async function suggestByHistory(
   description: string,
-  type: 'expense' | 'income',
+  type?: 'expense' | 'income',
   excludeIds?: string[]
 ): Promise<MatchedCategory[]> {
   const trimmed = description.trim().slice(0, 100)
@@ -70,7 +70,7 @@ export async function suggestByHistory(
     where: {
       description: { contains: trimmed, mode: 'insensitive' },
       transactedAt: { gte: sixMonthsAgo },
-      category: { type },
+      ...(type ? { category: { type } } : {}),
     },
     _count: { categoryId: true },
     orderBy: { _count: { categoryId: 'desc' } },

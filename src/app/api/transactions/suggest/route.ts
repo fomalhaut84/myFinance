@@ -51,16 +51,15 @@ export async function GET(request: NextRequest) {
       source: 'keyword' as const,
     }))
 
-    // 2. 히스토리 매칭
-    const keywordCategoryIds = keywordSuggestions.map((s) => s.categoryId)
-
-    const historyMatchResults = await Promise.all(
-      types.map((t) => suggestByHistory(q, t, keywordCategoryIds))
+    // 2. 히스토리 매칭 (단일 쿼리 — type optional)
+    const excludeIds = keywordSuggestions.map((s) => s.categoryId)
+    const historyMatches = await suggestByHistory(
+      q,
+      types.length === 1 ? types[0] : undefined,
+      excludeIds
     )
 
-    const historySuggestions: Suggestion[] = historyMatchResults.flat()
-      .sort((a, b) => (b.count ?? 0) - (a.count ?? 0))
-      .map((m) => ({
+    const historySuggestions: Suggestion[] = historyMatches.map((m) => ({
         categoryId: m.id,
         categoryName: m.name,
         categoryIcon: m.icon,
