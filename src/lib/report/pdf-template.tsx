@@ -5,11 +5,19 @@
  */
 
 import React from 'react'
-import { Document, Page, Text, View, StyleSheet } from '@react-pdf/renderer'
+import { Document, Page, Text, View, StyleSheet, Font } from '@react-pdf/renderer'
 import type { QuarterlyData } from './data-collector'
 
+Font.register({
+  family: 'NotoSansKR',
+  fonts: [
+    { src: 'https://cdn.jsdelivr.net/fontsource/fonts/noto-sans-kr@latest/korean-400-normal.ttf', fontWeight: 400 },
+    { src: 'https://cdn.jsdelivr.net/fontsource/fonts/noto-sans-kr@latest/korean-700-normal.ttf', fontWeight: 700 },
+  ],
+})
+
 const styles = StyleSheet.create({
-  page: { padding: 40, fontFamily: 'Helvetica', fontSize: 10, color: '#333' },
+  page: { padding: 40, fontFamily: 'NotoSansKR', fontSize: 10, color: '#333' },
   // 커버
   cover: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   coverTitle: { fontSize: 28, fontWeight: 'bold', color: '#1a1a2e', marginBottom: 8 },
