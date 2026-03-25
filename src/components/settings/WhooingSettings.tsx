@@ -148,7 +148,7 @@ export default function WhooingSettings() {
             <thead>
               <tr className="border-b border-border bg-surface-dim">
                 <th className="px-4 py-2.5 text-left text-dim font-semibold">카테고리</th>
-                <th className="px-4 py-2.5 text-left text-dim font-semibold">후잉 Left (지출 항목)</th>
+                <th className="px-4 py-2.5 text-left text-dim font-semibold">후잉 Left (항목)</th>
                 <th className="px-4 py-2.5 text-left text-dim font-semibold">후잉 Right (결제수단)</th>
               </tr>
             </thead>
