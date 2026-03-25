@@ -88,7 +88,7 @@ export default function TransactionForm({
     if (timerRef.current) clearTimeout(timerRef.current)
     if (abortRef.current) abortRef.current.abort()
 
-    if (query.trim().length < 2) {
+    if (query.trim().length < 2 || type === 'transfer_out' || type === 'transfer_in') {
       setSuggestions([])
       return
     }

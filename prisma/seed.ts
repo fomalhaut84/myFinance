@@ -340,7 +340,7 @@ async function main() {
   console.log('  RSU Schedules: 2')
   console.log('  Deposits: 4')
   console.log('  Stock Options: 4 (카카오, 베스팅 7건)')
-  console.log('  Categories: 12 (소비 9 + 수입 3)')
+  console.log('  Categories: 16 (소비 9 + 수입 3 + 이체 4)')
   console.log(`  AlertConfig: ${alertDefaults.length}`)
 }
 
