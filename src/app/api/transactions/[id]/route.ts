@@ -43,6 +43,9 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     if (txType && category.type !== 'transfer') {
       return NextResponse.json({ error: '출금/입금은 이체 카테고리에서만 사용할 수 있습니다.' }, { status: 400 })
     }
+    if (!txType && category.type === 'transfer') {
+      return NextResponse.json({ error: '이체 카테고리는 출금/입금 유형에서만 사용할 수 있습니다.' }, { status: 400 })
+    }
 
     const existing = await prisma.transaction.findUnique({ where: { id } })
     if (!existing) {

@@ -243,9 +243,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '존재하지 않는 카테고리입니다.' }, { status: 400 })
     }
 
-    // transfer 유형은 transfer 카테고리만 허용
+    // transfer 유형 ↔ transfer 카테고리 일치 검증
     if (txType && category.type !== 'transfer') {
       return NextResponse.json({ error: '출금/입금은 이체 카테고리에서만 사용할 수 있습니다.' }, { status: 400 })
+    }
+    if (!txType && category.type === 'transfer') {
+      return NextResponse.json({ error: '이체 카테고리는 출금/입금 유형에서만 사용할 수 있습니다.' }, { status: 400 })
     }
 
     // 자산 존재 확인 (transfer 유형)
