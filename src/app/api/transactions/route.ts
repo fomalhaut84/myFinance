@@ -150,7 +150,7 @@ export async function GET(request: NextRequest) {
       if (!cat) continue
       if (cat.type === 'expense') {
         byMonth[m].expense += tx.amount
-      } else {
+      } else if (cat.type === 'income') {
         byMonth[m].income += tx.amount
       }
     }
@@ -168,7 +168,7 @@ export async function GET(request: NextRequest) {
         const count = row._count
 
         if (cat.type === 'expense') totalExpense += rowTotal
-        else totalIncome += rowTotal
+        else if (cat.type === 'income') totalIncome += rowTotal
         filteredCount += count
 
         return {
