@@ -41,7 +41,7 @@ const styles = StyleSheet.create({
   // 푸터
   footer: { position: 'absolute', bottom: 20, left: 40, right: 40, textAlign: 'center', fontSize: 8, color: '#999' },
   // 면책
-  disclaimer: { fontSize: 7, color: '#999', marginTop: 8, fontStyle: 'italic' },
+  disclaimer: { fontSize: 7, color: '#999', marginTop: 8 },
 })
 
 function formatKRW(n: number): string {
