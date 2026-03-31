@@ -51,24 +51,15 @@ export async function sendBriefing(
     })
 
     const html = markdownToTelegramHtml(result.response)
+    const htmlChunks = splitMessage(html)
 
     for (const chatId of chatIds) {
       try {
-        if (html.length <= 4096) {
+        for (const chunk of htmlChunks) {
           try {
-            await bot.api.sendMessage(chatId, html, { parse_mode: 'HTML' })
+            await bot.api.sendMessage(chatId, chunk, { parse_mode: 'HTML' })
           } catch {
-            await bot.api.sendMessage(chatId, result.response)
-          }
-        } else {
-          const chunks = splitMessage(result.response)
-          for (const chunk of chunks) {
-            const chunkHtml = markdownToTelegramHtml(chunk)
-            try {
-              await bot.api.sendMessage(chatId, chunkHtml, { parse_mode: 'HTML' })
-            } catch {
-              await bot.api.sendMessage(chatId, chunk)
-            }
+            await bot.api.sendMessage(chatId, chunk.replace(/<[^>]+>/g, ''))
           }
         }
       } catch (error) {
