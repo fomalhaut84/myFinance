@@ -92,30 +92,34 @@ export async function getTransactions(args: {
     const since = new Date()
     since.setDate(since.getDate() - days)
 
-    const where: Record<string, unknown> = {
-      transactedAt: { gte: since },
-    }
+    // 카테고리 ID 후보 수집 (category + type 교집합)
+    let categoryIds: string[] | null = null
 
-    // 카테고리명 필터
-    if (args.category) {
-      const cat = await prisma.category.findFirst({
-        where: { name: { contains: args.category, mode: 'insensitive' } },
-        select: { id: true },
-      })
-      if (cat) {
-        where.categoryId = cat.id
-      } else {
-        return toolResult(`'${args.category}' 카테고리를 찾을 수 없습니다.`)
-      }
-    }
-
-    // 타입 필터 (카테고리 타입 기준)
     if (args.type && ['expense', 'income', 'transfer'].includes(args.type)) {
-      const cats = await prisma.category.findMany({
+      const typeCats = await prisma.category.findMany({
         where: { type: args.type },
         select: { id: true },
       })
-      where.categoryId = { in: cats.map((c) => c.id) }
+      categoryIds = typeCats.map((c) => c.id)
+    }
+
+    if (args.category) {
+      const matched = await prisma.category.findMany({
+        where: { name: { contains: args.category, mode: 'insensitive' } },
+        select: { id: true },
+      })
+      if (matched.length === 0) {
+        return toolResult(`'${args.category}' 카테고리를 찾을 수 없습니다.`)
+      }
+      const matchedIds = matched.map((c) => c.id)
+      categoryIds = categoryIds
+        ? categoryIds.filter((id) => matchedIds.includes(id))
+        : matchedIds
+    }
+
+    const where: Record<string, unknown> = {
+      transactedAt: { gte: since },
+      ...(categoryIds ? { categoryId: { in: categoryIds } } : {}),
     }
 
     const transactions = await prisma.transaction.findMany({
