@@ -8,7 +8,7 @@
 import { getBot } from '@/bot/index'
 import { askAdvisor } from '@/lib/ai/claude-advisor'
 import { splitMessage } from '@/bot/utils/formatter'
-import { markdownToTelegramHtml } from '@/bot/utils/markdown'
+import { markdownToTelegramHtml, stripHtml } from '@/bot/utils/markdown'
 
 type MarketSession = 'KR' | 'US'
 
@@ -59,7 +59,7 @@ export async function sendBriefing(
           try {
             await bot.api.sendMessage(chatId, chunk, { parse_mode: 'HTML' })
           } catch {
-            await bot.api.sendMessage(chatId, chunk.replace(/<[^>]+>/g, ''))
+            await bot.api.sendMessage(chatId, stripHtml(chunk))
           }
         }
       } catch (error) {
