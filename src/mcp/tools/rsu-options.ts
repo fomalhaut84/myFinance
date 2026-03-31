@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/prisma'
-import { toolResult, toolError } from '../utils'
+import { resolveAccountId, toolResult, toolError } from '../utils'
 
 const STATUS_LABELS: Record<string, string> = {
   pending: '대기',
@@ -14,9 +14,8 @@ const STATUS_LABELS: Record<string, string> = {
  */
 export async function getRsuSchedule(args: { account_name?: string }) {
   try {
-    const where = args.account_name && args.account_name !== '전체'
-      ? { account: { name: args.account_name } }
-      : {}
+    const accountId = await resolveAccountId(args.account_name ?? '전체')
+    const where = accountId ? { accountId } : {}
 
     const schedules = await prisma.rSUSchedule.findMany({
       where,
@@ -43,7 +42,7 @@ export async function getRsuSchedule(args: { account_name?: string }) {
       if (s.vestPrice != null) lines.push(`- 베스팅 시 주가: ${s.vestPrice.toLocaleString()}원`)
       if (s.sellShares != null) lines.push(`- 매도 예정: ${s.sellShares}주`)
       if (s.keepShares != null) lines.push(`- 보유 예정: ${s.keepShares}주`)
-      if (s.note) lines.push(`- 메모: ${s.note}`)
+      if (s.note) lines.push(`- 메모 (사용자 입력): ${s.note.slice(0, 200)}`)
       lines.push('')
     }
 
@@ -58,9 +57,8 @@ export async function getRsuSchedule(args: { account_name?: string }) {
  */
 export async function getStockOptions(args: { account_name?: string }) {
   try {
-    const where = args.account_name && args.account_name !== '전체'
-      ? { account: { name: args.account_name } }
-      : {}
+    const accountId = await resolveAccountId(args.account_name ?? '전체')
+    const where = accountId ? { accountId } : {}
 
     const options = await prisma.stockOption.findMany({
       where,
@@ -85,7 +83,8 @@ export async function getStockOptions(args: { account_name?: string }) {
       lines.push(`- 부여일: ${grantDate} / 만료일: ${expiryDate}`)
       lines.push(`- 행사가: ${opt.strikePrice.toLocaleString()}원`)
       lines.push(`- 총 부여: ${opt.totalShares}주 / 행사: ${opt.exercisedShares}주 / 취소: ${opt.cancelledShares}주 / 잔여: ${opt.remainingShares}주`)
-      if (opt.note) lines.push(`- 메모: ${opt.note}`)
+      if (opt.adjustedShares > 0) lines.push(`- 조정: ${opt.adjustedShares}주`)
+      if (opt.note) lines.push(`- 메모 (사용자 입력): ${opt.note.slice(0, 200)}`)
 
       if (opt.vestings.length > 0) {
         lines.push('- 베스팅 일정:')
