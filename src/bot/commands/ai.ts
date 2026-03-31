@@ -9,7 +9,7 @@ import { createTrade } from '@/lib/trade-service'
 import { splitMessage, formatKRWFull, formatUSD } from '../utils/formatter'
 import { isAiQuestion } from '../utils/ai-trigger'
 import { isTradeMessage } from '../utils/trade-trigger'
-import { markdownToTelegramHtml, stripHtml } from '../utils/markdown'
+import { markdownToTelegramHtml } from '../utils/markdown'
 
 const TYPING_INTERVAL_MS = 5000
 const MIN_AI_TEXT_LENGTH = 3
@@ -29,13 +29,13 @@ function fireAiQuestion(ctx: Context, question: string): void {
 
   askAdvisor(question)
     .then(async (result) => {
-      const html = markdownToTelegramHtml(result.response)
-      const htmlChunks = splitMessage(html)
-      for (const chunk of htmlChunks) {
+      const chunks = splitMessage(result.response)
+      for (const chunk of chunks) {
+        const chunkHtml = markdownToTelegramHtml(chunk)
         try {
-          await ctx.reply(chunk, { parse_mode: 'HTML' })
+          await ctx.reply(chunkHtml, { parse_mode: 'HTML' })
         } catch {
-          await ctx.reply(stripHtml(chunk))
+          await ctx.reply(chunk)
         }
       }
     })

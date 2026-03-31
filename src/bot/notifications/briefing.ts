@@ -8,7 +8,7 @@
 import { getBot } from '@/bot/index'
 import { askAdvisor } from '@/lib/ai/claude-advisor'
 import { splitMessage } from '@/bot/utils/formatter'
-import { markdownToTelegramHtml, stripHtml } from '@/bot/utils/markdown'
+import { markdownToTelegramHtml } from '@/bot/utils/markdown'
 
 type MarketSession = 'KR' | 'US'
 
@@ -50,16 +50,16 @@ export async function sendBriefing(
       maxBudgetUsd: 1.0,
     })
 
-    const html = markdownToTelegramHtml(result.response)
-    const htmlChunks = splitMessage(html)
+    const chunks = splitMessage(result.response)
+    const htmlChunks = chunks.map((chunk) => markdownToTelegramHtml(chunk))
 
     for (const chatId of chatIds) {
       try {
-        for (const chunk of htmlChunks) {
+        for (let i = 0; i < chunks.length; i++) {
           try {
-            await bot.api.sendMessage(chatId, chunk, { parse_mode: 'HTML' })
+            await bot.api.sendMessage(chatId, htmlChunks[i], { parse_mode: 'HTML' })
           } catch {
-            await bot.api.sendMessage(chatId, stripHtml(chunk))
+            await bot.api.sendMessage(chatId, chunks[i])
           }
         }
       } catch (error) {
