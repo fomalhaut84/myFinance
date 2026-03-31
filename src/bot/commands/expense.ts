@@ -66,9 +66,11 @@ function buildCategoryKeyboard(
 async function handleExpenseInput(ctx: Context): Promise<void> {
   const text = ctx.message?.text ?? ''
 
-  // 복수 건 감지: 숫자가 2개 이상이면 AI 복수 파싱으로 전환
-  const numberCount = (text.match(/\d[\d,]*\s*(만\s*원|원|만)?/g) ?? []).length
-  if (numberCount >= 2) {
+  // 복수 건 감지: 독립 금액 토큰(숫자+단위 or 공백 구분 순수 숫자)이 2개 이상이면 AI 복수 파싱
+  // 날짜(N월/N일) 및 제품명 내 숫자(RTX4090)는 제외
+  const amountPattern = /(?<!\S)\d[\d,]*(만\s*원|원|만)(?!\S)|(?<=\s|^)\d{3,}(?=\s|$|,)/g
+  const amountCount = (text.match(amountPattern) ?? []).length
+  if (amountCount >= 2) {
     fireMultiExpenseParse(ctx, text)
     return
   }
@@ -610,9 +612,12 @@ async function handleMultiExpenseCallback(ctx: Context): Promise<void> {
       await ctx.editMessageReplyMarkup({ reply_markup: undefined })
       await ctx.editMessageText(`✅ ${created.length}건 거래 기록 완료${skippedMsg}`)
 
-      checkBudgetUsage().catch((error) =>
-        console.error('[bot/multi-expense] 예산 경고 체크 실패:', error)
-      )
+      const hasExpense = validItems.some((m) => m.parsed.type === 'expense')
+      if (hasExpense) {
+        checkBudgetUsage().catch((error) =>
+          console.error('[bot/multi-expense] 예산 경고 체크 실패:', error)
+        )
+      }
     } catch (error) {
       console.error('[bot/multi-expense] 거래 기록 실패:', error)
       await ctx.answerCallbackQuery({ text: '⚠️ 기록에 실패했습니다.' })
