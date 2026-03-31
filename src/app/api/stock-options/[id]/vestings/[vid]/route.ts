@@ -37,6 +37,68 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
   }
 }
 
+const ALLOWED_TRANSITIONS: Record<string, string[]> = {
+  pending: ['exercisable'],
+  exercisable: ['exercised', 'expired'],
+}
+
+/**
+ * PATCH /api/stock-options/[id]/vestings/[vid] — 베스팅 상태 변경
+ * Body: { status: "exercisable" | "exercised" | "expired" }
+ */
+export async function PATCH(request: NextRequest, { params }: RouteParams) {
+  try {
+    const { id, vid } = await params
+
+    let body: Record<string, unknown>
+    try { body = await request.json() } catch { return NextResponse.json({ error: '유효한 JSON 형식이 아닙니다.' }, { status: 400 }) }
+
+    const newStatus = body.status
+    if (typeof newStatus !== 'string') {
+      return NextResponse.json({ error: 'status를 지정해주세요.' }, { status: 400 })
+    }
+
+    const vesting = await prisma.stockOptionVesting.findUnique({ where: { id: vid } })
+    if (!vesting || vesting.stockOptionId !== id) {
+      return NextResponse.json({ error: '베스팅을 찾을 수 없습니다.' }, { status: 404 })
+    }
+
+    const allowed = ALLOWED_TRANSITIONS[vesting.status]
+    if (!allowed || !allowed.includes(newStatus)) {
+      return NextResponse.json({
+        error: `'${vesting.status}' → '${newStatus}' 전환은 허용되지 않습니다.`,
+      }, { status: 400 })
+    }
+
+    if (newStatus === 'exercised') {
+      const updated = await prisma.$transaction(async (tx) => {
+        const v = await tx.stockOptionVesting.update({
+          where: { id: vid },
+          data: { status: 'exercised', exercisedAt: new Date() },
+        })
+        await tx.stockOption.update({
+          where: { id },
+          data: {
+            exercisedShares: { increment: vesting.shares },
+            remainingShares: { decrement: vesting.shares },
+          },
+        })
+        return v
+      })
+      return NextResponse.json(updated)
+    }
+
+    const updated = await prisma.stockOptionVesting.update({
+      where: { id: vid },
+      data: { status: newStatus },
+    })
+    return NextResponse.json(updated)
+  } catch (error) {
+    console.error('PATCH /api/stock-options/[id]/vestings/[vid] error:', error)
+    return NextResponse.json({ error: '상태 변경에 실패했습니다.' }, { status: 500 })
+  }
+}
+
 /**
  * DELETE /api/stock-options/[id]/vestings/[vid]
  */
