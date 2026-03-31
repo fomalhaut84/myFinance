@@ -83,7 +83,7 @@ export async function getStockOptions(args: { account_name?: string }) {
       lines.push(`- 부여일: ${grantDate} / 만료일: ${expiryDate}`)
       lines.push(`- 행사가: ${opt.strikePrice.toLocaleString()}원`)
       lines.push(`- 총 부여: ${opt.totalShares}주 / 행사: ${opt.exercisedShares}주 / 취소: ${opt.cancelledShares}주 / 잔여: ${opt.remainingShares}주`)
-      if (opt.adjustedShares > 0) lines.push(`- 조정: ${opt.adjustedShares}주`)
+      if (opt.adjustedShares !== 0) lines.push(`- 조정: ${opt.adjustedShares > 0 ? '+' : ''}${opt.adjustedShares}주`)
       if (opt.note) lines.push(`- 메모 (사용자 입력): ${opt.note.slice(0, 200)}`)
 
       if (opt.vestings.length > 0) {
