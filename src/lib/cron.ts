@@ -270,20 +270,23 @@ export function scheduleVestingStatusUpdate(): void {
     '10 0 * * *',
     () => {
       void guard(async () => {
-        const now = new Date()
+        // KST 기준 오늘 자정 (23:59:59까지 포함하도록 내일 0시)
+        const kst = new Date(Date.now() + 9 * 60 * 60 * 1000)
+        const todayEnd = new Date(Date.UTC(kst.getUTCFullYear(), kst.getUTCMonth(), kst.getUTCDate() + 1))
 
-        // pending → exercisable
+        // pending → exercisable (vestingDate < 내일 0시 UTC = 오늘까지)
         const activated = await prisma.stockOptionVesting.updateMany({
           where: {
             status: 'pending',
-            vestingDate: { lte: now },
+            vestingDate: { lt: todayEnd },
           },
           data: { status: 'exercisable' },
         })
 
-        // exercisable → expired (만료일 지난 옵션)
+        // exercisable → expired (만료일 지난 옵션, KST 기준 오늘 시작 이전)
+        const todayStart = new Date(Date.UTC(kst.getUTCFullYear(), kst.getUTCMonth(), kst.getUTCDate()))
         const expiredOptions = await prisma.stockOption.findMany({
-          where: { expiryDate: { lt: now } },
+          where: { expiryDate: { lt: todayStart } },
           select: { id: true },
         })
         let expiredCount = 0

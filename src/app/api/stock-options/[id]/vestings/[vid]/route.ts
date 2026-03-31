@@ -70,12 +70,23 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       }, { status: 400 })
     }
 
+    // pending → exercisable: 베스팅일 도래 검증
+    if (vesting.status === 'pending' && newStatus === 'exercisable') {
+      if (vesting.vestingDate > new Date()) {
+        return NextResponse.json({ error: '베스팅일이 아직 도래하지 않았습니다.' }, { status: 400 })
+      }
+    }
+
     if (newStatus === 'exercised') {
       const updated = await prisma.$transaction(async (tx) => {
-        const v = await tx.stockOptionVesting.update({
-          where: { id: vid },
+        // 상태 조건부 업데이트 (동시 호출 방지)
+        const result = await tx.stockOptionVesting.updateMany({
+          where: { id: vid, status: 'exercisable' },
           data: { status: 'exercised', exercisedAt: new Date() },
         })
+        if (result.count === 0) {
+          throw new Error('ALREADY_PROCESSED')
+        }
         await tx.stockOption.update({
           where: { id },
           data: {
@@ -83,17 +94,25 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
             remainingShares: { decrement: vesting.shares },
           },
         })
-        return v
-      })
+        return tx.stockOptionVesting.findUniqueOrThrow({ where: { id: vid } })
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable })
       return NextResponse.json(updated)
     }
 
-    const updated = await prisma.stockOptionVesting.update({
-      where: { id: vid },
+    // 기타 상태 전환도 조건부 업데이트
+    const result = await prisma.stockOptionVesting.updateMany({
+      where: { id: vid, status: vesting.status },
       data: { status: newStatus },
     })
+    if (result.count === 0) {
+      return NextResponse.json({ error: '이미 처리된 요청입니다.' }, { status: 409 })
+    }
+    const updated = await prisma.stockOptionVesting.findUniqueOrThrow({ where: { id: vid } })
     return NextResponse.json(updated)
   } catch (error) {
+    if (error instanceof Error && error.message === 'ALREADY_PROCESSED') {
+      return NextResponse.json({ error: '이미 처리된 요청입니다.' }, { status: 409 })
+    }
     console.error('PATCH /api/stock-options/[id]/vestings/[vid] error:', error)
     return NextResponse.json({ error: '상태 변경에 실패했습니다.' }, { status: 500 })
   }
