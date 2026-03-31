@@ -66,9 +66,9 @@ function buildCategoryKeyboard(
 async function handleExpenseInput(ctx: Context): Promise<void> {
   const text = ctx.message?.text ?? ''
 
-  // 복수 건 감지: 독립 금액 토큰(숫자+단위 or 공백 구분 순수 숫자)이 2개 이상이면 AI 복수 파싱
+  // 복수 건 감지: 금액 토큰(숫자+단위 or 3자리 이상 독립 숫자)이 2개 이상이면 AI 복수 파싱
   // 날짜(N월/N일) 및 제품명 내 숫자(RTX4090)는 제외
-  const amountPattern = /(?<!\S)\d[\d,]*(만\s*원|원|만)(?!\S)|(?<=\s|^)\d{3,}(?=\s|$|,)/g
+  const amountPattern = /(?<=^|[\s,])\d[\d,]*(만\s*원|원|만)(?=$|[\s,.])|(?<=^|[\s,])\d{3,}(?=$|[\s,.])/g
   const amountCount = (text.match(amountPattern) ?? []).length
   if (amountCount >= 2) {
     fireMultiExpenseParse(ctx, text)
