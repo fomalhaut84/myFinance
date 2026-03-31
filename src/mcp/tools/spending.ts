@@ -78,3 +78,71 @@ export async function getSpendingSummary(args: {
     return toolError(error)
   }
 }
+
+/**
+ * get_transactions: 개별 거래 내역 조회 (기간/카테고리/타입 필터)
+ */
+export async function getTransactions(args: {
+  days?: number
+  category?: string
+  type?: string
+}) {
+  try {
+    const days = Math.min(args.days ?? 7, 365)
+    const since = new Date()
+    since.setDate(since.getDate() - days)
+
+    const where: Record<string, unknown> = {
+      transactedAt: { gte: since },
+    }
+
+    // 카테고리명 필터
+    if (args.category) {
+      const cat = await prisma.category.findFirst({
+        where: { name: { contains: args.category, mode: 'insensitive' } },
+        select: { id: true },
+      })
+      if (cat) {
+        where.categoryId = cat.id
+      } else {
+        return toolResult(`'${args.category}' 카테고리를 찾을 수 없습니다.`)
+      }
+    }
+
+    // 타입 필터 (카테고리 타입 기준)
+    if (args.type && ['expense', 'income', 'transfer'].includes(args.type)) {
+      const cats = await prisma.category.findMany({
+        where: { type: args.type },
+        select: { id: true },
+      })
+      where.categoryId = { in: cats.map((c) => c.id) }
+    }
+
+    const transactions = await prisma.transaction.findMany({
+      where,
+      include: {
+        category: { select: { name: true, icon: true, type: true } },
+      },
+      orderBy: [{ transactedAt: 'desc' }, { createdAt: 'desc' }],
+      take: 50,
+    })
+
+    if (transactions.length === 0) {
+      return toolResult(`최근 ${days}일간 해당 조건의 거래 내역이 없습니다.`)
+    }
+
+    const total = transactions.reduce((s, t) => s + t.amount, 0)
+    const lines = [`## 거래 내역 (최근 ${days}일, ${transactions.length}건, 합계 ${formatMoney(total, 'KRW')})\n`]
+
+    for (const tx of transactions) {
+      const date = tx.transactedAt.toISOString().slice(0, 10)
+      const icon = tx.category.icon ? `${tx.category.icon} ` : ''
+      const sign = tx.category.type === 'expense' ? '-' : tx.category.type === 'income' ? '+' : ''
+      lines.push(`- ${date} | ${icon}${tx.category.name} | ${tx.description} | ${sign}${formatMoney(tx.amount, 'KRW')}`)
+    }
+
+    return toolResult(lines.join('\n'))
+  } catch (error) {
+    return toolError(error)
+  }
+}
