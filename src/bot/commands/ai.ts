@@ -38,10 +38,14 @@ function fireAiQuestion(ctx: Context, question: string): void {
           await ctx.reply(result.response)
         }
       } else {
-        // 긴 응답: HTML 태그 분할 문제를 피하기 위해 plain text로 전송
         const chunks = splitMessage(result.response)
         for (const chunk of chunks) {
-          await ctx.reply(chunk)
+          const chunkHtml = markdownToTelegramHtml(chunk)
+          try {
+            await ctx.reply(chunkHtml, { parse_mode: 'HTML' })
+          } catch {
+            await ctx.reply(chunk)
+          }
         }
       }
     })

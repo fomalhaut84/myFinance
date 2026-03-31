@@ -63,7 +63,12 @@ export async function sendBriefing(
         } else {
           const chunks = splitMessage(result.response)
           for (const chunk of chunks) {
-            await bot.api.sendMessage(chatId, chunk)
+            const chunkHtml = markdownToTelegramHtml(chunk)
+            try {
+              await bot.api.sendMessage(chatId, chunkHtml, { parse_mode: 'HTML' })
+            } catch {
+              await bot.api.sendMessage(chatId, chunk)
+            }
           }
         }
       } catch (error) {
