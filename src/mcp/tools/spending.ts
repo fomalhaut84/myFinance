@@ -135,13 +135,26 @@ export async function getTransactions(args: {
       return toolResult(`최근 ${days}일간 해당 조건의 거래 내역이 없습니다.`)
     }
 
-    const total = transactions.reduce((s, t) => s + t.amount, 0)
-    const lines = [`## 거래 내역 (최근 ${days}일, ${transactions.length}건, 합계 ${formatMoney(total, 'KRW')})\n`]
+    let totalExpense = 0
+    let totalIncome = 0
+    for (const tx of transactions) {
+      if (tx.category.type === 'expense') totalExpense += tx.amount
+      else if (tx.category.type === 'income') totalIncome += tx.amount
+    }
+    const summaryParts = [`${transactions.length}건`]
+    if (totalExpense > 0) summaryParts.push(`소비 ${formatMoney(totalExpense, 'KRW')}`)
+    if (totalIncome > 0) summaryParts.push(`수입 ${formatMoney(totalIncome, 'KRW')}`)
+
+    const lines = [`## 거래 내역 (최근 ${days}일, ${summaryParts.join(', ')})\n`]
 
     for (const tx of transactions) {
       const date = tx.transactedAt.toISOString().slice(0, 10)
       const icon = tx.category.icon ? `${tx.category.icon} ` : ''
-      const sign = tx.category.type === 'expense' ? '-' : tx.category.type === 'income' ? '+' : ''
+      let sign = ''
+      if (tx.category.type === 'expense') sign = '-'
+      else if (tx.category.type === 'income') sign = '+'
+      else if (tx.type === 'transfer_out') sign = '↑'
+      else if (tx.type === 'transfer_in') sign = '↓'
       lines.push(`- ${date} | ${icon}${tx.category.name} | ${tx.description} | ${sign}${formatMoney(tx.amount, 'KRW')}`)
     }
 
