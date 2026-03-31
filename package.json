@@ -29,6 +29,7 @@
     "react-dom": "^18",
     "recharts": "^3.7.0",
     "trading-signals": "^7.4.3",
+    "dotenv": "^17.3.1",
     "yahoo-finance2": "^3.13.2"
   },
   "devDependencies": {
@@ -38,7 +39,6 @@
     "@types/papaparse": "^5.5.2",
     "@types/react": "^18",
     "@types/react-dom": "^18",
-    "dotenv": "^17.3.1",
     "esbuild": "^0.27.4",
     "eslint": "^8",
     "eslint-config-next": "14.2.35",
