@@ -116,6 +116,9 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     if (error instanceof Error && error.message === 'ALREADY_PROCESSED') {
       return NextResponse.json({ error: '이미 처리된 요청입니다.' }, { status: 409 })
     }
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2034') {
+      return NextResponse.json({ error: '동시 요청이 감지되었습니다. 다시 시도해주세요.' }, { status: 409 })
+    }
     console.error('PATCH /api/stock-options/[id]/vestings/[vid] error:', error)
     return NextResponse.json({ error: '상태 변경에 실패했습니다.' }, { status: 500 })
   }

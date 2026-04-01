@@ -158,7 +158,11 @@ export default function StockOptionDashboard({ overview, currentPrice }: StockOp
                           {updating === v.id ? '...' : '행사'}
                         </button>
                       )}
-                      {v.status === 'pending' && new Date(v.vestingDate) <= new Date() && (
+                      {v.status === 'pending' && (() => {
+                        const kst = new Date(Date.now() + 9 * 60 * 60 * 1000)
+                        const todayEnd = new Date(Date.UTC(kst.getUTCFullYear(), kst.getUTCMonth(), kst.getUTCDate() + 1))
+                        return new Date(v.vestingDate) < todayEnd
+                      })() && (
                         <button
                           onClick={() => handleStatusChange(opt.id, v.id, 'exercisable')}
                           disabled={updating === v.id}
