@@ -14,11 +14,15 @@ import { markdownToTelegramHtml } from '../utils/markdown'
 const TYPING_INTERVAL_MS = 5000
 const MIN_AI_TEXT_LENGTH = 3
 
+// chatId별 AI 세션 ID 관리
+const chatSessions = new Map<number, string>()
+
 // ============================================================
 // AI 질문 처리
 // ============================================================
 
 function fireAiQuestion(ctx: Context, question: string): void {
+  const chatId = ctx.chat?.id ?? 0
   ctx.reply('🤔 생각 중...')
     .catch((e) => console.error('[bot] 생각 중 응답 실패:', e))
 
@@ -27,8 +31,9 @@ function fireAiQuestion(ctx: Context, question: string): void {
       .catch(() => { /* 무시 */ })
   }, TYPING_INTERVAL_MS)
 
-  askAdvisor(question)
+  askAdvisor(question, { sessionId: chatSessions.get(chatId) })
     .then(async (result) => {
+      if (result.sessionId) chatSessions.set(chatId, result.sessionId)
       const chunks = splitMessage(result.response)
       for (const chunk of chunks) {
         const chunkHtml = markdownToTelegramHtml(chunk)
@@ -412,6 +417,13 @@ export function registerAiCommands(bot: Bot): void {
     }
 
     fireAiQuestion(ctx, question)
+  })
+
+  // AI 세션 초기화
+  bot.command('reset', async (ctx) => {
+    const chatId = ctx.chat?.id ?? 0
+    chatSessions.delete(chatId)
+    await ctx.reply('🔄 AI 대화 세션이 초기화되었습니다.')
   })
 
   // aitrade: 콜백 처리
