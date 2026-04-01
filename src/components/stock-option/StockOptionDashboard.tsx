@@ -128,7 +128,7 @@ export default function StockOptionDashboard({ overview, currentPrice }: StockOp
             </div>
 
             {/* 베스팅 일정 */}
-            {opt.vestings.length > 1 && (
+            {opt.vestings.length > 0 && (
               <div className="mt-3 bg-card rounded-lg px-3 py-2.5">
                 <div className="text-[11px] text-dim mb-1.5">베스팅 일정</div>
                 {opt.vestings.map((v) => (

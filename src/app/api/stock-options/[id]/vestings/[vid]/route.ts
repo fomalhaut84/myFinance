@@ -70,28 +70,31 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       }, { status: 400 })
     }
 
-    // pending → exercisable: 베스팅일 도래 검증
+    // pending → exercisable: 베스팅일 도래 검증 (KST 일 단위)
     if (vesting.status === 'pending' && newStatus === 'exercisable') {
-      if (vesting.vestingDate > new Date()) {
+      const kst = new Date(Date.now() + 9 * 60 * 60 * 1000)
+      const todayEnd = new Date(Date.UTC(kst.getUTCFullYear(), kst.getUTCMonth(), kst.getUTCDate() + 1))
+      if (vesting.vestingDate >= todayEnd) {
         return NextResponse.json({ error: '베스팅일이 아직 도래하지 않았습니다.' }, { status: 400 })
       }
     }
 
     if (newStatus === 'exercised') {
       const updated = await prisma.$transaction(async (tx) => {
-        // 상태 조건부 업데이트 (동시 호출 방지)
-        const result = await tx.stockOptionVesting.updateMany({
-          where: { id: vid, status: 'exercisable' },
-          data: { status: 'exercised', exercisedAt: new Date() },
-        })
-        if (result.count === 0) {
+        // 트랜잭션 내부에서 최신 상태 + shares 재조회 (동시 수정 방지)
+        const fresh = await tx.stockOptionVesting.findUniqueOrThrow({ where: { id: vid } })
+        if (fresh.status !== 'exercisable') {
           throw new Error('ALREADY_PROCESSED')
         }
+        await tx.stockOptionVesting.update({
+          where: { id: vid },
+          data: { status: 'exercised', exercisedAt: new Date() },
+        })
         await tx.stockOption.update({
           where: { id },
           data: {
-            exercisedShares: { increment: vesting.shares },
-            remainingShares: { decrement: vesting.shares },
+            exercisedShares: { increment: fresh.shares },
+            remainingShares: { decrement: fresh.shares },
           },
         })
         return tx.stockOptionVesting.findUniqueOrThrow({ where: { id: vid } })
