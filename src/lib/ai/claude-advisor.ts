@@ -137,6 +137,11 @@ export async function askAdvisor(
     '--permission-mode', 'dontAsk',
   )
 
+  // 세션 옵트인: sessionId 제공 시에만 세션 유지, 나머지는 비저장
+  if (!sessionId) {
+    cmdParts.push('--no-session-persistence')
+  }
+
   const cmd = cmdParts.join(' ')
 
   return new Promise<AdvisorResult>((resolve, reject) => {
