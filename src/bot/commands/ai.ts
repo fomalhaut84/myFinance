@@ -51,7 +51,7 @@ function fireAiQuestion(ctx: Context, question: string): void {
   }, TYPING_INTERVAL_MS)
 
   cleanExpiredSessions()
-  askAdvisor(question, { sessionId: chatSessions.get(chatId)?.sessionId })
+  askAdvisor(question, { sessionId: chatSessions.get(chatId)?.sessionId, persist: true })
     .then(async (result) => {
       if (result.sessionId) chatSessions.set(chatId, { sessionId: result.sessionId, lastUsed: Date.now() })
       const chunks = splitMessage(result.response)

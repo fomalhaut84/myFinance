@@ -13,6 +13,8 @@ export interface AdvisorOptions {
   maxBudgetUsd?: number
   /** 기존 세션 이어가기 */
   sessionId?: string
+  /** 세션을 디스크에 저장 (기본: false). 텔레그램 AI만 true */
+  persist?: boolean
 }
 
 export interface AdvisorResult {
@@ -90,6 +92,7 @@ export async function askAdvisor(
     timeout = 180_000,
     maxBudgetUsd = 0.50,
     sessionId,
+    persist = false,
   } = options
 
   // 프롬프트 길이 제한
@@ -137,8 +140,8 @@ export async function askAdvisor(
     '--permission-mode', 'dontAsk',
   )
 
-  // 세션 옵트인: sessionId 제공 시에만 세션 유지, 나머지는 비저장
-  if (!sessionId) {
+  // 세션 저장: persist=true인 경우만 저장, 그 외 비저장
+  if (!persist) {
     cmdParts.push('--no-session-persistence')
   }
 
