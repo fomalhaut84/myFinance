@@ -105,10 +105,11 @@ async function shouldRunTACheck(): Promise<boolean> {
   const intervalMin = parseInt(config?.value ?? '10', 10)
   const interval = (Number.isFinite(intervalMin) && intervalMin > 0 ? intervalMin : 10) * 60 * 1000
 
-  const now = Date.now()
-  if (now - lastTACheckTime < interval) return false
-  lastTACheckTime = now
-  return true
+  return Date.now() - lastTACheckTime >= interval
+}
+
+function markTACheckDone(): void {
+  lastTACheckTime = Date.now()
 }
 
 /**
@@ -136,9 +137,9 @@ export function schedulePriceUpdates(): void {
               if (isMarketHours) {
                 const shouldRunTA = await shouldRunTACheck()
                 if (shouldRunTA) {
-                  checkTASignals(chatIds).catch((err) =>
-                    console.error('[cron] TA 시그널 체크 실패:', err)
-                  )
+                  checkTASignals(chatIds)
+                    .then(() => markTACheckDone())
+                    .catch((err) => console.error('[cron] TA 시그널 체크 실패:', err))
                 }
               }
             }
