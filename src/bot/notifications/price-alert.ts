@@ -9,7 +9,7 @@
 import { prisma } from '@/lib/prisma'
 import { getBot } from '@/bot/index'
 import { formatPercent } from '@/bot/utils/formatter'
-import { sendHtml } from '@/bot/utils/telegram'
+import { sendHtml, escapeHtml } from '@/bot/utils/telegram'
 
 /** 당일 알림 발송 기록 (ticker → date string) */
 const sentToday = new Map<string, string>()
@@ -79,6 +79,7 @@ export async function checkPriceAlerts(chatIds: number[]): Promise<void> {
     where: { ticker: { in: allTickers } },
   })
 
+  const priceMap = new Map(prices.map((p) => [p.ticker, p]))
   const alerts: string[] = []
 
   for (const p of prices) {
@@ -133,18 +134,19 @@ export async function checkPriceAlerts(chatIds: number[]): Promise<void> {
   })
 
   for (const s of strategies) {
-    const price = prices.find((p) => p.ticker === s.holding.ticker)
+    const price = priceMap.get(s.holding.ticker)
     if (!price) continue
 
-    // 현재가 비교: USD 종목은 USD 가격, KRW 종목은 KRW 가격
     const currentPrice = price.price
+    const name = escapeHtml(s.holding.displayName)
+    const ticker = escapeHtml(s.holding.ticker)
 
     if (s.targetPrice != null && currentPrice >= s.targetPrice) {
       const key = `target:${s.holding.ticker}`
       if (sentToday.get(key) === today) continue
       sentToday.set(key, today)
       alerts.push(
-        `🎯 ${s.holding.displayName} (${s.holding.ticker}) 목표가 도달: ${currentPrice.toLocaleString()} (목표 ${s.targetPrice.toLocaleString()})`
+        `🎯 ${name} (${ticker}) 목표가 도달: ${currentPrice.toLocaleString('ko-KR')} (목표 ${s.targetPrice.toLocaleString('ko-KR')})`
       )
     }
 
@@ -153,7 +155,7 @@ export async function checkPriceAlerts(chatIds: number[]): Promise<void> {
       if (sentToday.get(key) === today) continue
       sentToday.set(key, today)
       alerts.push(
-        `🛑 ${s.holding.displayName} (${s.holding.ticker}) 손절가 도달: ${currentPrice.toLocaleString()} (손절 ${s.stopLoss.toLocaleString()})`
+        `🛑 ${name} (${ticker}) 손절가 도달: ${currentPrice.toLocaleString('ko-KR')} (손절 ${s.stopLoss.toLocaleString('ko-KR')})`
       )
     }
   }
@@ -169,15 +171,18 @@ export async function checkPriceAlerts(chatIds: number[]): Promise<void> {
   })
 
   for (const w of watchlist) {
-    const price = prices.find((p) => p.ticker === w.ticker)
+    const price = priceMap.get(w.ticker)
     if (!price) continue
+
+    const name = escapeHtml(w.displayName)
+    const ticker = escapeHtml(w.ticker)
 
     if (w.targetBuy != null && price.price <= w.targetBuy) {
       const key = `wbuy:${w.ticker}`
       if (sentToday.get(key) === today) continue
       sentToday.set(key, today)
       alerts.push(
-        `💰 ${w.displayName} (${w.ticker}) 목표 매수가 도달: ${price.price.toLocaleString()} (목표 ${w.targetBuy.toLocaleString()})`
+        `💰 ${name} (${ticker}) 목표 매수가 도달: ${price.price.toLocaleString('ko-KR')} (목표 ${w.targetBuy.toLocaleString('ko-KR')})`
       )
     }
 
@@ -186,7 +191,7 @@ export async function checkPriceAlerts(chatIds: number[]): Promise<void> {
       if (sentToday.get(key) === today) continue
       sentToday.set(key, today)
       alerts.push(
-        `🔔 ${w.displayName} (${w.ticker}) 매수구간 진입: ${price.price.toLocaleString()} (구간 ${w.entryLow.toLocaleString()}~${w.entryHigh.toLocaleString()})`
+        `🔔 ${name} (${ticker}) 매수구간 진입: ${price.price.toLocaleString('ko-KR')} (구간 ${w.entryLow.toLocaleString('ko-KR')}~${w.entryHigh.toLocaleString('ko-KR')})`
       )
     }
   }
