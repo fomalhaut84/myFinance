@@ -97,7 +97,7 @@ export async function searchYahooByName(
 let isRefreshing = false
 
 /**
- * DB의 Holding에서 고유 ticker 목록을 가져와
+ * DB의 Holding + Watchlist에서 고유 ticker 목록을 가져와
  * yahoo-finance2로 현재가를 조회하고 PriceCache에 upsert한다.
  * 프로세스 전역 mutex로 cron/API 동시 실행 방지.
  */
