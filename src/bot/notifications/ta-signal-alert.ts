@@ -32,6 +32,7 @@ interface SignalResult {
   displayName: string
   strategy: string
   signals: string[]
+  signalIds: string[]
 }
 
 interface Signal {
@@ -99,16 +100,16 @@ async function doCheckTASignals(chatIds: number[]): Promise<void> {
   resetIfNewDay()
   const today = getTodayKST()
 
-  // 전략이 설정된 보유 종목 조회 (long_hold 제외 — 별도 하루 1회)
-  const activeStrategies = ['swing', 'momentum', 'scalp']
+  // 전략이 설정된 보유 종목 조회 (모든 전략 포함)
+  const allStrategies = ['swing', 'momentum', 'scalp', 'long_hold']
   const holdings = await prisma.holdingStrategy.findMany({
-    where: { strategy: { in: activeStrategies } },
+    where: { strategy: { in: allStrategies } },
     include: { holding: { select: { ticker: true, displayName: true } } },
   })
 
-  // 관심종목 중 액티브 전략
+  // 관심종목 중 액티브 전략 (long_hold 제외 — 관심종목에 장기보유는 해당 없음)
   const watchlist = await prisma.watchlist.findMany({
-    where: { strategy: { in: activeStrategies } },
+    where: { strategy: { in: ['swing', 'momentum', 'scalp'] } },
   })
 
   // 티커별 전략 수집 (다중 전략 지원)
@@ -146,17 +147,21 @@ async function doCheckTASignals(chatIds: number[]): Promise<void> {
 
       if (allSignals.length === 0) continue
 
-      // 중복 방지: 고정 ID 기반
+      // 중복 방지: 고정 ID 기반 (발송 전 필터만, 기록은 발송 성공 후)
       const newSignals = allSignals.filter((sig) => {
         const key = `ta:${ticker}:${sig.id}`
-        if (sentToday.get(key) === today) return false
-        sentToday.set(key, today)
-        return true
+        return sentToday.get(key) !== today
       })
 
       if (newSignals.length > 0) {
         const stratLabel = Array.from(meta.strategies).join('/')
-        results.push({ ticker, displayName: meta.displayName, strategy: stratLabel, signals: newSignals.map((s) => s.message) })
+        results.push({
+          ticker,
+          displayName: meta.displayName,
+          strategy: stratLabel,
+          signals: newSignals.map((s) => s.message),
+          signalIds: newSignals.map((s) => s.id),
+        })
       }
     } catch (error) {
       console.error(`[ta-signal] ${ticker} TA 분석 실패:`, error)
@@ -182,11 +187,22 @@ async function doCheckTASignals(chatIds: number[]): Promise<void> {
   const bot = getBot()
   const message = lines.join('\n')
 
+  let sendSuccess = false
   for (const chatId of chatIds) {
     try {
       await sendHtml(bot, chatId, message)
+      sendSuccess = true
     } catch (error) {
       console.error(`[ta-signal] 알림 발송 실패 (chatId: ${chatId}):`, error)
+    }
+  }
+
+  // 발송 성공 시에만 dedupe 기록 (실패 시 다음 주기에 재시도)
+  if (sendSuccess) {
+    for (const r of results) {
+      for (const sigId of r.signalIds) {
+        sentToday.set(`ta:${r.ticker}:${sigId}`, today)
+      }
     }
   }
 
