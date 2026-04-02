@@ -125,6 +125,20 @@ async function doRefreshPrices(): Promise<RefreshResult> {
     holdings.map((h) => [h.ticker, { displayName: h.displayName, market: h.market, currency: h.currency }])
   )
 
+  // 관심종목 티커 추가 (보유 종목과 중복 시 보유 종목 메타 우선)
+  const watchlistItems = await prisma.watchlist.findMany({
+    select: { ticker: true, displayName: true, market: true },
+  })
+  for (const w of watchlistItems) {
+    if (!tickerMeta.has(w.ticker)) {
+      tickerMeta.set(w.ticker, {
+        displayName: w.displayName,
+        market: w.market,
+        currency: w.market === 'US' ? 'USD' : 'KRW',
+      })
+    }
+  }
+
   // FX 환율 추가
   tickerMeta.set(FX_TICKER, { displayName: 'USD/KRW', market: 'FX', currency: 'KRW' })
 
