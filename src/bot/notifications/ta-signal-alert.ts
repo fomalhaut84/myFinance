@@ -34,35 +34,40 @@ interface SignalResult {
   signals: string[]
 }
 
-/** 전략별 시그널 조건 매칭 */
-function checkSignals(report: TAReport, strategy: string): string[] {
-  const signals: string[] = []
+interface Signal {
+  id: string
+  message: string
+}
+
+/** 전략별 시그널 조건 매칭 — id는 중복 방지 키에 사용 */
+function checkSignals(report: TAReport, strategy: string): Signal[] {
+  const signals: Signal[] = []
   const { rsi14, macd, bollingerBands, volume, sma } = report.indicators
 
   switch (strategy) {
     case 'swing':
-      if (rsi14.signal === 'OVERSOLD') signals.push(`📉 RSI 과매도 (${rsi14.value.toFixed(1)}) — 매수 기회`)
-      if (rsi14.signal === 'OVERBOUGHT') signals.push(`📈 RSI 과매수 (${rsi14.value.toFixed(1)}) — 매도 검토`)
-      if (macd.crossover === 'GOLDEN') signals.push('🔄 MACD 골든크로스 — 매수 시그널')
-      if (macd.crossover === 'DEAD') signals.push('🔄 MACD 데드크로스 — 매도 시그널')
+      if (rsi14.signal === 'OVERSOLD') signals.push({ id: 'RSI_OVERSOLD', message: `📉 RSI 과매도 (${rsi14.value.toFixed(1)}) — 매수 기회` })
+      if (rsi14.signal === 'OVERBOUGHT') signals.push({ id: 'RSI_OVERBOUGHT', message: `📈 RSI 과매수 (${rsi14.value.toFixed(1)}) — 매도 검토` })
+      if (macd.crossover === 'GOLDEN') signals.push({ id: 'MACD_GOLDEN', message: '🔄 MACD 골든크로스 — 매수 시그널' })
+      if (macd.crossover === 'DEAD') signals.push({ id: 'MACD_DEAD', message: '🔄 MACD 데드크로스 — 매도 시그널' })
       break
 
     case 'momentum':
-      if (volume.surge && report.price.change1d > 0) signals.push(`🚀 거래량 급증 (${volume.ratio.toFixed(1)}배) + 상승`)
-      if (sma.goldenCross) signals.push('🔄 SMA 골든크로스 — 상승 추세 전환')
-      if (sma.deathCross) signals.push('🔄 SMA 데드크로스 — 하락 추세 전환')
+      if (volume.surge && report.price.change1d > 0) signals.push({ id: 'VOL_SURGE', message: `🚀 거래량 급증 (${volume.ratio.toFixed(1)}배) + 상승` })
+      if (sma.goldenCross) signals.push({ id: 'SMA_GOLDEN', message: '🔄 SMA 골든크로스 — 상승 추세 전환' })
+      if (sma.deathCross) signals.push({ id: 'SMA_DEAD', message: '🔄 SMA 데드크로스 — 하락 추세 전환' })
       break
 
     case 'scalp':
-      if (bollingerBands.position === 'BELOW_LOWER') signals.push('📉 BB 하단 이탈 — 매수 구간')
-      if (bollingerBands.position === 'ABOVE_UPPER') signals.push('📈 BB 상단 이탈 — 매도 구간')
-      if (rsi14.value < 25) signals.push(`📉 RSI 극단 과매도 (${rsi14.value.toFixed(1)})`)
-      if (rsi14.value > 75) signals.push(`📈 RSI 극단 과매수 (${rsi14.value.toFixed(1)})`)
+      if (bollingerBands.position === 'BELOW_LOWER') signals.push({ id: 'BB_BELOW', message: '📉 BB 하단 이탈 — 매수 구간' })
+      if (bollingerBands.position === 'ABOVE_UPPER') signals.push({ id: 'BB_ABOVE', message: '📈 BB 상단 이탈 — 매도 구간' })
+      if (rsi14.value < 25) signals.push({ id: 'RSI_EXTREME_LOW', message: `📉 RSI 극단 과매도 (${rsi14.value.toFixed(1)})` })
+      if (rsi14.value > 75) signals.push({ id: 'RSI_EXTREME_HIGH', message: `📈 RSI 극단 과매수 (${rsi14.value.toFixed(1)})` })
       break
 
     case 'long_hold':
       if (report.signalSummary.overall === 'STRONG_SELL') {
-        signals.push(`⚠️ 종합 STRONG_SELL — ${report.signalSummary.reasons.slice(0, 2).join(', ')}`)
+        signals.push({ id: 'STRONG_SELL', message: `⚠️ 종합 STRONG_SELL — ${report.signalSummary.reasons.slice(0, 2).join(', ')}` })
       }
       break
   }
@@ -70,10 +75,25 @@ function checkSignals(report: TAReport, strategy: string): string[] {
   return signals
 }
 
+let isChecking = false
+
 /**
  * 전략 기반 TA 시그널 체크 + 알림 발송
  */
 export async function checkTASignals(chatIds: number[]): Promise<void> {
+  if (isChecking) {
+    console.log('[ta-signal] 이미 체크 진행 중, 스킵')
+    return
+  }
+  isChecking = true
+  try {
+    await doCheckTASignals(chatIds)
+  } finally {
+    isChecking = false
+  }
+}
+
+async function doCheckTASignals(chatIds: number[]): Promise<void> {
   if (chatIds.length === 0) return
 
   resetIfNewDay()
@@ -91,38 +111,52 @@ export async function checkTASignals(chatIds: number[]): Promise<void> {
     where: { strategy: { in: activeStrategies } },
   })
 
-  // 티커 중복 제거
-  const tickerMap = new Map<string, { displayName: string; strategy: string }>()
+  // 티커별 전략 수집 (다중 전략 지원)
+  const tickerStrategies = new Map<string, { displayName: string; strategies: Set<string> }>()
   for (const h of holdings) {
-    tickerMap.set(h.holding.ticker, { displayName: h.holding.displayName, strategy: h.strategy })
+    const existing = tickerStrategies.get(h.holding.ticker)
+    if (existing) {
+      existing.strategies.add(h.strategy)
+    } else {
+      tickerStrategies.set(h.holding.ticker, { displayName: h.holding.displayName, strategies: new Set([h.strategy]) })
+    }
   }
   for (const w of watchlist) {
-    if (!tickerMap.has(w.ticker)) {
-      tickerMap.set(w.ticker, { displayName: w.displayName, strategy: w.strategy })
+    const existing = tickerStrategies.get(w.ticker)
+    if (existing) {
+      existing.strategies.add(w.strategy)
+    } else {
+      tickerStrategies.set(w.ticker, { displayName: w.displayName, strategies: new Set([w.strategy]) })
     }
   }
 
-  if (tickerMap.size === 0) return
+  if (tickerStrategies.size === 0) return
 
   const results: SignalResult[] = []
 
-  for (const [ticker, meta] of Array.from(tickerMap)) {
+  for (const [ticker, meta] of Array.from(tickerStrategies)) {
     try {
       const report = await generateTAReport(ticker)
-      const signals = checkSignals(report, meta.strategy)
 
-      if (signals.length === 0) continue
+      // 모든 전략에 대해 시그널 체크
+      const allSignals: Signal[] = []
+      for (const strategy of Array.from(meta.strategies)) {
+        allSignals.push(...checkSignals(report, strategy))
+      }
 
-      // 중복 방지: 각 시그널별 체크
-      const newSignals = signals.filter((sig) => {
-        const key = `ta:${ticker}:${sig.slice(0, 20)}`
+      if (allSignals.length === 0) continue
+
+      // 중복 방지: 고정 ID 기반
+      const newSignals = allSignals.filter((sig) => {
+        const key = `ta:${ticker}:${sig.id}`
         if (sentToday.get(key) === today) return false
         sentToday.set(key, today)
         return true
       })
 
       if (newSignals.length > 0) {
-        results.push({ ticker, displayName: meta.displayName, strategy: meta.strategy, signals: newSignals })
+        const stratLabel = Array.from(meta.strategies).join('/')
+        results.push({ ticker, displayName: meta.displayName, strategy: stratLabel, signals: newSignals.map((s) => s.message) })
       }
     } catch (error) {
       console.error(`[ta-signal] ${ticker} TA 분석 실패:`, error)
