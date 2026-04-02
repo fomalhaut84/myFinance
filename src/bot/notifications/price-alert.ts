@@ -65,11 +65,18 @@ export async function checkPriceAlerts(chatIds: number[]): Promise<void> {
   const holdingTickers = new Set(holdings.map((h) => h.ticker))
   const nameMap = new Map(holdings.map((h) => [h.ticker, h.displayName]))
 
+  // 관심종목 티커도 수집
+  const watchlistTickers = await prisma.watchlist.findMany({
+    select: { ticker: true },
+  })
+  const allTickerSet = new Set(Array.from(holdingTickers))
+  for (const w of watchlistTickers) allTickerSet.add(w.ticker)
+  allTickerSet.add('USDKRW=X')
+  const allTickers = Array.from(allTickerSet)
+
   // PriceCache에서 변동률 조회
   const prices = await prisma.priceCache.findMany({
-    where: {
-      ticker: { in: Array.from(holdingTickers).concat(['USDKRW=X']) },
-    },
+    where: { ticker: { in: allTickers } },
   })
 
   const alerts: string[] = []
@@ -108,6 +115,78 @@ export async function checkPriceAlerts(chatIds: number[]): Promise<void> {
       const name = nameMap.get(p.ticker) ?? p.ticker
       alerts.push(
         `🟢 ${name} (${p.ticker}) 급등: ${formatPercent(p.changePercent)}`
+      )
+    }
+  }
+
+  // --- 보유종목 목표가/손절가 체크 ---
+  const strategies = await prisma.holdingStrategy.findMany({
+    where: {
+      OR: [
+        { targetPrice: { not: null } },
+        { stopLoss: { not: null } },
+      ],
+    },
+    include: {
+      holding: { select: { ticker: true, displayName: true, currency: true } },
+    },
+  })
+
+  for (const s of strategies) {
+    const price = prices.find((p) => p.ticker === s.holding.ticker)
+    if (!price) continue
+
+    // 현재가 비교: USD 종목은 USD 가격, KRW 종목은 KRW 가격
+    const currentPrice = price.price
+
+    if (s.targetPrice != null && currentPrice >= s.targetPrice) {
+      const key = `target:${s.holding.ticker}`
+      if (sentToday.get(key) === today) continue
+      sentToday.set(key, today)
+      alerts.push(
+        `🎯 ${s.holding.displayName} (${s.holding.ticker}) 목표가 도달: ${currentPrice.toLocaleString()} (목표 ${s.targetPrice.toLocaleString()})`
+      )
+    }
+
+    if (s.stopLoss != null && currentPrice <= s.stopLoss) {
+      const key = `stoploss:${s.holding.ticker}`
+      if (sentToday.get(key) === today) continue
+      sentToday.set(key, today)
+      alerts.push(
+        `🛑 ${s.holding.displayName} (${s.holding.ticker}) 손절가 도달: ${currentPrice.toLocaleString()} (손절 ${s.stopLoss.toLocaleString()})`
+      )
+    }
+  }
+
+  // --- 관심종목 목표 매수가/매수구간 체크 ---
+  const watchlist = await prisma.watchlist.findMany({
+    where: {
+      OR: [
+        { targetBuy: { not: null } },
+        { entryLow: { not: null } },
+      ],
+    },
+  })
+
+  for (const w of watchlist) {
+    const price = prices.find((p) => p.ticker === w.ticker)
+    if (!price) continue
+
+    if (w.targetBuy != null && price.price <= w.targetBuy) {
+      const key = `wbuy:${w.ticker}`
+      if (sentToday.get(key) === today) continue
+      sentToday.set(key, today)
+      alerts.push(
+        `💰 ${w.displayName} (${w.ticker}) 목표 매수가 도달: ${price.price.toLocaleString()} (목표 ${w.targetBuy.toLocaleString()})`
+      )
+    }
+
+    if (w.entryLow != null && w.entryHigh != null && price.price >= w.entryLow && price.price <= w.entryHigh) {
+      const key = `wzone:${w.ticker}`
+      if (sentToday.get(key) === today) continue
+      sentToday.set(key, today)
+      alerts.push(
+        `🔔 ${w.displayName} (${w.ticker}) 매수구간 진입: ${price.price.toLocaleString()} (구간 ${w.entryLow.toLocaleString()}~${w.entryHigh.toLocaleString()})`
       )
     }
   }
