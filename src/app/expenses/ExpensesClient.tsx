@@ -111,14 +111,15 @@ export default function ExpensesClient({ initialData }: ExpensesClientProps) {
       .catch(() => {})
   }, [])
 
-  const fetchData = useCallback(async (y: number, m: number | undefined, t: TabType) => {
+  const fetchData = useCallback(async (y: number, m: number | undefined, t: TabType, keepOffset?: number) => {
     abortRef.current?.abort()
     const controller = new AbortController()
     abortRef.current = controller
 
+    const requestOffset = keepOffset ?? 0
     setLoading(true)
     try {
-      const params = new URLSearchParams({ year: String(y), offset: '0' })
+      const params = new URLSearchParams({ year: String(y), offset: String(requestOffset) })
       if (m) params.set('month', String(m))
       if (t !== 'all') params.set('type', t)
 
@@ -126,7 +127,7 @@ export default function ExpensesClient({ initialData }: ExpensesClientProps) {
       if (res.ok) {
         const json: ApiResponse = await res.json()
         setData(json)
-        setOffset(0)
+        setOffset(requestOffset)
       }
       // 월 선택 시 분석 데이터도 조회 (소비 탭 또는 전체 탭에서만)
       if (m && t !== 'income') {
@@ -208,7 +209,7 @@ export default function ExpensesClient({ initialData }: ExpensesClientProps) {
   const handleTabChange = (t: TabType) => setTab(t)
 
   const handleSaved = () => {
-    fetchData(year, month, tab)
+    fetchData(year, month, tab, offset)
   }
 
   const handleEdit = (tx: TransactionRow) => {
