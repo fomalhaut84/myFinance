@@ -13,19 +13,33 @@ export async function getPrices(args: { tickers?: string[] }) {
   try {
     const isExplicit = args.tickers && args.tickers.length > 0
 
-    // 지정 종목: 실시간 조회
+    // 지정 종목: 실시간 조회 (병렬, 실패 시 캐시 fallback)
     if (isExplicit) {
-      const lines = [`## 실시간 시세 (${args.tickers!.length}종목)`]
-      for (const ticker of args.tickers!) {
-        try {
-          const quote = await fetchQuote(ticker)
+      const requestedTickers = args.tickers!
+      const results = await Promise.allSettled(
+        requestedTickers.map((ticker) => fetchQuote(ticker))
+      )
+
+      const lines = [`## 실시간 시세 (${requestedTickers.length}종목)`]
+      for (let i = 0; i < requestedTickers.length; i++) {
+        const ticker = requestedTickers[i]
+        const result = results[i]
+        if (result.status === 'fulfilled') {
+          const quote = result.value
           const priceStr = formatMoney(quote.price, quote.currency)
           const changeStr = quote.changePercent != null
             ? ` (${quote.changePercent >= 0 ? '+' : ''}${quote.changePercent.toFixed(2)}%)`
             : ''
           lines.push(`- ${quote.displayName} (${ticker}): ${priceStr}${changeStr}`)
-        } catch {
-          lines.push(`- ${ticker}: 조회 실패`)
+        } else {
+          // 실시간 실패 → PriceCache fallback
+          const cached = await prisma.priceCache.findUnique({ where: { ticker } })
+          if (cached) {
+            const priceStr = formatMoney(cached.price, cached.currency)
+            lines.push(`- ${cached.displayName} (${ticker}): ${priceStr} [캐시]`)
+          } else {
+            lines.push(`- ${ticker}: 조회 실패`)
+          }
         }
       }
       lines.push(`\n조회 시각: ${formatDate(new Date())}`)
