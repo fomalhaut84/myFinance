@@ -13,17 +13,22 @@ interface AssetDeleteModalProps {
 export default function AssetDeleteModal({ asset, onClose }: AssetDeleteModalProps) {
   const router = useRouter()
   const [isDeleting, setIsDeleting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const handleDelete = async () => {
     setIsDeleting(true)
+    setError(null)
     try {
       const res = await fetch(`/api/assets/${asset.id}`, { method: 'DELETE' })
       if (res.ok) {
         onClose()
         router.refresh()
+      } else {
+        const data = await res.json().catch(() => null)
+        setError(data?.error ?? '삭제에 실패했습니다.')
       }
     } catch {
-      // 무시
+      setError('네트워크 오류가 발생했습니다.')
     } finally {
       setIsDeleting(false)
     }
@@ -51,6 +56,8 @@ export default function AssetDeleteModal({ asset, onClose }: AssetDeleteModalPro
         <p className="text-[12px] text-red-400/80 leading-relaxed mb-5">
           이 자산을 삭제하면 복구할 수 없습니다.
         </p>
+
+        {error && <div className="bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-2.5 text-[12px] text-red-400 mb-4">{error}</div>}
 
         <div className="flex gap-3">
           <button onClick={onClose} className="flex-1 py-2.5 rounded-lg text-[13px] font-semibold text-sub border border-border hover:bg-surface-dim transition-all">취소</button>

@@ -64,10 +64,14 @@ export default function AssetForm({ mode, asset, onClose }: AssetFormProps) {
       const rate = parseFloat(interestRate)
       if (!Number.isFinite(rate)) { setError('유효한 이율을 입력해주세요.'); setIsSubmitting(false); return }
       body.interestRate = rate
+    } else if (isEdit) {
+      body.interestRate = null
     }
 
     if (maturityDate.trim()) {
       body.maturityDate = maturityDate
+    } else if (isEdit) {
+      body.maturityDate = null
     }
 
     try {
