@@ -17,6 +17,9 @@ export function validateDepositInput(body: Record<string, unknown>): DepositVali
   if (!hasAccount && !hasAsset) {
     errors.push({ field: 'accountId', message: '계좌 또는 자산을 선택해주세요.' })
   }
+  if (hasAccount && hasAsset) {
+    errors.push({ field: 'accountId', message: '계좌와 자산을 동시에 지정할 수 없습니다.' })
+  }
   if (typeof body.amount !== 'number' || !Number.isFinite(body.amount) || body.amount <= 0) {
     errors.push({ field: 'amount', message: '금액은 0보다 커야 합니다.' })
   }
