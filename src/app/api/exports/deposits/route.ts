@@ -35,14 +35,14 @@ export async function GET(request: NextRequest) {
     const headers = ['입금일', '계좌', '금액(원)', '구분', '메모']
     const rows = deposits.map((d) => [
       formatDate(d.depositedAt),
-      d.account.name,
+      d.account?.name ?? '',
       String(Math.round(d.amount)),
       d.source,
       d.note ?? '',
     ])
 
     const csv = toCSV(headers, rows)
-    const suffix = accountId ? `_${deposits[0]?.account.name ?? ''}` : ''
+    const suffix = accountId ? `_${deposits[0]?.account?.name ?? ''}` : ''
     const yearSuffix = year ?? 'all'
     return csvResponse(csv, `deposits${suffix}_${yearSuffix}.csv`)
   } catch (error) {

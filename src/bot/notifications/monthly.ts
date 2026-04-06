@@ -47,7 +47,8 @@ export async function sendMonthlyReminder(chatIds: number[]): Promise<void> {
     for (const d of monthDeposits) {
       const isGift = isGiftSource(d.source)
       const sourceLabel = isGift ? '증여' : '입금'
-      lines.push(`  ${escapeHtml(d.account.name)}: ${formatKRWFull(d.amount)} (${sourceLabel})`)
+      const target = d.account?.name ?? '자산'
+      lines.push(`  ${escapeHtml(target)}: ${formatKRWFull(d.amount)} (${sourceLabel})`)
     }
   }
 
