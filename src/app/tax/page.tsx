@@ -60,12 +60,23 @@ export default async function TaxPage({ searchParams }: TaxPageProps) {
     assetDepositsByOwner.set(owner, list)
   }
 
+  // owner별 비주식 증여는 첫 매칭 계좌에만 합산 (중복 방지)
+  const usedOwners = new Set<string>()
   const giftSummaries = accounts.map((account) => {
     const isMinor = account.ownerAge != null && account.ownerAge < 19
-    const ownerAssetDeposits = assetDepositsByOwner.get(account.name) ?? []
+    const ownerAssetDeposits = usedOwners.has(account.name)
+      ? []
+      : assetDepositsByOwner.get(account.name) ?? []
+    usedOwners.add(account.name)
     const allDeposits = [...account.deposits, ...ownerAssetDeposits]
       .sort((a, b) => new Date(a.depositedAt).getTime() - new Date(b.depositedAt).getTime())
     const summary = calcGiftTaxSummary(allDeposits, isMinor)
+
+    // 10년 윈도우 기준 분리 합계 (totalGifted와 일치)
+    const tenYearsAgo = new Date()
+    tenYearsAgo.setFullYear(tenYearsAgo.getFullYear() - 10)
+    const inWindow = (d: { depositedAt: Date }) => new Date(d.depositedAt) >= tenYearsAgo
+
     return {
       accountId: account.id,
       accountName: account.name,
@@ -74,8 +85,8 @@ export default async function TaxPage({ searchParams }: TaxPageProps) {
       ...summary,
       resetDate: summary.resetDate?.toISOString() ?? null,
       firstGiftDate: summary.firstGiftDate?.toISOString() ?? null,
-      accountGifted: account.deposits.reduce((s, d) => s + d.amount, 0),
-      assetGifted: ownerAssetDeposits.reduce((s, d) => s + d.amount, 0),
+      accountGifted: account.deposits.filter(inWindow).reduce((s, d) => s + d.amount, 0),
+      assetGifted: ownerAssetDeposits.filter(inWindow).reduce((s, d) => s + d.amount, 0),
     }
   })
 
