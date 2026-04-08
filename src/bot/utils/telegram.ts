@@ -87,15 +87,14 @@ function isParseError(error: unknown): boolean {
 }
 
 /**
- * 네트워크 에러 여부 판별 (ETIMEDOUT, ECONNRESET 등)
+ * 안전하게 재시도 가능한 네트워크 에러 판별.
+ * ETIMEDOUT/ENOTFOUND만 재시도 (연결 자체 실패 → 요청 미도달 보장).
+ * ECONNRESET은 요청 도달 후 응답 실패일 수 있어 중복 메시지 위험 → 재시도 안 함.
  */
-function isNetworkError(error: unknown): boolean {
+function isRetryableNetworkError(error: unknown): boolean {
   if (!(error instanceof Error)) return false
-  const msg = error.message.toLowerCase()
-  if (msg.includes('network request') && msg.includes('failed')) return true
   const inner = (error as { error?: { code?: string } }).error
-  if (inner?.code === 'ETIMEDOUT' || inner?.code === 'ECONNRESET' || inner?.code === 'ENOTFOUND') return true
-  return false
+  return inner?.code === 'ETIMEDOUT' || inner?.code === 'ENOTFOUND'
 }
 
 /**
@@ -108,7 +107,7 @@ async function withRetry<T>(fn: () => Promise<T>, maxRetries = 2): Promise<T> {
       return await fn()
     } catch (error) {
       lastError = error
-      if (!isNetworkError(error) || attempt === maxRetries) throw error
+      if (!isRetryableNetworkError(error) || attempt === maxRetries) throw error
       const delay = 1000 * (attempt + 1) // 1초, 2초
       await new Promise((r) => setTimeout(r, delay))
     }
