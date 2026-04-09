@@ -101,8 +101,20 @@ export async function sendDailySummary(chatIds: number[]): Promise<void> {
   const kst = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Seoul' }))
   const dateStr = `${kst.getFullYear()}.${String(kst.getMonth() + 1).padStart(2, '0')}.${String(kst.getDate()).padStart(2, '0')}`
 
+  // 총합 D-1: 전일 데이터가 있는 계좌만 비교 (일부 누락 시 왜곡 방지)
+  const grandCurrentForCompare = accounts
+    .filter((a) => prevMap.has(a.id))
+    .reduce((s, a) => {
+      let v = 0
+      for (const h of a.holdings) {
+        const p = priceMap.get(h.ticker)
+        if (p) { v += calcCurrentValueKRW(h, p.price, h.currency === 'USD' ? fxRate : 1) }
+        else { v += calcCostKRW(h) }
+      }
+      return s + v
+    }, 0)
   const grandChangeLine = hasPrevData && grandPrevTotal > 0
-    ? `📈 전일 대비: ${formatSignedKRWCompact(grandTotal - grandPrevTotal)} (${formatPercent(((grandTotal - grandPrevTotal) / grandPrevTotal) * 100)}) ${profitEmoji(grandTotal - grandPrevTotal)}`
+    ? `📈 전일 대비: ${formatSignedKRWCompact(grandCurrentForCompare - grandPrevTotal)} (${formatPercent(((grandCurrentForCompare - grandPrevTotal) / grandPrevTotal) * 100)}) ${profitEmoji(grandCurrentForCompare - grandPrevTotal)}`
     : null
 
   const lines = [
