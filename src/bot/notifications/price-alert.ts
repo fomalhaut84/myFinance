@@ -60,12 +60,11 @@ export async function checkPriceAlerts(chatIds: number[]): Promise<void> {
 
   // 보유 종목만 조회 (전체 PriceCache가 아니라)
   const holdings = await prisma.holding.findMany({
-    select: { ticker: true, displayName: true, market: true },
+    select: { ticker: true, displayName: true },
     distinct: ['ticker'],
   })
   const holdingTickers = new Set(holdings.map((h) => h.ticker))
   const nameMap = new Map(holdings.map((h) => [h.ticker, h.displayName]))
-  const marketMap = new Map(holdings.map((h) => [h.ticker, h.market]))
 
   // 관심종목 티커도 수집
   const watchlistTickers = await prisma.watchlist.findMany({
@@ -104,8 +103,8 @@ export async function checkPriceAlerts(chatIds: number[]): Promise<void> {
     if (p.changePercent == null) continue
     if (!holdingTickers.has(p.ticker)) continue
 
-    const market = marketMap.get(p.ticker) ?? ''
-    if (!isMarketOpenFor(market, p.ticker)) continue
+    // PriceCache.market을 단일 소스로 사용 (ticker 기준 결정적)
+    if (!isMarketOpenFor(p.market, p.ticker)) continue
 
     const key = `price:${p.ticker}`
     if (sentToday.get(key) === today) continue
