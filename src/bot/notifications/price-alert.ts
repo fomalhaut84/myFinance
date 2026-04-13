@@ -105,7 +105,7 @@ export async function checkPriceAlerts(chatIds: number[]): Promise<void> {
     if (!holdingTickers.has(p.ticker)) continue
 
     const market = marketMap.get(p.ticker) ?? ''
-    if (!isMarketOpenFor(market)) continue
+    if (!isMarketOpenFor(market, p.ticker)) continue
 
     const key = `price:${p.ticker}`
     if (sentToday.get(key) === today) continue

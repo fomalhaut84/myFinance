@@ -52,19 +52,51 @@ export function isUSMarketOpen(): boolean {
   return false
 }
 
+/** 한국 시장 식별자 (Seed, Yahoo exchange code 모두 포함) */
+const KR_MARKETS = new Set([
+  'KR', 'KS', 'KQ', 'KSC', 'KOE', 'KOSPI', 'KOSDAQ', 'KRX',
+])
+
+/** 미국 시장 식별자 (Seed, Yahoo exchange code 모두 포함) */
+const US_MARKETS = new Set([
+  'US', 'NYQ', 'NGM', 'NMS', 'NCM', 'PCX', 'NYSE', 'NASDAQ', 'AMEX', 'BATS', 'ARCA',
+])
+
+/** FX/환율 식별자 */
+const FX_MARKETS = new Set(['FX', 'CCY'])
+
 /**
- * 종목 market 값 기준으로 거래시간 여부 판단
- * - 'KR', 'KS', 'KQ' → 한국장
- * - 'US' → 미국장
- * - 그 외(FX 등) → 항상 true
+ * 종목 market + ticker 기준으로 정규화된 시장 구분 반환.
+ * Yahoo Finance의 raw exchange 코드(`KSC`, `NGM`, `NYQ` 등)도 처리.
+ * market이 모호하면 ticker suffix(`.KS`, `.KQ`)로 fallback.
  */
-export function isMarketOpenFor(market: string): boolean {
+export function normalizeMarket(market: string, ticker?: string): 'KR' | 'US' | 'FX' | 'OTHER' {
   const upper = market.toUpperCase()
-  if (upper === 'KR' || upper === 'KS' || upper === 'KQ' || upper === 'KOSPI' || upper === 'KOSDAQ') {
-    return isKRMarketOpen()
+  if (KR_MARKETS.has(upper)) return 'KR'
+  if (US_MARKETS.has(upper)) return 'US'
+  if (FX_MARKETS.has(upper)) return 'FX'
+
+  // ticker suffix fallback
+  if (ticker) {
+    const t = ticker.toUpperCase()
+    if (t.endsWith('.KS') || t.endsWith('.KQ')) return 'KR'
+    if (t.endsWith('=X')) return 'FX'
   }
-  if (upper === 'US' || upper === 'NASDAQ' || upper === 'NYSE') {
-    return isUSMarketOpen()
-  }
-  return true
+
+  return 'OTHER'
+}
+
+/**
+ * 종목 market + ticker 기준으로 거래시간 여부 판단.
+ * - KR → 한국장 거래시간 (평일 09:00~15:30 KST)
+ * - US → 미국장 거래시간
+ * - FX → 항상 true (24시간 거래)
+ * - OTHER → false (허위 알림 방지 목적이므로 보수적으로 차단)
+ */
+export function isMarketOpenFor(market: string, ticker?: string): boolean {
+  const normalized = normalizeMarket(market, ticker)
+  if (normalized === 'KR') return isKRMarketOpen()
+  if (normalized === 'US') return isUSMarketOpen()
+  if (normalized === 'FX') return true
+  return false
 }
