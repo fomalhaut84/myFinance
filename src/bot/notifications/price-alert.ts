@@ -10,6 +10,7 @@ import { prisma } from '@/lib/prisma'
 import { getBot } from '@/bot/index'
 import { formatPercent } from '@/bot/utils/formatter'
 import { sendHtml, escapeHtml } from '@/bot/utils/telegram'
+import { isMarketOpenFor } from '@/lib/market-hours'
 
 /** 당일 알림 발송 기록 (ticker → date string) */
 const sentToday = new Map<string, string>()
@@ -59,11 +60,12 @@ export async function checkPriceAlerts(chatIds: number[]): Promise<void> {
 
   // 보유 종목만 조회 (전체 PriceCache가 아니라)
   const holdings = await prisma.holding.findMany({
-    select: { ticker: true, displayName: true },
+    select: { ticker: true, displayName: true, market: true },
     distinct: ['ticker'],
   })
   const holdingTickers = new Set(holdings.map((h) => h.ticker))
   const nameMap = new Map(holdings.map((h) => [h.ticker, h.displayName]))
+  const marketMap = new Map(holdings.map((h) => [h.ticker, h.market]))
 
   // 관심종목 티커도 수집
   const watchlistTickers = await prisma.watchlist.findMany({
@@ -98,9 +100,12 @@ export async function checkPriceAlerts(chatIds: number[]): Promise<void> {
       continue
     }
 
-    // 주가 급등락
+    // 주가 급등락 — 해당 시장 거래시간일 때만 알림 (장외 허위 변동 차단)
     if (p.changePercent == null) continue
     if (!holdingTickers.has(p.ticker)) continue
+
+    const market = marketMap.get(p.ticker) ?? ''
+    if (!isMarketOpenFor(market)) continue
 
     const key = `price:${p.ticker}`
     if (sentToday.get(key) === today) continue
