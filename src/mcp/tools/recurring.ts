@@ -248,16 +248,16 @@ export async function updateRecurringTransaction(args: {
       const mergedMonthOfYear = args.monthOfYear !== undefined ? args.monthOfYear : existing.monthOfYear
       const mergedNextRunAt = nextRunAtDate ?? existing.nextRunAt
 
-      // frequency 전환 시 불필요한 필드 null화 (데이터 일관성)
+      // frequency 전환 시 불필요 필드는 입력값과 무관하게 강제 null (데이터 일관성)
       if (args.frequency !== undefined && args.frequency !== existing.frequency) {
         if (mergedFrequency === 'monthly') {
-          if (args.dayOfWeek === undefined) data.dayOfWeek = null
-          if (args.monthOfYear === undefined) data.monthOfYear = null
+          data.dayOfWeek = null
+          data.monthOfYear = null
         } else if (mergedFrequency === 'weekly') {
-          if (args.dayOfMonth === undefined) data.dayOfMonth = null
-          if (args.monthOfYear === undefined) data.monthOfYear = null
+          data.dayOfMonth = null
+          data.monthOfYear = null
         } else if (mergedFrequency === 'yearly') {
-          if (args.dayOfWeek === undefined) data.dayOfWeek = null
+          data.dayOfWeek = null
         }
       }
 
