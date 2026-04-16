@@ -324,10 +324,14 @@ export async function exerciseVesting(args: { vestingId: string; action: Vesting
 
       if (args.action === 'exercise') {
         // 부모 StockOption의 만료일 검증 (만료 cron 지연/수동 재활성화 대비)
+        // expiryDate는 UTC 자정에 저장되므로 KST 일 경계 기준으로 비교
+        // (KST 만료일 당일 23:59까지 행사 가능)
         const parent = await tx.stockOption.findUnique({ where: { id: vesting.stockOptionId } })
         if (!parent) throw new ToolInputError(`스톡옵션을 찾을 수 없습니다: ${vesting.stockOptionId}`)
-        const now = new Date()
-        if (parent.expiryDate <= now) {
+
+        const kst = new Date(Date.now() + 9 * 60 * 60 * 1000)
+        const todayStart = new Date(Date.UTC(kst.getUTCFullYear(), kst.getUTCMonth(), kst.getUTCDate()))
+        if (parent.expiryDate < todayStart) {
           throw new ToolInputError(`만료된 스톡옵션은 행사할 수 없습니다. (만료일: ${parent.expiryDate.toISOString().slice(0, 10)})`)
         }
 
@@ -336,7 +340,7 @@ export async function exerciseVesting(args: { vestingId: string; action: Vesting
           where: {
             id: vesting.stockOptionId,
             remainingShares: { gte: vesting.shares },
-            expiryDate: { gt: now },
+            expiryDate: { gte: todayStart },
           },
           data: {
             exercisedShares: { increment: vesting.shares },
