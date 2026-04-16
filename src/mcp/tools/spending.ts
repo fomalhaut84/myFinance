@@ -166,6 +166,16 @@ export async function getTransactions(args: {
   }
 }
 
+/** YYYY-MM-DD 엄격 파싱 */
+function parseDateStrict(str: string): Date | null {
+  const match = str.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (!match) return null
+  const [, y, m, d] = match.map(Number)
+  const date = new Date(Date.UTC(y, m - 1, d))
+  if (date.getUTCFullYear() !== y || date.getUTCMonth() !== m - 1 || date.getUTCDate() !== d) return null
+  return date
+}
+
 /** 카테고리명으로 매칭 (부분 일치, 대소문자 무시) */
 async function resolveCategory(name: string) {
   const matched = await prisma.category.findMany({
@@ -199,12 +209,18 @@ export async function createTransaction(args: {
     const { category } = result
 
     const roundedAmount = Math.round(args.amount)
-    const transactedAt = args.transactedAt ? new Date(`${args.transactedAt}T00:00:00.000Z`) : new Date()
-    const txType = args.type ?? null
+    let transactedAt: Date
+    if (args.transactedAt) {
+      const parsed = parseDateStrict(args.transactedAt)
+      if (!parsed) return toolError('날짜는 YYYY-MM-DD 형식이어야 합니다.')
+      transactedAt = parsed
+    } else {
+      transactedAt = new Date()
+    }
 
-    // transfer 유형 ↔ transfer 카테고리 검증
-    if (txType && category.type !== 'transfer') return toolError('출금/입금은 이체 카테고리에서만 사용할 수 있습니다.')
-    if (!txType && category.type === 'transfer') return toolError('이체 카테고리는 출금/입금 유형에서만 사용할 수 있습니다.')
+    // transfer 유형은 웹/봇 경로만 사용 (자산 반영 트랜잭션 필요)
+    if (args.type) return toolError('이체 거래는 텔레그램 봇 또는 웹에서 입력해주세요. (자산 잔액 연동 필요)')
+    if (category.type === 'transfer') return toolError('이체 카테고리는 텔레그램 봇 또는 웹에서 입력해주세요.')
 
     const tx = await prisma.transaction.create({
       data: {
@@ -212,7 +228,6 @@ export async function createTransaction(args: {
         description: args.description.trim(),
         categoryId: category.id,
         transactedAt,
-        type: txType,
       },
     })
 
@@ -257,10 +272,15 @@ export async function updateTransaction(args: {
     if (args.categoryName !== undefined) {
       const result = await resolveCategory(args.categoryName)
       if ('error' in result) return toolError(result.error)
+      // transfer 거래의 카테고리 변경은 차단 (자산 정합성)
+      if (existing.type && result.category.type !== 'transfer') return toolError('이체 거래의 카테고리는 이체 카테고리만 가능합니다.')
+      if (!existing.type && result.category.type === 'transfer') return toolError('일반 거래를 이체 카테고리로 변경할 수 없습니다.')
       data.categoryId = result.category.id
     }
     if (args.transactedAt !== undefined) {
-      data.transactedAt = new Date(`${args.transactedAt}T00:00:00.000Z`)
+      const parsed = parseDateStrict(args.transactedAt)
+      if (!parsed) return toolError('날짜는 YYYY-MM-DD 형식이어야 합니다.')
+      data.transactedAt = parsed
     }
 
     if (Object.keys(data).length === 0) return toolError('변경할 필드가 없습니다.')
@@ -290,6 +310,7 @@ export async function deleteTransaction(args: { id: string }) {
       include: { category: { select: { name: true } } },
     })
     if (!existing) return toolError(`거래를 찾을 수 없습니다: ${args.id}`)
+    if (existing.type) return toolError('이체 거래는 웹 또는 텔레그램에서 삭제해주세요. (자산 잔액 역보정 필요)')
 
     await prisma.transaction.delete({ where: { id: args.id } })
     return toolResult(

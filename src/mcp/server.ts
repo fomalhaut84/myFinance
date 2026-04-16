@@ -105,7 +105,6 @@ server.tool(
     description: z.string().min(1).max(200).describe('내용'),
     categoryName: z.string().describe('카테고리명 (부분 일치)'),
     transactedAt: z.string().optional().describe('YYYY-MM-DD (미지정 시 오늘)'),
-    type: z.enum(['transfer_out', 'transfer_in']).optional().describe('이체 유형 (일반 소비/수입은 미지정)'),
   },
   async (args) => createTransaction(args)
 )
