@@ -161,11 +161,27 @@ export async function updateRsuSchedule(args: {
 
     if (Object.keys(data).length === 0) return toolError('변경할 필드가 없습니다.')
 
-    // Serializable: 상태 재확인 후 업데이트 (동시 vest 방지)
+    // Serializable: 상태 + 수량 정합성을 트랜잭션 내부 최신값 기준으로 재검증
     const updated = await prisma.$transaction(async (tx) => {
       const fresh = await tx.rSUSchedule.findUnique({ where: { id: args.id } })
       if (!fresh) throw new ToolInputError(`RSU 스케줄을 찾을 수 없습니다: ${args.id}`)
       if (fresh.status !== 'pending') throw new ToolInputError('베스팅 완료된 스케줄은 수정할 수 없습니다.')
+
+      // fresh 기준 sellShares/keepShares ≤ effectiveShares 재검증
+      const freshEffectiveShares = (data.shares as number | undefined) ?? fresh.shares
+      const freshEffectiveSell = args.sellShares !== undefined ? args.sellShares : fresh.sellShares
+      if (freshEffectiveSell !== null && freshEffectiveSell !== undefined && freshEffectiveSell > freshEffectiveShares) {
+        throw new ToolInputError(
+          `매도 예정 수량(${freshEffectiveSell})이 shares(${freshEffectiveShares})를 초과합니다. sellShares도 함께 수정해주세요.`
+        )
+      }
+      const freshEffectiveKeep = args.keepShares !== undefined ? args.keepShares : fresh.keepShares
+      if (freshEffectiveKeep !== null && freshEffectiveKeep !== undefined && freshEffectiveKeep > freshEffectiveShares) {
+        throw new ToolInputError(
+          `보유 예정 수량(${freshEffectiveKeep})이 shares(${freshEffectiveShares})를 초과합니다. keepShares도 함께 수정해주세요.`
+        )
+      }
+
       return tx.rSUSchedule.update({
         where: { id: args.id },
         data,
