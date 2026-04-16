@@ -163,6 +163,11 @@ export async function updateAsset(args: {
     if (args.newName !== undefined) {
       const trimmed = args.newName.trim()
       if (!trimmed) return toolError('새 이름이 비어있습니다.')
+      // 다른 자산과 이름 중복 방지 (대소문자 무시)
+      const duplicate = await prisma.asset.findFirst({
+        where: { name: { equals: trimmed, mode: 'insensitive' }, NOT: { id: existing.id } },
+      })
+      if (duplicate) return toolError(`동일 이름의 자산이 이미 존재합니다: ${duplicate.name}`)
       data.name = trimmed
     }
     if (args.category !== undefined) data.category = args.category
