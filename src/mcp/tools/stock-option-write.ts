@@ -323,16 +323,28 @@ export async function exerciseVesting(args: { vestingId: string; action: Vesting
       }
 
       if (args.action === 'exercise') {
+        // 부모 StockOption의 만료일 검증 (만료 cron 지연/수동 재활성화 대비)
+        const parent = await tx.stockOption.findUnique({ where: { id: vesting.stockOptionId } })
+        if (!parent) throw new ToolInputError(`스톡옵션을 찾을 수 없습니다: ${vesting.stockOptionId}`)
+        const now = new Date()
+        if (parent.expiryDate <= now) {
+          throw new ToolInputError(`만료된 스톡옵션은 행사할 수 없습니다. (만료일: ${parent.expiryDate.toISOString().slice(0, 10)})`)
+        }
+
         // remainingShares 조건부 감소: 부족하면 updateMany가 0건 반환
         const parentResult = await tx.stockOption.updateMany({
-          where: { id: vesting.stockOptionId, remainingShares: { gte: vesting.shares } },
+          where: {
+            id: vesting.stockOptionId,
+            remainingShares: { gte: vesting.shares },
+            expiryDate: { gt: now },
+          },
           data: {
             exercisedShares: { increment: vesting.shares },
             remainingShares: { decrement: vesting.shares },
           },
         })
         if (parentResult.count === 0) {
-          throw new ToolInputError('잔여 수량이 부족하여 행사할 수 없습니다.')
+          throw new ToolInputError('잔여 수량이 부족하거나 옵션이 만료되어 행사할 수 없습니다.')
         }
         return tx.stockOptionVesting.update({
           where: { id: args.vestingId },
