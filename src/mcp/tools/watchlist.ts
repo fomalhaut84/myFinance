@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma'
 import { fetchQuote } from '@/lib/price-fetcher'
+import { normalizeMarket } from '@/lib/market-hours'
 import { toolResult, toolError, formatMoney } from '../utils'
 
 const STRATEGY_LABELS: Record<string, string> = {
@@ -101,6 +102,11 @@ export async function addWatchlist(args: {
       ? args.strategy
       : 'swing'
 
+    // 매수 구간 검증
+    if (args.entryLow != null && args.entryHigh != null && args.entryLow > args.entryHigh) {
+      return toolError('매수 구간 하한(entryLow)은 상한(entryHigh)보다 작거나 같아야 합니다.')
+    }
+
     // 중복 확인
     const existing = await prisma.watchlist.findUnique({ where: { ticker } })
     if (existing) {
@@ -113,7 +119,10 @@ export async function addWatchlist(args: {
     try {
       const quote = await fetchQuote(ticker)
       displayName = quote.displayName
-      market = quote.currency === 'USD' ? 'US' : 'KR'
+      const normalized = normalizeMarket(quote.market, ticker)
+      if (normalized === 'KR') market = 'KR'
+      else if (normalized === 'US') market = 'US'
+      else return toolError(`지원하지 않는 시장입니다: ${ticker} (${quote.market})`)
     } catch {
       return toolError(`유효하지 않은 티커입니다: ${ticker}`)
     }
@@ -166,6 +175,13 @@ export async function updateWatchlist(args: {
 
     if (args.strategy !== undefined && !VALID_STRATEGIES.includes(args.strategy)) {
       return toolError(`유효한 전략: ${VALID_STRATEGIES.join(', ')}`)
+    }
+
+    // 업데이트 후 예상 구간으로 검증
+    const nextLow = args.entryLow !== undefined ? args.entryLow : existing.entryLow
+    const nextHigh = args.entryHigh !== undefined ? args.entryHigh : existing.entryHigh
+    if (nextLow != null && nextHigh != null && nextLow > nextHigh) {
+      return toolError('매수 구간 하한(entryLow)은 상한(entryHigh)보다 작거나 같아야 합니다.')
     }
 
     const data: Record<string, unknown> = {}
