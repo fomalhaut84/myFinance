@@ -136,9 +136,13 @@ export async function setHoldingStrategy(args: {
     if (holdings.length === 0) {
       return toolError(`보유 종목을 찾을 수 없습니다: ${ticker}${args.account_name ? ` (${args.account_name})` : ''}`)
     }
-    if (holdings.length > 1 && !args.account_name) {
-      const accounts = holdings.map((h) => h.account.name).join(', ')
-      return toolError(`여러 계좌가 보유 중입니다. account_name을 지정해주세요: ${accounts}`)
+    if (holdings.length > 1) {
+      if (!args.account_name) {
+        const accounts = holdings.map((h) => h.account.name).join(', ')
+        return toolError(`여러 계좌가 보유 중입니다. account_name을 지정해주세요: ${accounts}`)
+      }
+      // account_name 지정해도 여러 건 매칭 → 동명 계좌 다중 존재 (데이터 모호성 → 거부)
+      return toolError(`'${args.account_name}' 이름의 계좌가 여러 개 있습니다. 관리자가 계좌 이름을 정리한 후 다시 시도해주세요.`)
     }
 
     const holding = holdings[0]
