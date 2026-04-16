@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/prisma'
-import { fetchQuote } from '@/lib/price-fetcher'
+import { fetchQuote, InvalidTickerError } from '@/lib/price-fetcher'
 import { normalizeMarket } from '@/lib/market-hours'
 import { toolResult, toolError, formatMoney } from '../utils'
 
@@ -123,8 +123,12 @@ export async function addWatchlist(args: {
       if (normalized === 'KR') market = 'KR'
       else if (normalized === 'US') market = 'US'
       else return toolError(`지원하지 않는 시장입니다: ${ticker} (${quote.market})`)
-    } catch {
-      return toolError(`유효하지 않은 티커입니다: ${ticker}`)
+    } catch (error) {
+      // 티커 자체 문제만 명확히 안내, 그 외(네트워크/레이트리밋 등)는 일반 에러로 전파
+      if (error instanceof InvalidTickerError) {
+        return toolError(`유효하지 않은 티커입니다: ${ticker}`)
+      }
+      return toolError(error)
     }
 
     const created = await prisma.watchlist.create({
