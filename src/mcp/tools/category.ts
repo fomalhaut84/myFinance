@@ -74,8 +74,16 @@ export async function updateCategory(args: {
       include: { _count: { select: { transactions: true, budgets: true } } },
     })
     if (candidates.length === 0) return toolError(`카테고리를 찾을 수 없습니다: ${name}`)
-    if (candidates.length > 1) return toolError(`동일 이름의 카테고리가 여러 개 있습니다. 정확한 이름(대소문자 포함)을 지정해주세요.`)
-    const existing = candidates[0]
+    // 다중 매칭 시 정확한 대소문자 매칭으로 좁히기
+    let existing = candidates[0]
+    if (candidates.length > 1) {
+      const exact = candidates.find((c) => c.name === name)
+      if (!exact) {
+        const names = candidates.map((c) => `"${c.name}"`).join(', ')
+        return toolError(`여러 카테고리가 매칭됩니다: ${names}. 정확한 이름을 지정해주세요.`)
+      }
+      existing = exact
+    }
 
     if (args.type !== undefined && !(CATEGORY_TYPES as readonly string[]).includes(args.type)) {
       return toolError(`유효한 유형: ${CATEGORY_TYPES.join(', ')}`)
@@ -141,8 +149,16 @@ export async function deleteCategory(args: { name: string }) {
       include: { _count: { select: { transactions: true, budgets: true } } },
     })
     if (candidates.length === 0) return toolError(`카테고리를 찾을 수 없습니다: ${name}`)
-    if (candidates.length > 1) return toolError(`동일 이름의 카테고리가 여러 개 있습니다. 정확한 이름(대소문자 포함)을 지정해주세요.`)
-    const existing = candidates[0]
+    // 다중 매칭 시 정확한 대소문자 매칭으로 좁히기
+    let existing = candidates[0]
+    if (candidates.length > 1) {
+      const exact = candidates.find((c) => c.name === name)
+      if (!exact) {
+        const names = candidates.map((c) => `"${c.name}"`).join(', ')
+        return toolError(`여러 카테고리가 매칭됩니다: ${names}. 정확한 이름을 지정해주세요.`)
+      }
+      existing = exact
+    }
 
     if (existing._count.transactions > 0) {
       return toolError(`${existing._count.transactions}건의 거래가 연결되어 삭제할 수 없습니다.`)
