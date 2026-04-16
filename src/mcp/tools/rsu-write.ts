@@ -1,15 +1,6 @@
 import { prisma } from '@/lib/prisma'
 import { Prisma } from '@prisma/client'
-import { resolveAccountId, toolResult, toolError, ToolInputError } from '../utils'
-
-function parseDateStrict(str: string): Date | null {
-  const match = str.match(/^(\d{4})-(\d{2})-(\d{2})$/)
-  if (!match) return null
-  const [, y, m, d] = match.map(Number)
-  const date = new Date(Date.UTC(y, m - 1, d))
-  if (date.getUTCFullYear() !== y || date.getUTCMonth() !== m - 1 || date.getUTCDate() !== d) return null
-  return date
-}
+import { resolveAccountId, toolResult, toolError, ToolInputError, parseDateStrict } from '../utils'
 
 /**
  * create_rsu_schedule: 신규 RSU 베스팅 일정 등록
@@ -151,6 +142,18 @@ export async function updateRsuSchedule(args: {
         }
       }
       data.keepShares = args.keepShares
+    }
+
+    // shares만 줄인 경우, 기존 sellShares/keepShares 값도 새 shares 기준으로 재검증
+    if (args.shares !== undefined && args.shares !== existing.shares) {
+      const effSell = args.sellShares !== undefined ? args.sellShares : existing.sellShares
+      if (effSell !== null && effSell !== undefined && effSell > effectiveShares) {
+        return toolError(`매도 예정 수량(${effSell})이 변경된 shares(${effectiveShares})를 초과합니다. sellShares도 함께 수정해주세요.`)
+      }
+      const effKeep = args.keepShares !== undefined ? args.keepShares : existing.keepShares
+      if (effKeep !== null && effKeep !== undefined && effKeep > effectiveShares) {
+        return toolError(`보유 예정 수량(${effKeep})이 변경된 shares(${effectiveShares})를 초과합니다. keepShares도 함께 수정해주세요.`)
+      }
     }
     if (args.note !== undefined) {
       data.note = args.note === null ? null : args.note.trim() || null

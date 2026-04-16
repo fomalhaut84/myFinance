@@ -1,15 +1,6 @@
 import { prisma } from '@/lib/prisma'
 import { Prisma } from '@prisma/client'
-import { resolveAccountId, toolResult, toolError, ToolInputError } from '../utils'
-
-function parseDateStrict(str: string): Date | null {
-  const match = str.match(/^(\d{4})-(\d{2})-(\d{2})$/)
-  if (!match) return null
-  const [, y, m, d] = match.map(Number)
-  const date = new Date(Date.UTC(y, m - 1, d))
-  if (date.getUTCFullYear() !== y || date.getUTCMonth() !== m - 1 || date.getUTCDate() !== d) return null
-  return date
-}
+import { resolveAccountId, toolResult, toolError, ToolInputError, parseDateStrict } from '../utils'
 
 /**
  * create_stock_option: 신규 스톡옵션 등록
@@ -267,7 +258,8 @@ export async function updateStockOptionVesting(args: {
 }
 
 /**
- * delete_stock_option_vesting: 행사 스케줄 삭제
+ * delete_stock_option_vesting: 행사 스케줄 삭제 (exercised 제외)
+ * Serializable + 조건부 deleteMany로 TOCTOU race 방지
  */
 export async function deleteStockOptionVesting(args: { id: string }) {
   try {
@@ -275,7 +267,16 @@ export async function deleteStockOptionVesting(args: { id: string }) {
     if (!existing) return toolError(`행사 스케줄을 찾을 수 없습니다: ${args.id}`)
     if (existing.status === 'exercised') return toolError('이미 행사된 스케줄은 삭제할 수 없습니다.')
 
-    await prisma.stockOptionVesting.delete({ where: { id: args.id } })
+    const result = await prisma.$transaction(async (tx) => {
+      return tx.stockOptionVesting.deleteMany({
+        where: { id: args.id, status: { not: 'exercised' } },
+      })
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable })
+
+    if (result.count === 0) {
+      return toolError('이미 행사된 스케줄은 삭제할 수 없습니다.')
+    }
+
     return toolResult(`🗑️ 행사 스케줄 삭제: ${existing.vestingDate.toISOString().slice(0, 10)} | ${existing.shares}주`)
   } catch (error) {
     return toolError(error)
@@ -288,13 +289,15 @@ const ALLOWED_TRANSITIONS: Record<string, Record<string, string>> = {
   expire: { exercisable: 'expired' },
 }
 
+type VestingAction = 'activate' | 'exercise' | 'expire'
+
 /**
  * exercise_vesting: 베스팅 상태 전환
  * - activate: pending → exercisable (KST 기준 베스팅일 도래 필요)
  * - exercise: exercisable → exercised (StockOption.exercisedShares 증가, remainingShares 감소)
  * - expire: exercisable → expired
  */
-export async function exerciseVesting(args: { vestingId: string; action: string }) {
+export async function exerciseVesting(args: { vestingId: string; action: VestingAction }) {
   try {
     if (!['activate', 'exercise', 'expire'].includes(args.action)) {
       return toolError('action은 activate / exercise / expire 중 하나여야 합니다.')
@@ -320,18 +323,21 @@ export async function exerciseVesting(args: { vestingId: string; action: string 
       }
 
       if (args.action === 'exercise') {
-        const updated = await tx.stockOptionVesting.update({
-          where: { id: args.vestingId },
-          data: { status: 'exercised', exercisedAt: new Date() },
-        })
-        await tx.stockOption.update({
-          where: { id: vesting.stockOptionId },
+        // remainingShares 조건부 감소: 부족하면 updateMany가 0건 반환
+        const parentResult = await tx.stockOption.updateMany({
+          where: { id: vesting.stockOptionId, remainingShares: { gte: vesting.shares } },
           data: {
             exercisedShares: { increment: vesting.shares },
             remainingShares: { decrement: vesting.shares },
           },
         })
-        return updated
+        if (parentResult.count === 0) {
+          throw new ToolInputError('잔여 수량이 부족하여 행사할 수 없습니다.')
+        }
+        return tx.stockOptionVesting.update({
+          where: { id: args.vestingId },
+          data: { status: 'exercised', exercisedAt: new Date() },
+        })
       }
 
       return tx.stockOptionVesting.update({

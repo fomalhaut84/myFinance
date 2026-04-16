@@ -30,6 +30,7 @@ import {
 } from './tools/stock-option-write'
 
 const ACCOUNT_NAMES = ['세진', '소담', '다솜', '전체'] as const
+const WRITE_ACCOUNT_NAMES = ['세진', '소담', '다솜'] as const  // '전체' 제외 (쓰기 도구용)
 const PERIODS = ['1M', '3M', '6M', '1Y', 'ALL'] as const
 
 const server = new McpServer({
@@ -505,7 +506,7 @@ server.tool(
   'create_rsu_schedule',
   'RSU 베스팅 일정 신규 등록. 사용자 확인 후 호출.',
   {
-    account_name: z.enum(ACCOUNT_NAMES).describe('계좌명 (세진/소담/다솜)'),
+    account_name: z.enum(WRITE_ACCOUNT_NAMES).describe('계좌명 (세진/소담/다솜)'),
     vestingDate: z.string().describe('YYYY-MM-DD 베스팅일'),
     shares: z.number().int().positive().describe('베스팅 수량'),
     basisValue: z.number().nonnegative().describe('기준금액 (원)'),
@@ -548,7 +549,7 @@ server.tool(
   'create_stock_option',
   '스톡옵션 신규 등록. 사용자 확인 후 호출.',
   {
-    account_name: z.enum(ACCOUNT_NAMES).describe('계좌명 (세진/소담/다솜)'),
+    account_name: z.enum(WRITE_ACCOUNT_NAMES).describe('계좌명 (세진/소담/다솜)'),
     ticker: z.string().min(1),
     displayName: z.string().min(1),
     grantDate: z.string().describe('YYYY-MM-DD 부여일'),
