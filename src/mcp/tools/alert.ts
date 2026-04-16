@@ -31,12 +31,14 @@ export async function updateAlertConfig(args: { key: string; value: string }) {
     if (!existing) return toolError(`알림 설정 키를 찾을 수 없습니다: ${args.key}`)
 
     // 숫자 값 형식 검증 (기존 키들은 모두 숫자 기반)
-    const numValue = parseFloat(args.value)
+    const trimmed = args.value.trim()
+    if (!/^-?\d+(\.\d+)?$/.test(trimmed)) return toolError('value는 숫자여야 합니다.')
+    const numValue = Number(trimmed)
     if (!Number.isFinite(numValue)) return toolError('value는 숫자여야 합니다.')
 
     const updated = await prisma.alertConfig.update({
       where: { key: args.key },
-      data: { value: args.value },
+      data: { value: trimmed },
     })
 
     return toolResult(`✅ 알림 설정 변경: ${updated.label} → ${updated.value}`)

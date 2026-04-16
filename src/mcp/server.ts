@@ -405,7 +405,7 @@ server.tool(
   'set_budget',
   '카테고리별 월 예산 설정 (upsert). 사용자 확인 후 호출.',
   {
-    categoryName: z.string().describe('카테고리명 (부분 일치)'),
+    categoryName: z.string().describe('카테고리명 (대소문자 무시 정확 일치)'),
     year: z.number().int().min(2000).max(2100),
     month: z.number().int().min(1).max(12),
     amount: z.number().nonnegative().describe('예산 금액 (원)'),
@@ -435,7 +435,7 @@ server.tool(
   {
     amount: z.number().positive(),
     description: z.string().min(1).max(200),
-    categoryName: z.string(),
+    categoryName: z.string().describe('카테고리명 (대소문자 무시 정확 일치)'),
     frequency: z.enum(['monthly', 'weekly', 'yearly']),
     dayOfMonth: z.number().int().min(1).max(31).optional(),
     dayOfWeek: z.number().int().min(0).max(6).optional().describe('0=일, 6=토'),
@@ -452,7 +452,7 @@ server.tool(
     id: z.string(),
     amount: z.number().positive().optional(),
     description: z.string().min(1).max(200).optional(),
-    categoryName: z.string().optional(),
+    categoryName: z.string().optional().describe('카테고리명 (대소문자 무시 정확 일치)'),
     isActive: z.boolean().optional(),
     nextRunAt: z.string().optional().describe('YYYY-MM-DD'),
   },

@@ -82,7 +82,15 @@ export async function createRecurringTransaction(args: {
     if (args.frequency === 'weekly' && (args.dayOfWeek == null || args.dayOfWeek < 0 || args.dayOfWeek > 6)) {
       return toolError('매주 주기는 dayOfWeek(0=일~6=토)가 필요합니다.')
     }
-    if (args.frequency === 'yearly' && (args.monthOfYear == null || args.monthOfYear < 1 || args.monthOfYear > 12 || args.dayOfMonth == null)) {
+    if (
+      args.frequency === 'yearly' &&
+      (args.monthOfYear == null ||
+        args.monthOfYear < 1 ||
+        args.monthOfYear > 12 ||
+        args.dayOfMonth == null ||
+        args.dayOfMonth < 1 ||
+        args.dayOfMonth > 31)
+    ) {
       return toolError('매년 주기는 monthOfYear(1~12)와 dayOfMonth(1~31)가 필요합니다.')
     }
 
