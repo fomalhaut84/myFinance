@@ -258,6 +258,7 @@ export async function updateTransaction(args: {
   try {
     const existing = await prisma.transaction.findUnique({ where: { id: args.id } })
     if (!existing) return toolError(`거래를 찾을 수 없습니다: ${args.id}`)
+    if (existing.type) return toolError('이체 거래는 웹 또는 텔레그램에서 수정해주세요. (자산 잔액 연동 필요)')
 
     const data: Record<string, unknown> = {}
 
