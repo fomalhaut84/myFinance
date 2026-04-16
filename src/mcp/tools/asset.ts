@@ -32,12 +32,15 @@ async function resolveAssetByName(name: string) {
   })
   if (candidates.length === 0) return { error: `자산을 찾을 수 없습니다: ${name}` }
   if (candidates.length === 1) return { asset: candidates[0] }
-  const exact = candidates.find((a) => a.name === name)
-  if (!exact) {
+  const exactMatches = candidates.filter((a) => a.name === name)
+  if (exactMatches.length === 0) {
     const names = candidates.map((a) => `"${a.name}"`).join(', ')
     return { error: `여러 자산이 매칭됩니다: ${names}. 정확한 이름을 지정해주세요.` }
   }
-  return { asset: exact }
+  if (exactMatches.length > 1) {
+    return { error: `동일 이름의 자산이 여러 개 있습니다. 관리자가 자산 이름을 정리한 후 다시 시도해주세요.` }
+  }
+  return { asset: exactMatches[0] }
 }
 
 /**
@@ -80,8 +83,15 @@ export async function createAsset(args: {
     const name = args.name?.trim()
     if (!name) return toolError('자산명을 입력해주세요.')
     if (!VALID_CATEGORIES.includes(args.category)) return toolError(`유효한 카테고리: ${VALID_CATEGORIES.join(', ')}`)
-    if (!args.owner?.trim()) return toolError('소유자를 입력해주세요.')
+    const owner = args.owner?.trim()
+    if (!owner) return toolError('소유자를 입력해주세요.')
     if (!Number.isFinite(args.value) || args.value < 0) return toolError('금액은 0 이상이어야 합니다.')
+
+    // 이름 중복 방지 (대소문자 무시)
+    const duplicate = await prisma.asset.findFirst({
+      where: { name: { equals: name, mode: 'insensitive' } },
+    })
+    if (duplicate) return toolError(`동일 이름의 자산이 이미 존재합니다: ${duplicate.name}`)
 
     let maturityDate: Date | null = null
     if (args.maturityDate) {
@@ -94,7 +104,7 @@ export async function createAsset(args: {
       data: {
         name,
         category: args.category,
-        owner: args.owner.trim(),
+        owner,
         value: Math.round(args.value),
         isLiability: args.isLiability === true,
         interestRate: args.interestRate ?? null,
@@ -156,7 +166,11 @@ export async function updateAsset(args: {
       data.name = trimmed
     }
     if (args.category !== undefined) data.category = args.category
-    if (args.owner !== undefined) data.owner = args.owner.trim()
+    if (args.owner !== undefined) {
+      const ownerTrimmed = args.owner.trim()
+      if (!ownerTrimmed) return toolError('소유자가 비어있습니다.')
+      data.owner = ownerTrimmed
+    }
     if (args.value !== undefined) data.value = Math.round(args.value)
     if (args.isLiability !== undefined) data.isLiability = args.isLiability
     if (args.interestRate !== undefined) data.interestRate = args.interestRate
@@ -233,6 +247,7 @@ export async function createAssetDeposit(args: {
     }
 
     const roundedAmount = Math.round(args.amount)
+    if (roundedAmount <= 0) return toolError('금액은 1원 이상이어야 합니다.')
 
     const deposit = await prisma.$transaction(async (tx) => {
       const created = await tx.deposit.create({
