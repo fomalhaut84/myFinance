@@ -69,11 +69,13 @@ export async function updateCategory(args: {
     const name = args.name?.trim()
     if (!name) return toolError('대상 카테고리 이름이 필요합니다.')
 
-    const existing = await prisma.category.findFirst({
+    const candidates = await prisma.category.findMany({
       where: { name: { equals: name, mode: 'insensitive' } },
       include: { _count: { select: { transactions: true, budgets: true } } },
     })
-    if (!existing) return toolError(`카테고리를 찾을 수 없습니다: ${name}`)
+    if (candidates.length === 0) return toolError(`카테고리를 찾을 수 없습니다: ${name}`)
+    if (candidates.length > 1) return toolError(`동일 이름의 카테고리가 여러 개 있습니다. 정확한 이름(대소문자 포함)을 지정해주세요.`)
+    const existing = candidates[0]
 
     if (args.type !== undefined && !(CATEGORY_TYPES as readonly string[]).includes(args.type)) {
       return toolError(`유효한 유형: ${CATEGORY_TYPES.join(', ')}`)
@@ -85,7 +87,11 @@ export async function updateCategory(args: {
       if (!trimmed || trimmed.length > 50) return toolError('이름은 1~50자여야 합니다.')
       data.name = trimmed
     }
-    if (args.type !== undefined) data.type = args.type
+    if (args.type !== undefined) {
+      data.type = args.type
+      // 그룹은 expense 전용 — expense 외 타입으로 변경 시 groupId 초기화
+      if (args.type !== 'expense') data.groupId = null
+    }
     if (args.icon !== undefined) data.icon = args.icon === null ? null : args.icon.trim() || null
     if (args.keywords !== undefined) data.keywords = args.keywords.map((k) => k.trim()).filter(Boolean)
 
@@ -130,11 +136,13 @@ export async function deleteCategory(args: { name: string }) {
     const name = args.name?.trim()
     if (!name) return toolError('카테고리 이름이 필요합니다.')
 
-    const existing = await prisma.category.findFirst({
+    const candidates = await prisma.category.findMany({
       where: { name: { equals: name, mode: 'insensitive' } },
       include: { _count: { select: { transactions: true, budgets: true } } },
     })
-    if (!existing) return toolError(`카테고리를 찾을 수 없습니다: ${name}`)
+    if (candidates.length === 0) return toolError(`카테고리를 찾을 수 없습니다: ${name}`)
+    if (candidates.length > 1) return toolError(`동일 이름의 카테고리가 여러 개 있습니다. 정확한 이름(대소문자 포함)을 지정해주세요.`)
+    const existing = candidates[0]
 
     if (existing._count.transactions > 0) {
       return toolError(`${existing._count.transactions}건의 거래가 연결되어 삭제할 수 없습니다.`)
