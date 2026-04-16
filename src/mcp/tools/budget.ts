@@ -61,6 +61,9 @@ export async function setBudget(args: {
 
     const result = await resolveCategory(args.categoryName)
     if ('error' in result) return toolError(result.error)
+    if (result.category.type !== 'expense') {
+      return toolError(`예산은 지출 카테고리에만 설정 가능합니다. '${result.category.name}'은 ${result.category.type} 카테고리입니다.`)
+    }
 
     const amount = Math.round(args.amount)
     const budget = await prisma.budget.upsert({
