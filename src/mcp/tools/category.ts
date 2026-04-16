@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma'
+import { Prisma } from '@prisma/client'
 import { CATEGORY_TYPES, generateSlug } from '@/lib/category-utils'
 import { toolResult, toolError } from '../utils'
 
@@ -45,7 +46,9 @@ export async function createCategory(args: {
       (category.keywords.length > 0 ? `\n- 키워드: ${category.keywords.join(', ')}` : '')
     )
   } catch (error) {
-    if (error && typeof error === 'object' && 'code' in error && (error as { code: string }).code === 'P2002') {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      const target = (error.meta?.target as string[]) ?? []
+      if (target.includes('slug')) return toolError('유사한 이름의 카테고리가 이미 존재합니다. 다른 이름을 사용해주세요.')
       return toolError('이미 존재하는 카테고리 이름입니다.')
     }
     return toolError(error)
@@ -72,13 +75,8 @@ export async function updateCategory(args: {
     })
     if (!existing) return toolError(`카테고리를 찾을 수 없습니다: ${name}`)
 
-    if (args.type !== undefined) {
-      if (!(CATEGORY_TYPES as readonly string[]).includes(args.type)) {
-        return toolError(`유효한 유형: ${CATEGORY_TYPES.join(', ')}`)
-      }
-      if (args.type !== existing.type && (existing._count.transactions > 0 || existing._count.budgets > 0)) {
-        return toolError('거래 또는 예산이 연결된 카테고리의 유형은 변경할 수 없습니다.')
-      }
+    if (args.type !== undefined && !(CATEGORY_TYPES as readonly string[]).includes(args.type)) {
+      return toolError(`유효한 유형: ${CATEGORY_TYPES.join(', ')}`)
     }
 
     const data: Record<string, unknown> = {}
@@ -93,19 +91,33 @@ export async function updateCategory(args: {
 
     if (Object.keys(data).length === 0) return toolError('변경할 필드가 없습니다.')
 
-    const updated = await prisma.category.update({
-      where: { id: existing.id },
-      data,
-    })
+    // 타입 변경 시 Serializable 트랜잭션으로 연결 데이터 재확인
+    const isTypeChange = args.type !== undefined && args.type !== existing.type
+    let updated
+    if (isTypeChange) {
+      updated = await prisma.$transaction(async (tx) => {
+        const fresh = await tx.category.findUnique({
+          where: { id: existing.id },
+          include: { _count: { select: { transactions: true, budgets: true } } },
+        })
+        if (!fresh) throw new Error('NOT_FOUND')
+        if (fresh._count.transactions > 0 || fresh._count.budgets > 0) {
+          throw new Error('HAS_LINKED_DATA')
+        }
+        return tx.category.update({ where: { id: existing.id }, data })
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable })
+    } else {
+      updated = await prisma.category.update({ where: { id: existing.id }, data })
+    }
 
     const typeLabel = TYPE_LABELS[updated.type] ?? updated.type
     return toolResult(
       `✅ 카테고리 수정: ${updated.icon ? updated.icon + ' ' : ''}${updated.name} (${typeLabel})`
     )
   } catch (error) {
-    if (error && typeof error === 'object' && 'code' in error && (error as { code: string }).code === 'P2002') {
-      return toolError('이미 존재하는 카테고리 이름입니다.')
-    }
+    if (error instanceof Error && error.message === 'NOT_FOUND') return toolError('카테고리를 찾을 수 없습니다.')
+    if (error instanceof Error && error.message === 'HAS_LINKED_DATA') return toolError('거래 또는 예산이 연결된 카테고리의 유형은 변경할 수 없습니다.')
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') return toolError('이미 존재하는 카테고리 이름입니다.')
     return toolError(error)
   }
 }
@@ -134,6 +146,9 @@ export async function deleteCategory(args: { name: string }) {
     await prisma.category.delete({ where: { id: existing.id } })
     return toolResult(`🗑️ 카테고리 삭제: ${existing.icon ? existing.icon + ' ' : ''}${existing.name}`)
   } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2003') {
+      return toolError('연결된 데이터(반복거래, 후잉 매핑 등)가 있어 삭제할 수 없습니다.')
+    }
     return toolError(error)
   }
 }
