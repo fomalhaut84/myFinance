@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma'
+import { sendToWhooing } from '@/lib/whooing-webhook'
 import { toolResult, toolError, formatMoney } from '../utils'
 
 /**
@@ -160,6 +161,140 @@ export async function getTransactions(args: {
     }
 
     return toolResult(lines.join('\n'))
+  } catch (error) {
+    return toolError(error)
+  }
+}
+
+/** 카테고리명으로 매칭 (부분 일치, 대소문자 무시) */
+async function resolveCategory(name: string) {
+  const matched = await prisma.category.findMany({
+    where: { name: { contains: name, mode: 'insensitive' } },
+    select: { id: true, name: true, type: true },
+  })
+  if (matched.length === 0) return { error: `'${name}' 카테고리를 찾을 수 없습니다.` }
+  if (matched.length > 1) {
+    const names = matched.map((c) => c.name).join(', ')
+    return { error: `여러 카테고리가 매칭됩니다: ${names}. 정확한 이름을 지정해주세요.` }
+  }
+  return { category: matched[0] }
+}
+
+/**
+ * create_transaction: 가계부 거래 생성
+ */
+export async function createTransaction(args: {
+  amount: number
+  description: string
+  categoryName: string
+  transactedAt?: string
+  type?: string
+}) {
+  try {
+    if (!args.description?.trim()) return toolError('내용(description)을 입력해주세요.')
+    if (!Number.isFinite(args.amount) || args.amount <= 0) return toolError('금액은 0보다 커야 합니다.')
+
+    const result = await resolveCategory(args.categoryName)
+    if ('error' in result) return toolError(result.error)
+    const { category } = result
+
+    const roundedAmount = Math.round(args.amount)
+    const transactedAt = args.transactedAt ? new Date(`${args.transactedAt}T00:00:00.000Z`) : new Date()
+    const txType = args.type ?? null
+
+    // transfer 유형 ↔ transfer 카테고리 검증
+    if (txType && category.type !== 'transfer') return toolError('출금/입금은 이체 카테고리에서만 사용할 수 있습니다.')
+    if (!txType && category.type === 'transfer') return toolError('이체 카테고리는 출금/입금 유형에서만 사용할 수 있습니다.')
+
+    const tx = await prisma.transaction.create({
+      data: {
+        amount: roundedAmount,
+        description: args.description.trim(),
+        categoryId: category.id,
+        transactedAt,
+        type: txType,
+      },
+    })
+
+    // 후잉 웹훅 (실패 무시)
+    try {
+      await sendToWhooing({ amount: tx.amount, description: tx.description, categoryId: tx.categoryId, transactedAt: tx.transactedAt })
+    } catch { /* 무시 */ }
+
+    return toolResult(
+      `✅ 거래 생성: ${category.name} | ${args.description.trim()} | ${formatMoney(roundedAmount, 'KRW')}\n` +
+      `- ID: ${tx.id}\n- 날짜: ${transactedAt.toISOString().slice(0, 10)}`
+    )
+  } catch (error) {
+    return toolError(error)
+  }
+}
+
+/**
+ * update_transaction: 가계부 거래 수정 (ID 기반, 제공 필드만)
+ */
+export async function updateTransaction(args: {
+  id: string
+  amount?: number
+  description?: string
+  categoryName?: string
+  transactedAt?: string
+}) {
+  try {
+    const existing = await prisma.transaction.findUnique({ where: { id: args.id } })
+    if (!existing) return toolError(`거래를 찾을 수 없습니다: ${args.id}`)
+
+    const data: Record<string, unknown> = {}
+
+    if (args.amount !== undefined) {
+      if (!Number.isFinite(args.amount) || args.amount <= 0) return toolError('금액은 0보다 커야 합니다.')
+      data.amount = Math.round(args.amount)
+    }
+    if (args.description !== undefined) {
+      if (!args.description.trim()) return toolError('내용이 비어있습니다.')
+      data.description = args.description.trim()
+    }
+    if (args.categoryName !== undefined) {
+      const result = await resolveCategory(args.categoryName)
+      if ('error' in result) return toolError(result.error)
+      data.categoryId = result.category.id
+    }
+    if (args.transactedAt !== undefined) {
+      data.transactedAt = new Date(`${args.transactedAt}T00:00:00.000Z`)
+    }
+
+    if (Object.keys(data).length === 0) return toolError('변경할 필드가 없습니다.')
+
+    const updated = await prisma.transaction.update({
+      where: { id: args.id },
+      data,
+      include: { category: { select: { name: true } } },
+    })
+
+    return toolResult(
+      `✅ 거래 수정: ${updated.category.name} | ${updated.description} | ${formatMoney(updated.amount, 'KRW')}\n` +
+      `- ID: ${updated.id}\n- 날짜: ${updated.transactedAt.toISOString().slice(0, 10)}`
+    )
+  } catch (error) {
+    return toolError(error)
+  }
+}
+
+/**
+ * delete_transaction: 가계부 거래 삭제 (ID 기반)
+ */
+export async function deleteTransaction(args: { id: string }) {
+  try {
+    const existing = await prisma.transaction.findUnique({
+      where: { id: args.id },
+      include: { category: { select: { name: true } } },
+    })
+    if (!existing) return toolError(`거래를 찾을 수 없습니다: ${args.id}`)
+
+    await prisma.transaction.delete({ where: { id: args.id } })
+    return toolResult(
+      `🗑️ 거래 삭제: ${existing.category.name} | ${existing.description} | ${formatMoney(existing.amount, 'KRW')}`
+    )
   } catch (error) {
     return toolError(error)
   }
