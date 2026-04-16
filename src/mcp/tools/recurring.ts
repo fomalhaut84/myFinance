@@ -1,7 +1,8 @@
 import { prisma } from '@/lib/prisma'
 import { toolResult, toolError, formatMoney } from '../utils'
 
-const VALID_FREQUENCIES = ['monthly', 'weekly', 'yearly']
+const VALID_FREQUENCIES = ['monthly', 'weekly', 'yearly'] as const
+type Frequency = typeof VALID_FREQUENCIES[number]
 
 function parseDateStrict(str: string): Date | null {
   const match = str.match(/^(\d{4})-(\d{2})-(\d{2})$/)
@@ -24,6 +25,75 @@ async function resolveCategory(name: string) {
     return { error: `여러 카테고리가 매칭됩니다. 정확한 이름을 지정해주세요.` }
   }
   return { category: exact[0] }
+}
+
+/** 주기별 필수 필드 검증 */
+function validateFrequencyFields(
+  frequency: Frequency,
+  dayOfMonth: number | null | undefined,
+  dayOfWeek: number | null | undefined,
+  monthOfYear: number | null | undefined,
+): string | null {
+  if (frequency === 'monthly') {
+    if (dayOfMonth == null || dayOfMonth < 1 || dayOfMonth > 31) {
+      return '매월 주기는 dayOfMonth(1~31)가 필요합니다.'
+    }
+  } else if (frequency === 'weekly') {
+    if (dayOfWeek == null || dayOfWeek < 0 || dayOfWeek > 6) {
+      return '매주 주기는 dayOfWeek(0=일~6=토)가 필요합니다.'
+    }
+  } else if (frequency === 'yearly') {
+    if (monthOfYear == null || monthOfYear < 1 || monthOfYear > 12) {
+      return '매년 주기는 monthOfYear(1~12)가 필요합니다.'
+    }
+    if (dayOfMonth == null || dayOfMonth < 1 || dayOfMonth > 31) {
+      return '매년 주기는 dayOfMonth(1~31)가 필요합니다.'
+    }
+  }
+  return null
+}
+
+/**
+ * nextRunAt이 주기/실행일 필드와 정합적인지 검증.
+ * - monthly: nextRunAt.day === dayOfMonth (또는 해당 월 말일로 clamp된 경우 허용)
+ * - weekly: nextRunAt.dayOfWeek === dayOfWeek
+ * - yearly: nextRunAt.month === monthOfYear && day === dayOfMonth (말일 clamp 허용)
+ */
+function validateNextRunAtConsistency(
+  frequency: Frequency,
+  nextRunAt: Date,
+  dayOfMonth: number | null | undefined,
+  dayOfWeek: number | null | undefined,
+  monthOfYear: number | null | undefined,
+): string | null {
+  const nextYear = nextRunAt.getUTCFullYear()
+  const nextMonth = nextRunAt.getUTCMonth() + 1
+  const nextDay = nextRunAt.getUTCDate()
+  const nextDayOfWeek = nextRunAt.getUTCDay()
+
+  if (frequency === 'monthly' && dayOfMonth != null) {
+    const lastDay = new Date(Date.UTC(nextYear, nextMonth, 0)).getUTCDate()
+    const expected = Math.min(dayOfMonth, lastDay)
+    if (nextDay !== expected) {
+      return `nextRunAt(${nextDay}일)이 dayOfMonth(${dayOfMonth})와 일치하지 않습니다.`
+    }
+  }
+  if (frequency === 'weekly' && dayOfWeek != null) {
+    if (nextDayOfWeek !== dayOfWeek) {
+      return `nextRunAt의 요일(${nextDayOfWeek})이 dayOfWeek(${dayOfWeek})와 일치하지 않습니다.`
+    }
+  }
+  if (frequency === 'yearly' && monthOfYear != null && dayOfMonth != null) {
+    if (nextMonth !== monthOfYear) {
+      return `nextRunAt의 월(${nextMonth})이 monthOfYear(${monthOfYear})와 일치하지 않습니다.`
+    }
+    const lastDay = new Date(Date.UTC(nextYear, nextMonth, 0)).getUTCDate()
+    const expected = Math.min(dayOfMonth, lastDay)
+    if (nextDay !== expected) {
+      return `nextRunAt의 일(${nextDay})이 dayOfMonth(${dayOfMonth})와 일치하지 않습니다.`
+    }
+  }
+  return null
 }
 
 /**
@@ -67,39 +137,31 @@ export async function createRecurringTransaction(args: {
   try {
     if (!args.description?.trim()) return toolError('내용을 입력해주세요.')
     if (!Number.isFinite(args.amount) || args.amount <= 0) return toolError('금액은 0보다 커야 합니다.')
-    if (!VALID_FREQUENCIES.includes(args.frequency)) return toolError(`주기: ${VALID_FREQUENCIES.join(', ')}`)
+    if (!VALID_FREQUENCIES.includes(args.frequency as Frequency)) {
+      return toolError(`주기: ${VALID_FREQUENCIES.join(', ')}`)
+    }
+    const frequency = args.frequency as Frequency
 
     const nextRunAt = parseDateStrict(args.nextRunAt)
     if (!nextRunAt) return toolError('nextRunAt은 YYYY-MM-DD 형식이어야 합니다.')
 
+    const fieldError = validateFrequencyFields(frequency, args.dayOfMonth, args.dayOfWeek, args.monthOfYear)
+    if (fieldError) return toolError(fieldError)
+
+    const consistencyError = validateNextRunAtConsistency(
+      frequency, nextRunAt, args.dayOfMonth, args.dayOfWeek, args.monthOfYear,
+    )
+    if (consistencyError) return toolError(consistencyError)
+
     const result = await resolveCategory(args.categoryName)
     if ('error' in result) return toolError(result.error)
-
-    // 주기별 필수 필드 검증
-    if (args.frequency === 'monthly' && (args.dayOfMonth == null || args.dayOfMonth < 1 || args.dayOfMonth > 31)) {
-      return toolError('매월 주기는 dayOfMonth(1~31)가 필요합니다.')
-    }
-    if (args.frequency === 'weekly' && (args.dayOfWeek == null || args.dayOfWeek < 0 || args.dayOfWeek > 6)) {
-      return toolError('매주 주기는 dayOfWeek(0=일~6=토)가 필요합니다.')
-    }
-    if (
-      args.frequency === 'yearly' &&
-      (args.monthOfYear == null ||
-        args.monthOfYear < 1 ||
-        args.monthOfYear > 12 ||
-        args.dayOfMonth == null ||
-        args.dayOfMonth < 1 ||
-        args.dayOfMonth > 31)
-    ) {
-      return toolError('매년 주기는 monthOfYear(1~12)와 dayOfMonth(1~31)가 필요합니다.')
-    }
 
     const created = await prisma.recurringTransaction.create({
       data: {
         amount: Math.round(args.amount),
         description: args.description.trim(),
         categoryId: result.category.id,
-        frequency: args.frequency,
+        frequency,
         dayOfMonth: args.dayOfMonth ?? null,
         dayOfWeek: args.dayOfWeek ?? null,
         monthOfYear: args.monthOfYear ?? null,
@@ -119,6 +181,7 @@ export async function createRecurringTransaction(args: {
 
 /**
  * update_recurring_transaction: ID 기반 부분 수정
+ * frequency / 실행일 필드 변경 시 주기별 필수 필드와 nextRunAt 정합성 재검증
  */
 export async function updateRecurringTransaction(args: {
   id: string
@@ -126,6 +189,10 @@ export async function updateRecurringTransaction(args: {
   description?: string
   categoryName?: string
   isActive?: boolean
+  frequency?: string
+  dayOfMonth?: number | null
+  dayOfWeek?: number | null
+  monthOfYear?: number | null
   nextRunAt?: string
 }) {
   try {
@@ -147,10 +214,66 @@ export async function updateRecurringTransaction(args: {
       data.categoryId = result.category.id
     }
     if (args.isActive !== undefined) data.isActive = args.isActive
+
+    // 주기/실행일 필드 병합 (요청값 우선, 미지정 시 기존값)
+    const touchedFrequencyFields =
+      args.frequency !== undefined ||
+      args.dayOfMonth !== undefined ||
+      args.dayOfWeek !== undefined ||
+      args.monthOfYear !== undefined ||
+      args.nextRunAt !== undefined
+
+    if (args.frequency !== undefined) {
+      if (!VALID_FREQUENCIES.includes(args.frequency as Frequency)) {
+        return toolError(`주기: ${VALID_FREQUENCIES.join(', ')}`)
+      }
+      data.frequency = args.frequency
+    }
+    if (args.dayOfMonth !== undefined) data.dayOfMonth = args.dayOfMonth
+    if (args.dayOfWeek !== undefined) data.dayOfWeek = args.dayOfWeek
+    if (args.monthOfYear !== undefined) data.monthOfYear = args.monthOfYear
+
+    let nextRunAtDate: Date | null = null
     if (args.nextRunAt !== undefined) {
       const parsed = parseDateStrict(args.nextRunAt)
       if (!parsed) return toolError('nextRunAt은 YYYY-MM-DD 형식이어야 합니다.')
+      nextRunAtDate = parsed
       data.nextRunAt = parsed
+    }
+
+    if (touchedFrequencyFields) {
+      const mergedFrequency = (data.frequency ?? existing.frequency) as Frequency
+      const mergedDayOfMonth = args.dayOfMonth !== undefined ? args.dayOfMonth : existing.dayOfMonth
+      const mergedDayOfWeek = args.dayOfWeek !== undefined ? args.dayOfWeek : existing.dayOfWeek
+      const mergedMonthOfYear = args.monthOfYear !== undefined ? args.monthOfYear : existing.monthOfYear
+      const mergedNextRunAt = nextRunAtDate ?? existing.nextRunAt
+
+      // frequency 전환 시 불필요한 필드 null화 (데이터 일관성)
+      if (args.frequency !== undefined && args.frequency !== existing.frequency) {
+        if (mergedFrequency === 'monthly') {
+          if (args.dayOfWeek === undefined) data.dayOfWeek = null
+          if (args.monthOfYear === undefined) data.monthOfYear = null
+        } else if (mergedFrequency === 'weekly') {
+          if (args.dayOfMonth === undefined) data.dayOfMonth = null
+          if (args.monthOfYear === undefined) data.monthOfYear = null
+        } else if (mergedFrequency === 'yearly') {
+          if (args.dayOfWeek === undefined) data.dayOfWeek = null
+        }
+      }
+
+      const effectiveDayOfMonth = data.dayOfMonth !== undefined ? (data.dayOfMonth as number | null) : mergedDayOfMonth
+      const effectiveDayOfWeek = data.dayOfWeek !== undefined ? (data.dayOfWeek as number | null) : mergedDayOfWeek
+      const effectiveMonthOfYear = data.monthOfYear !== undefined ? (data.monthOfYear as number | null) : mergedMonthOfYear
+
+      const fieldError = validateFrequencyFields(
+        mergedFrequency, effectiveDayOfMonth, effectiveDayOfWeek, effectiveMonthOfYear,
+      )
+      if (fieldError) return toolError(fieldError)
+
+      const consistencyError = validateNextRunAtConsistency(
+        mergedFrequency, mergedNextRunAt, effectiveDayOfMonth, effectiveDayOfWeek, effectiveMonthOfYear,
+      )
+      if (consistencyError) return toolError(consistencyError)
     }
 
     if (Object.keys(data).length === 0) return toolError('변경할 필드가 없습니다.')
@@ -163,7 +286,7 @@ export async function updateRecurringTransaction(args: {
 
     return toolResult(
       `✅ 반복 거래 수정: ${updated.category.name} | ${updated.description} | ${formatMoney(updated.amount, 'KRW')}\n` +
-      `- ${updated.isActive ? '활성' : '비활성'} / 다음 실행: ${updated.nextRunAt.toISOString().slice(0, 10)}`
+      `- ${updated.isActive ? '활성' : '비활성'} / 주기: ${updated.frequency} / 다음 실행: ${updated.nextRunAt.toISOString().slice(0, 10)}`
     )
   } catch (error) {
     return toolError(error)

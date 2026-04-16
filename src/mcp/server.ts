@@ -454,6 +454,10 @@ server.tool(
     description: z.string().min(1).max(200).optional(),
     categoryName: z.string().optional().describe('카테고리명 (대소문자 무시 정확 일치)'),
     isActive: z.boolean().optional(),
+    frequency: z.enum(['monthly', 'weekly', 'yearly']).optional(),
+    dayOfMonth: z.number().int().min(1).max(31).nullable().optional(),
+    dayOfWeek: z.number().int().min(0).max(6).nullable().optional().describe('0=일, 6=토'),
+    monthOfYear: z.number().int().min(1).max(12).nullable().optional(),
     nextRunAt: z.string().optional().describe('YYYY-MM-DD'),
   },
   async (args) => updateRecurringTransaction(args)
