@@ -43,6 +43,12 @@ interface Signal {
   message: string
 }
 
+interface TickerMeta {
+  displayName: string
+  market: string
+  strategies: Set<string>
+}
+
 /** 전략별 시그널 조건 매칭 — id는 중복 방지 키에 사용 */
 function checkSignals(report: TAReport, strategy: string): Signal[] {
   const signals: Signal[] = []
@@ -116,7 +122,7 @@ async function doCheckTASignals(chatIds: number[]): Promise<void> {
   })
 
   // 티커별 전략 수집 (다중 전략 지원)
-  const tickerStrategies = new Map<string, { displayName: string; market: string; strategies: Set<string> }>()
+  const tickerStrategies = new Map<string, TickerMeta>()
   for (const h of holdings) {
     const existing = tickerStrategies.get(h.holding.ticker)
     if (existing) {
@@ -144,11 +150,21 @@ async function doCheckTASignals(chatIds: number[]): Promise<void> {
 
   if (tickerStrategies.size === 0) return
 
+  // PriceCache.market을 결정적 소스로 사용 (Holding/Watchlist 간 market 불일치 방지)
+  // price-alert.ts와 동일한 패턴 (#261)
+  const priceCaches = await prisma.priceCache.findMany({
+    where: { ticker: { in: Array.from(tickerStrategies.keys()) } },
+    select: { ticker: true, market: true },
+  })
+  const marketByTicker = new Map(priceCaches.map((p) => [p.ticker, p.market]))
+
   const results: SignalResult[] = []
 
   for (const [ticker, meta] of Array.from(tickerStrategies)) {
     // 거래시간 필터: 해당 종목 시장이 닫혀 있으면 분석/알림 스킵 (장외 허위 시그널 차단)
-    if (!isMarketOpenFor(meta.market, ticker)) continue
+    // PriceCache가 있으면 우선, 없으면 Holding/Watchlist의 market으로 fallback
+    const market = marketByTicker.get(ticker) ?? meta.market
+    if (!isMarketOpenFor(market, ticker)) continue
 
     try {
       const report = await generateTAReport(ticker)
