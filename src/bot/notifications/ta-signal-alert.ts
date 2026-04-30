@@ -162,8 +162,13 @@ async function doCheckTASignals(chatIds: number[]): Promise<void> {
 
   for (const [ticker, meta] of Array.from(tickerStrategies)) {
     // 거래시간 필터: 해당 종목 시장이 닫혀 있으면 분석/알림 스킵 (장외 허위 시그널 차단)
-    // PriceCache가 있으면 우선, 없으면 Holding/Watchlist의 market으로 fallback
-    const market = marketByTicker.get(ticker) ?? meta.market
+    // PriceCache.market을 단일 결정적 소스로 사용 (Holding/Watchlist 간 불일치 방지)
+    // PriceCache 미존재 시 안전 차단 — 다음 cron 주기에 캐시가 채워지면 자연 복구됨
+    const market = marketByTicker.get(ticker)
+    if (!market) {
+      console.warn(`[ta-signal] ${ticker} PriceCache 미존재 — 시그널 스킵 (meta.market=${meta.market})`)
+      continue
+    }
     if (!isMarketOpenFor(market, ticker)) continue
 
     try {
