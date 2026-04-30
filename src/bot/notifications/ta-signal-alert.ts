@@ -11,6 +11,7 @@ import { askAdvisor } from '@/lib/ai/claude-advisor'
 import { getBot } from '@/bot/index'
 import { sendHtml, escapeHtml } from '@/bot/utils/telegram'
 import { markdownToTelegramHtml } from '@/bot/utils/markdown'
+import { isMarketOpenFor } from '@/lib/market-hours'
 import type { TAReport } from '@/lib/ta/types'
 
 /** 당일 시그널 발송 기록 (키 → date string) */
@@ -106,7 +107,7 @@ async function doCheckTASignals(chatIds: number[]): Promise<void> {
   const allStrategies = ['swing', 'momentum', 'scalp', 'long_hold']
   const holdings = await prisma.holdingStrategy.findMany({
     where: { strategy: { in: allStrategies } },
-    include: { holding: { select: { ticker: true, displayName: true } } },
+    include: { holding: { select: { ticker: true, displayName: true, market: true } } },
   })
 
   // 관심종목 중 액티브 전략 (long_hold 제외 — 관심종목에 장기보유는 해당 없음)
@@ -115,13 +116,17 @@ async function doCheckTASignals(chatIds: number[]): Promise<void> {
   })
 
   // 티커별 전략 수집 (다중 전략 지원)
-  const tickerStrategies = new Map<string, { displayName: string; strategies: Set<string> }>()
+  const tickerStrategies = new Map<string, { displayName: string; market: string; strategies: Set<string> }>()
   for (const h of holdings) {
     const existing = tickerStrategies.get(h.holding.ticker)
     if (existing) {
       existing.strategies.add(h.strategy)
     } else {
-      tickerStrategies.set(h.holding.ticker, { displayName: h.holding.displayName, strategies: new Set([h.strategy]) })
+      tickerStrategies.set(h.holding.ticker, {
+        displayName: h.holding.displayName,
+        market: h.holding.market,
+        strategies: new Set([h.strategy]),
+      })
     }
   }
   for (const w of watchlist) {
@@ -129,7 +134,11 @@ async function doCheckTASignals(chatIds: number[]): Promise<void> {
     if (existing) {
       existing.strategies.add(w.strategy)
     } else {
-      tickerStrategies.set(w.ticker, { displayName: w.displayName, strategies: new Set([w.strategy]) })
+      tickerStrategies.set(w.ticker, {
+        displayName: w.displayName,
+        market: w.market,
+        strategies: new Set([w.strategy]),
+      })
     }
   }
 
@@ -138,6 +147,9 @@ async function doCheckTASignals(chatIds: number[]): Promise<void> {
   const results: SignalResult[] = []
 
   for (const [ticker, meta] of Array.from(tickerStrategies)) {
+    // 거래시간 필터: 해당 종목 시장이 닫혀 있으면 분석/알림 스킵 (장외 허위 시그널 차단)
+    if (!isMarketOpenFor(meta.market, ticker)) continue
+
     try {
       const report = await generateTAReport(ticker)
 
