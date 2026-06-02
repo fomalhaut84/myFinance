@@ -210,7 +210,8 @@ export async function POST(request: NextRequest) {
                 accountId,
                 ticker: existingHolding.ticker,
                 displayName: existingHolding.displayName,
-                market: normalizeMarket(existingHolding.market, existingHolding.ticker),
+                // 사전 검증에서 normalize(existing) === market 임이 확인됨 — 입력값 그대로 사용
+                market,
                 type: 'BUY',
                 shares: existingHolding.shares,
                 price: baselinePrice,

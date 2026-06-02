@@ -82,6 +82,7 @@ if (normalizeMarket(existing.market, ticker) !== normalizeMarket(market, ticker)
 - holdings dropdown 필터링(`shares > 0`) — Phase 25-B에서 처리
 - API 응답 형식 통일 — Phase 25-E
 - 입력 검증 Zod 마이그레이션 — Phase 25-F
+- **단위 테스트 추가** — 현재 프로젝트에 테스트 프레임워크(jest/vitest)가 도입돼 있지 않음. 별도 인프라 이슈로 분리 (테스트 프레임워크 도입은 7차 마일스톤 외 별도 작업)
 
 ## 라벨
 

@@ -61,10 +61,11 @@ export async function fetchQuote(ticker: string): Promise<QuoteResult> {
   const displayName = quote.shortName ?? quote.longName ?? ticker
 
   // PriceCache upsert — 존재하면 갱신, 없으면 생성 (fallback 조회 시 캐시 적재)
+  // market은 update 분기에도 포함 — 기존 raw 코드가 신규 정규화 코드로 자연 수렴되도록 보장
   try {
     await prisma.priceCache.upsert({
       where: { ticker },
-      update: { price, change, changePercent: changePct },
+      update: { price, change, changePercent: changePct, market },
       create: { ticker, displayName, market, currency, price, change, changePercent: changePct },
     })
   } catch (error) {
@@ -165,6 +166,7 @@ async function doRefreshPrices(): Promise<RefreshResult> {
       const change = quote.regularMarketChange != null ? Number(quote.regularMarketChange) : null
       const changePct = quote.regularMarketChangePercent != null ? Number(quote.regularMarketChangePercent) : null
 
+      const normalizedMarket = normalizeMarket(meta.market, ticker)
       await prisma.priceCache.upsert({
         where: { ticker },
         update: {
@@ -172,11 +174,12 @@ async function doRefreshPrices(): Promise<RefreshResult> {
           change,
           changePercent: changePct,
           displayName: meta.displayName,
+          market: normalizedMarket,
         },
         create: {
           ticker,
           displayName: meta.displayName,
-          market: normalizeMarket(meta.market, ticker),
+          market: normalizedMarket,
           price,
           currency: meta.currency,
           change,

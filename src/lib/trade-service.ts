@@ -65,6 +65,11 @@ export async function createTrade(input: CreateTradeInput): Promise<CreateTradeR
   if (existingTrade) {
     const normalizedExisting = normalizeMarket(existingTrade.market, ticker)
     if (normalizedExisting !== normalizedInputMarket || existingTrade.currency !== currency) {
+      console.warn(
+        `[trade-service] market/currency 불일치 (Trade): ticker=${ticker} ` +
+        `existing(raw=${existingTrade.market}, normalized=${normalizedExisting}, ${existingTrade.currency}) ` +
+        `input(raw=${market}, normalized=${normalizedInputMarket}, ${currency})`
+      )
       throw new Error(`${ticker}은(는) 이미 ${normalizedExisting}/${existingTrade.currency}로 등록되어 있습니다.`)
     }
   }
@@ -78,6 +83,11 @@ export async function createTrade(input: CreateTradeInput): Promise<CreateTradeR
     if (existingHolding) {
       const normalizedExisting = normalizeMarket(existingHolding.market, ticker)
       if (normalizedExisting !== normalizedInputMarket || existingHolding.currency !== currency) {
+        console.warn(
+          `[trade-service] market/currency 불일치 (Holding): ticker=${ticker} ` +
+          `existing(raw=${existingHolding.market}, normalized=${normalizedExisting}, ${existingHolding.currency}) ` +
+          `input(raw=${market}, normalized=${normalizedInputMarket}, ${currency})`
+        )
         throw new Error(`${ticker}은(는) 이미 ${normalizedExisting}/${existingHolding.currency}로 등록되어 있습니다.`)
       }
     }
@@ -111,7 +121,8 @@ export async function createTrade(input: CreateTradeInput): Promise<CreateTradeR
             accountId,
             ticker: existingHolding.ticker,
             displayName: existingHolding.displayName,
-            market: normalizeMarket(existingHolding.market, existingHolding.ticker),
+            // 사전 검증에서 normalize(existing) === normalizedInputMarket 임이 확인됨 — 입력값 그대로 사용
+            market: normalizedInputMarket,
             type: 'BUY',
             shares: existingHolding.shares,
             price: baselinePrice,
