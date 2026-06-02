@@ -15,10 +15,11 @@
  *   - normalize 결과가 OTHER인 row는 skip + 경고 (수동 확인 대상)
  */
 
-import { PrismaClient } from '@prisma/client'
+import { PrismaClient, Prisma } from '@prisma/client'
 import { normalizeMarket } from '../../src/lib/market-hours'
 
 const prisma = new PrismaClient()
+type TxClient = Prisma.TransactionClient
 
 const BATCH_SIZE = 500
 const TX_TIMEOUT_MS = 120_000 // 2분
@@ -74,7 +75,7 @@ function reportStats(tableName: string, stats: TableStats): void {
 async function processChunked<T extends Row>(
   tableName: string,
   rows: T[],
-  applyUpdate: (pk: string, market: string) => Promise<void>,
+  applyUpdate: (tx: TxClient, pk: string, market: string) => Promise<void>,
   dryRun: boolean
 ): Promise<TableStats> {
   const stats = emptyStats()
@@ -93,12 +94,13 @@ async function processChunked<T extends Row>(
   }
 
   // 배치 단위로 트랜잭션 분리 — 단일 거대 트랜잭션의 락/timeout 회피
+  // applyUpdate는 반드시 tx 클라이언트로 실행 (배치 내 원자성 보장)
   for (let i = 0; i < updates.length; i += BATCH_SIZE) {
     const batch = updates.slice(i, i + BATCH_SIZE)
     await prisma.$transaction(
-      async () => {
+      async (tx) => {
         for (const u of batch) {
-          await applyUpdate(u.pk, u.market)
+          await applyUpdate(tx, u.pk, u.market)
         }
       },
       { timeout: TX_TIMEOUT_MS }
@@ -115,8 +117,8 @@ async function migratePriceCache(dryRun: boolean): Promise<TableStats> {
   return processChunked(
     'PriceCache',
     rows.map((r) => ({ pk: r.ticker, ticker: r.ticker, market: r.market })),
-    async (ticker, market) => {
-      await prisma.priceCache.update({ where: { ticker }, data: { market } })
+    async (tx, ticker, market) => {
+      await tx.priceCache.update({ where: { ticker }, data: { market } })
     },
     dryRun
   )
@@ -127,8 +129,8 @@ async function migrateWatchlist(dryRun: boolean): Promise<TableStats> {
   return processChunked(
     'Watchlist',
     rows.map((r) => ({ pk: r.id, ticker: r.ticker, market: r.market })),
-    async (id, market) => {
-      await prisma.watchlist.update({ where: { id }, data: { market } })
+    async (tx, id, market) => {
+      await tx.watchlist.update({ where: { id }, data: { market } })
     },
     dryRun
   )
@@ -139,8 +141,8 @@ async function migrateHolding(dryRun: boolean): Promise<TableStats> {
   return processChunked(
     'Holding',
     rows.map((r) => ({ pk: r.id, ticker: r.ticker, market: r.market })),
-    async (id, market) => {
-      await prisma.holding.update({ where: { id }, data: { market } })
+    async (tx, id, market) => {
+      await tx.holding.update({ where: { id }, data: { market } })
     },
     dryRun
   )
@@ -151,8 +153,8 @@ async function migrateTrade(dryRun: boolean): Promise<TableStats> {
   return processChunked(
     'Trade',
     rows.map((r) => ({ pk: r.id, ticker: r.ticker, market: r.market })),
-    async (id, market) => {
-      await prisma.trade.update({ where: { id }, data: { market } })
+    async (tx, id, market) => {
+      await tx.trade.update({ where: { id }, data: { market } })
     },
     dryRun
   )
