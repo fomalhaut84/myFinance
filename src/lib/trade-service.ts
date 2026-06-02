@@ -5,6 +5,7 @@
 
 import { prisma } from '@/lib/prisma'
 import { recalcHolding, calcTotalKRW } from '@/lib/trade-utils'
+import { normalizeMarket } from '@/lib/market-hours'
 
 export interface CreateTradeInput {
   accountId: string
@@ -55,12 +56,17 @@ export async function createTrade(input: CreateTradeInput): Promise<CreateTradeR
   const totalKRW = calcTotalKRW(price, shares, currency, fxRate)
 
   // 기존 거래와 market/currency 일관성 검증
+  // market은 정규화된 값으로 비교 (raw Yahoo 코드 NCM/NYQ 등과 정규화된 US/KR이 혼재할 수 있음)
+  const normalizedInputMarket = normalizeMarket(market, ticker)
   const existingTrade = await prisma.trade.findFirst({
     where: { accountId, ticker },
     select: { market: true, currency: true },
   })
-  if (existingTrade && (existingTrade.market !== market || existingTrade.currency !== currency)) {
-    throw new Error(`${ticker}은(는) 이미 ${existingTrade.market}/${existingTrade.currency}로 등록되어 있습니다.`)
+  if (existingTrade) {
+    const normalizedExisting = normalizeMarket(existingTrade.market, ticker)
+    if (normalizedExisting !== normalizedInputMarket || existingTrade.currency !== currency) {
+      throw new Error(`${ticker}은(는) 이미 ${normalizedExisting}/${existingTrade.currency}로 등록되어 있습니다.`)
+    }
   }
 
   // Holding-only 상태 (시드 데이터, Trade 없음)에서도 market/currency 검증
@@ -69,8 +75,11 @@ export async function createTrade(input: CreateTradeInput): Promise<CreateTradeR
       where: { accountId_ticker: { accountId, ticker } },
       select: { market: true, currency: true },
     })
-    if (existingHolding && (existingHolding.market !== market || existingHolding.currency !== currency)) {
-      throw new Error(`${ticker}은(는) 이미 ${existingHolding.market}/${existingHolding.currency}로 등록되어 있습니다.`)
+    if (existingHolding) {
+      const normalizedExisting = normalizeMarket(existingHolding.market, ticker)
+      if (normalizedExisting !== normalizedInputMarket || existingHolding.currency !== currency) {
+        throw new Error(`${ticker}은(는) 이미 ${normalizedExisting}/${existingHolding.currency}로 등록되어 있습니다.`)
+      }
     }
   }
 
@@ -102,7 +111,7 @@ export async function createTrade(input: CreateTradeInput): Promise<CreateTradeR
             accountId,
             ticker: existingHolding.ticker,
             displayName: existingHolding.displayName,
-            market: existingHolding.market,
+            market: normalizeMarket(existingHolding.market, existingHolding.ticker),
             type: 'BUY',
             shares: existingHolding.shares,
             price: baselinePrice,
@@ -121,7 +130,7 @@ export async function createTrade(input: CreateTradeInput): Promise<CreateTradeR
         accountId,
         ticker,
         displayName,
-        market,
+        market: normalizedInputMarket,
         type,
         shares,
         price,
@@ -156,7 +165,7 @@ export async function createTrade(input: CreateTradeInput): Promise<CreateTradeR
           accountId,
           ticker,
           displayName,
-          market,
+          market: normalizedInputMarket,
           shares: holdingState.shares,
           avgPrice: holdingState.avgPrice,
           currency,

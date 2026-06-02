@@ -1,5 +1,6 @@
 import YahooFinance from 'yahoo-finance2'
 import { prisma } from './prisma'
+import { normalizeMarket } from './market-hours'
 
 const yahooFinance = new YahooFinance()
 
@@ -55,7 +56,8 @@ export async function fetchQuote(ticker: string): Promise<QuoteResult> {
   const change = quote.regularMarketChange != null ? Number(quote.regularMarketChange) : null
   const changePct = quote.regularMarketChangePercent != null ? Number(quote.regularMarketChangePercent) : null
   const currency = quote.currency ?? 'USD'
-  const market = quote.exchange ?? 'unknown'
+  // Yahoo의 raw exchange 코드(NCM/NYQ/KSC 등)를 정규화해 저장 — 비교 일관성 보장
+  const market = normalizeMarket(quote.exchange ?? '', ticker)
   const displayName = quote.shortName ?? quote.longName ?? ticker
 
   // PriceCache upsert — 존재하면 갱신, 없으면 생성 (fallback 조회 시 캐시 적재)
@@ -174,7 +176,7 @@ async function doRefreshPrices(): Promise<RefreshResult> {
         create: {
           ticker,
           displayName: meta.displayName,
-          market: meta.market,
+          market: normalizeMarket(meta.market, ticker),
           price,
           currency: meta.currency,
           change,
