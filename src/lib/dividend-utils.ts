@@ -43,7 +43,7 @@ export function validateDividendInput(body: {
     errors.push({ field: 'currency', message: '통화를 선택해주세요 (USD/KRW).' })
   }
   if (body.currency === 'USD') {
-    const fxError = validateFxRateForUSD(body.fxRate)
+    const fxError = validateFxRateForUSD(body.fxRate, 'USD 배당')
     if (fxError) errors.push({ field: 'fxRate', message: fxError })
   }
 

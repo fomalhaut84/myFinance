@@ -34,7 +34,7 @@ export async function PUT(request: NextRequest, props: RouteParams) {
       return NextResponse.json({ error: '세금은 0 이상이어야 합니다.' }, { status: 400 })
     }
     if (fxRate !== undefined && fxRate !== null && existing.currency === 'USD') {
-      const fxError = validateFxRateForUSD(fxRate)
+      const fxError = validateFxRateForUSD(fxRate, 'USD 배당')
       if (fxError) return NextResponse.json({ error: fxError }, { status: 400 })
     }
     if (reinvested !== undefined && typeof reinvested !== 'boolean') {
@@ -59,7 +59,7 @@ export async function PUT(request: NextRequest, props: RouteParams) {
 
     // USD는 최종 fxRate가 항상 양수 보장 — stored 값이 손상되었을 때 silent 0 차단
     if (existing.currency === 'USD') {
-      const fxError = validateFxRateForUSD(nextFxRate)
+      const fxError = validateFxRateForUSD(nextFxRate, 'USD 배당')
       if (fxError) return NextResponse.json({ error: fxError }, { status: 400 })
     }
 

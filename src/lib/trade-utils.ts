@@ -105,10 +105,11 @@ function toKSTDateString(ms: number): string {
 /**
  * USD 거래/배당의 환율을 검증한다. 통과 시 null, 실패 시 사용자 메시지.
  * 양수 + finite number만 허용. null/undefined/0/NaN 모두 거부.
+ * @param label 에러 메시지의 도메인 라벨 (예: 'USD 종목', 'USD 배당')
  */
-export function validateFxRateForUSD(fxRate: unknown): string | null {
+export function validateFxRateForUSD(fxRate: unknown, label = 'USD 종목'): string | null {
   if (typeof fxRate !== 'number' || !Number.isFinite(fxRate) || fxRate <= 0) {
-    return 'USD 종목은 유효한 환율이 필요합니다.'
+    return `${label}은 유효한 환율이 필요합니다.`
   }
   return null
 }
