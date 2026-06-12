@@ -1,5 +1,5 @@
-import type { NextAuthOptions } from 'next-auth'
-import CredentialsProvider from 'next-auth/providers/credentials'
+import NextAuth from 'next-auth'
+import Credentials from 'next-auth/providers/credentials'
 
 const MAX_ATTEMPTS = 5
 const LOCKOUT_MS = 5 * 60 * 1000 // 5분
@@ -61,22 +61,25 @@ function clearFailures(key: string): void {
   failedAttempts.delete(key)
 }
 
-export const authOptions: NextAuthOptions = {
+export const { handlers, auth, signIn, signOut } = NextAuth({
+  // v5: AUTH_SECRET 환경변수 자동 사용. NEXTAUTH_SECRET 후방 호환은 v5가 처리하지 않으므로
+  // 배포 시 .env에 AUTH_SECRET 설정 필요. NEXTAUTH_SECRET이 있으면 fallback.
+  secret: process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET,
   providers: [
-    CredentialsProvider({
+    Credentials({
       name: 'PIN',
       credentials: {
         pin: { label: 'PIN', type: 'password' },
       },
-      async authorize(credentials, req) {
+      async authorize(credentials, request) {
         const pin = process.env.AUTH_PIN
         if (!pin) {
           throw new Error('AUTH_PIN 환경변수가 설정되지 않았습니다')
         }
 
-        const forwarded = req?.headers?.['x-forwarded-for']
-        const raw = Array.isArray(forwarded) ? forwarded[0] : forwarded
-        const rateLimitKey = raw?.split(',')[0]?.trim() || 'unknown'
+        // v5에서는 Request 객체로 헤더 접근 (next-auth v4는 NodeJS req였음)
+        const forwarded = request.headers.get('x-forwarded-for')
+        const rateLimitKey = forwarded?.split(',')[0]?.trim() || 'unknown'
 
         if (!checkRateLimit(rateLimitKey)) {
           throw new Error('너무 많은 시도입니다. 5분 후 다시 시도하세요.')
@@ -113,4 +116,4 @@ export const authOptions: NextAuthOptions = {
   pages: {
     signIn: '/auth/signin',
   },
-}
+})
