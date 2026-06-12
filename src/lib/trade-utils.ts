@@ -93,6 +93,9 @@ export interface TradeValidationError {
   message: string
 }
 
+const ONE_DAY_MS = 86_400_000
+const MIN_TRADE_DATE_MS = Date.UTC(2000, 0, 1)
+
 export function validateTradeInput(body: {
   accountId?: string
   ticker?: string
@@ -139,11 +142,10 @@ export function validateTradeInput(body: {
   } else {
     const ts = Date.parse(body.tradedAt)
     // 미래 1일 grace — KST 사용자가 자정 직후 입력하면 UTC로는 어제일 수 있음
-    const maxFuture = Date.now() + 86_400_000
-    const minDate = Date.UTC(2000, 0, 1)
+    const maxFuture = Date.now() + ONE_DAY_MS
     if (ts > maxFuture) {
       errors.push({ field: 'tradedAt', message: '미래 날짜는 입력할 수 없습니다.' })
-    } else if (ts < minDate) {
+    } else if (ts < MIN_TRADE_DATE_MS) {
       errors.push({ field: 'tradedAt', message: '2000-01-01 이후 날짜를 입력해주세요.' })
     }
   }
