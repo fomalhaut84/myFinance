@@ -136,6 +136,16 @@ export function validateTradeInput(body: {
   }
   if (!body.tradedAt || isNaN(Date.parse(body.tradedAt))) {
     errors.push({ field: 'tradedAt', message: '유효한 거래일을 입력해주세요.' })
+  } else {
+    const ts = Date.parse(body.tradedAt)
+    // 미래 1일 grace — KST 사용자가 자정 직후 입력하면 UTC로는 어제일 수 있음
+    const maxFuture = Date.now() + 86_400_000
+    const minDate = Date.UTC(2000, 0, 1)
+    if (ts > maxFuture) {
+      errors.push({ field: 'tradedAt', message: '미래 날짜는 입력할 수 없습니다.' })
+    } else if (ts < minDate) {
+      errors.push({ field: 'tradedAt', message: '2000-01-01 이후 날짜를 입력해주세요.' })
+    }
   }
 
   return errors

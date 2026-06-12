@@ -60,13 +60,17 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const errors = validateTradeInput(body)
+    // ticker 사전 정규화 — validation/storage 모두 동일 값 사용
+    const normalizedTicker = typeof body.ticker === 'string'
+      ? body.ticker.trim().toUpperCase()
+      : ''
+    const errors = validateTradeInput({ ...body, ticker: normalizedTicker })
     if (errors.length > 0) {
       return NextResponse.json({ error: errors[0].message, errors }, { status: 400 })
     }
 
     const { accountId, displayName, market, type, shares, price, currency, fxRate, note, tradedAt } = body
-    const ticker = (body.ticker as string).toUpperCase().trim()
+    const ticker = normalizedTicker
 
     // 계좌 존재 확인
     const account = await prisma.account.findUnique({ where: { id: accountId } })
