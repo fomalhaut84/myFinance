@@ -93,21 +93,30 @@ export interface TradeValidationError {
   message: string
 }
 
-const ONE_DAY_MS = 86_400_000
-const MIN_TRADE_DATE_MS = Date.UTC(2000, 0, 1)
+const KST_OFFSET_MS = 9 * 60 * 60 * 1000
+const MIN_TRADE_DATE = '2000-01-01'
+
+/** ms 타임스탬프를 KST 캘린더 날짜 문자열(YYYY-MM-DD)로 변환 */
+function toKSTDateString(ms: number): string {
+  const d = new Date(ms + KST_OFFSET_MS)
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`
+}
 
 /**
  * 거래일 문자열을 검증한다. 통과 시 null, 실패 시 사용자 메시지 반환.
  * - parse 불가
- * - 미래 1일 grace 초과 (KST 자정 직후 입력 케이스 허용)
+ * - KST 캘린더 기준 오늘보다 미래 (사용자 KST 기준 "내일 이후" 입력 차단)
  * - 2000-01-01 미만
+ *
+ * 단순한 `Date.now() + 1일` grace는 KST 사용자가 오후~저녁에 내일 날짜(UTC midnight
+ * 기준 < now+24h)를 입력하면 통과시키는 결함이 있어, KST 캘린더 날짜로 직접 비교.
  */
 export function validateTradedAt(tradedAt: string | undefined | null): string | null {
   if (!tradedAt || isNaN(Date.parse(tradedAt))) return '유효한 거래일을 입력해주세요.'
-  const ts = Date.parse(tradedAt)
-  const maxFuture = Date.now() + ONE_DAY_MS
-  if (ts > maxFuture) return '미래 날짜는 입력할 수 없습니다.'
-  if (ts < MIN_TRADE_DATE_MS) return '2000-01-01 이후 날짜를 입력해주세요.'
+  const tradedAtKST = toKSTDateString(Date.parse(tradedAt))
+  const todayKST = toKSTDateString(Date.now())
+  if (tradedAtKST > todayKST) return '미래 날짜는 입력할 수 없습니다.'
+  if (tradedAtKST < MIN_TRADE_DATE) return '2000-01-01 이후 날짜를 입력해주세요.'
   return null
 }
 
