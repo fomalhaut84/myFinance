@@ -96,6 +96,21 @@ export interface TradeValidationError {
 const ONE_DAY_MS = 86_400_000
 const MIN_TRADE_DATE_MS = Date.UTC(2000, 0, 1)
 
+/**
+ * 거래일 문자열을 검증한다. 통과 시 null, 실패 시 사용자 메시지 반환.
+ * - parse 불가
+ * - 미래 1일 grace 초과 (KST 자정 직후 입력 케이스 허용)
+ * - 2000-01-01 미만
+ */
+export function validateTradedAt(tradedAt: string | undefined | null): string | null {
+  if (!tradedAt || isNaN(Date.parse(tradedAt))) return '유효한 거래일을 입력해주세요.'
+  const ts = Date.parse(tradedAt)
+  const maxFuture = Date.now() + ONE_DAY_MS
+  if (ts > maxFuture) return '미래 날짜는 입력할 수 없습니다.'
+  if (ts < MIN_TRADE_DATE_MS) return '2000-01-01 이후 날짜를 입력해주세요.'
+  return null
+}
+
 export function validateTradeInput(body: {
   accountId?: string
   ticker?: string
@@ -137,18 +152,8 @@ export function validateTradeInput(body: {
   if (body.market === 'KR' && body.currency && body.currency !== 'KRW') {
     errors.push({ field: 'currency', message: 'KR 시장은 KRW 통화만 가능합니다.' })
   }
-  if (!body.tradedAt || isNaN(Date.parse(body.tradedAt))) {
-    errors.push({ field: 'tradedAt', message: '유효한 거래일을 입력해주세요.' })
-  } else {
-    const ts = Date.parse(body.tradedAt)
-    // 미래 1일 grace — KST 사용자가 자정 직후 입력하면 UTC로는 어제일 수 있음
-    const maxFuture = Date.now() + ONE_DAY_MS
-    if (ts > maxFuture) {
-      errors.push({ field: 'tradedAt', message: '미래 날짜는 입력할 수 없습니다.' })
-    } else if (ts < MIN_TRADE_DATE_MS) {
-      errors.push({ field: 'tradedAt', message: '2000-01-01 이후 날짜를 입력해주세요.' })
-    }
-  }
+  const tradedAtError = validateTradedAt(body.tradedAt)
+  if (tradedAtError) errors.push({ field: 'tradedAt', message: tradedAtError })
 
   return errors
 }
