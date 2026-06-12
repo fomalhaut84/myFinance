@@ -58,8 +58,9 @@ Auth.js v5는 쿠키 prefix가 `next-auth.*` → `authjs.*`로 바뀐다. 배포
 ## 배포 시 주의
 
 1. `.env`의 `NEXTAUTH_SECRET` → `AUTH_SECRET`으로 변수명 변경 (값은 동일 유지 가능. 변수명 변경만)
-2. PM2 재시작
-3. 첫 접속 시 강제 로그아웃 (쿠키 prefix 변경) — PIN 재입력
+2. **`AUTH_TRUST_HOST="true"` 추가 필수** — v5는 production에서 trustHost가 자동 활성화되지 않아 Nginx 리버스 프록시 환경에서 모든 로그인이 `UntrustedHost` 에러로 실패한다. 대안으로 `AUTH_URL="https://finance.starryjeju.net"` 설정도 가능.
+3. PM2 재시작
+4. 첫 접속 시 강제 로그아웃 (쿠키 prefix 변경) — PIN 재입력
 
 ## 제외 사항
 
