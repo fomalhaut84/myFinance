@@ -20,27 +20,36 @@
 ## 기술 설계
 
 ### Schema 제약
-- `slug` UNIQUE → `ON CONFLICT ("slug") DO NOTHING`
-- `name` UNIQUE → 보조 충돌 방지에 도움
-- `id`는 Prisma 측 `cuid()` 기본값, raw SQL에서는 직접 지정 필요 → `gen_random_uuid()::text` 사용
+- `slug` UNIQUE **+ `name` UNIQUE** → 둘 중 어느 쪽 충돌이든 INSERT 전체 롤백 가능
+- `id`는 Prisma 측 `cuid()` 기본값, raw SQL에서는 직접 지정 필요
 - `keywords`는 PostgreSQL `text[]` 배열
 - `createdAt`은 default(now()) 적용
+
+### 설계 결정
+
+1. **결정적 id (`cat_transfer_*`)**: `gen_random_uuid()`는 PostgreSQL 13+ 또는 pgcrypto 확장이 필요해 의존성 우려. 결정적 문자열 id로 의존성 제거. 신규 설치 경로에서는 seed의 `deleteMany`가 이를 덮어써서 cuid id로 재생성되므로, 결정적 id는 시드 미실행 환경(운영 업그레이드 경로)에서만 의미를 가짐.
+
+2. **`INSERT ... SELECT ... WHERE NOT EXISTS` 패턴**: `ON CONFLICT (slug)`만 사용하면 `name` UNIQUE 충돌 시 마이그레이션 실패 → `_prisma_migrations`에 failed 기록 → 이후 `prisma migrate deploy` 차단. slug AND name 양쪽을 가드하는 패턴으로 처리.
 
 ### Migration SQL
 
 ```sql
 INSERT INTO "Category" (id, slug, name, type, icon, keywords, "sortOrder", "groupId", "createdAt")
-VALUES
-  (gen_random_uuid()::text, 'savings', '적금', 'transfer', '🏦', ARRAY['적금','저축'], 1, NULL, NOW()),
-  (gen_random_uuid()::text, 'deposit', '예금', 'transfer', '💳', ARRAY['예금','정기예금'], 2, NULL, NOW()),
-  (gen_random_uuid()::text, 'investment', '투자계좌', 'transfer', '📈', ARRAY['투자','증권','주식계좌'], 3, NULL, NOW()),
-  (gen_random_uuid()::text, 'etc-transfer', '기타이체', 'transfer', '🔄', ARRAY['이체','송금'], 99, NULL, NOW())
-ON CONFLICT ("slug") DO NOTHING;
+SELECT 'cat_transfer_savings', 'savings', '적금', 'transfer', '🏦', ARRAY['적금','저축']::text[], 1, NULL, NOW()
+WHERE NOT EXISTS (SELECT 1 FROM "Category" WHERE slug = 'savings' OR name = '적금');
+-- (deposit / investment / etc-transfer 동일 패턴)
 ```
 
 ### Seed와의 일관성
 
-`prisma/seed.ts:309-312`는 그대로 유지. 신규 설치 시 시드가 createMany로 생성하지만, 시드를 거치지 않은 환경(production)에서도 마이그레이션이 보장.
+`prisma/seed.ts:309-312`는 그대로 유지. 신규 설치 시:
+1. 마이그레이션이 4개를 `cat_transfer_*` id로 생성
+2. seed의 `deleteMany` (line 107)가 모두 삭제
+3. seed의 `createMany`가 16개 카테고리를 cuid id로 재생성
+
+운영 업그레이드 시:
+1. 마이그레이션이 4개 중 누락분만 생성 (slug/name 양쪽 가드)
+2. seed 미실행 → 결정적 id 유지
 
 ## 테스트 계획
 
