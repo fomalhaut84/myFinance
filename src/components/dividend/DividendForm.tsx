@@ -102,6 +102,12 @@ export default function DividendForm({ accounts }: DividendFormProps) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
+
+    if (!accountId) {
+      setError('계좌를 먼저 선택해주세요.')
+      return
+    }
+
     setIsSubmitting(true)
 
     const ticker = tickerMode === 'select' ? selectedTicker : manualTicker.toUpperCase().trim()
@@ -268,6 +274,8 @@ export default function DividendForm({ accounts }: DividendFormProps) {
           )}
         </div>
 
+        {accountId && (
+        <>
         {/* 날짜 */}
         <div className="grid grid-cols-2 gap-3">
           <div>
@@ -422,6 +430,8 @@ export default function DividendForm({ accounts }: DividendFormProps) {
         >
           {isSubmitting ? '처리 중...' : '배당 기록'}
         </button>
+        </>
+        )}
       </form>
     </Card>
   )

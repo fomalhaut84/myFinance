@@ -110,11 +110,16 @@ export default function TradeForm({ accounts }: TradeFormProps) {
 
   const isSellWithoutHoldings =
     !!accountId && holdings.length === 0 && tradeType === 'SELL'
+  const showTradeBody = !!accountId && !isSellWithoutHoldings
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
 
+    if (!accountId) {
+      setError('계좌를 먼저 선택해주세요.')
+      return
+    }
     if (isSellWithoutHoldings) {
       setError('이 계좌에는 매도할 보유 종목이 없습니다.')
       return
@@ -342,7 +347,7 @@ export default function TradeForm({ accounts }: TradeFormProps) {
           )}
         </div>
 
-        {!isSellWithoutHoldings && (
+        {showTradeBody && (
         <>
         {/* 수량 */}
         <div>
