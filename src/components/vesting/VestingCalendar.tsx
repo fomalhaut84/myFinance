@@ -17,13 +17,16 @@ interface Props {
 const WEEKDAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT']
 const MAX_BARS_PER_CELL = 3
 
+function kstYearMonth(todayMs: number): { year: number; month: number } {
+  const todayKey = toKSTDateString(new Date(todayMs))
+  const [y, m] = todayKey.split('-').map(Number)
+  return { year: y, month: m - 1 }
+}
+
 export default function VestingCalendar({ events, todayMs }: Props) {
-  const todayDate = useMemo(() => new Date(todayMs), [todayMs])
-  const todayKey = useMemo(() => toKSTDateString(todayDate), [todayDate])
-  const [cursor, setCursor] = useState(() => ({
-    year: todayDate.getFullYear(),
-    month: todayDate.getMonth(),
-  }))
+  const todayKey = useMemo(() => toKSTDateString(new Date(todayMs)), [todayMs])
+  const todayYM = useMemo(() => kstYearMonth(todayMs), [todayMs])
+  const [cursor, setCursor] = useState(todayYM)
 
   const grid = useMemo(() => buildMonthGrid(cursor.year, cursor.month), [cursor])
   const byDate = useMemo(() => groupEventsByDate(events), [events])
@@ -36,7 +39,7 @@ export default function VestingCalendar({ events, todayMs }: Props) {
   }
 
   const jumpToToday = () => {
-    setCursor({ year: todayDate.getFullYear(), month: todayDate.getMonth() })
+    setCursor(todayYM)
   }
 
   const monthLabel = `${cursor.year}년 ${cursor.month + 1}월`

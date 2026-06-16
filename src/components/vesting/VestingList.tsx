@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { formatKRW } from '@/lib/format'
 import { toKSTDateString, upcomingEvents, type VestingEvent } from '@/lib/vesting-events'
 
 interface Props {
@@ -86,7 +87,9 @@ export default function VestingList({ events, todayMs, days }: Props) {
                       </div>
                       <span className="text-[11px] text-sub">
                         {ev.accountName} · {formatShares(ev.shares)}주
-                        {ev.meta?.strikePrice ? ` · 행사가 $${ev.meta.strikePrice}` : ''}
+                        {ev.meta?.strikePrice
+                          ? ` · 행사가 ${formatKRW(ev.meta.strikePrice)}`
+                          : ''}
                       </span>
                     </div>
                     {badge && (
