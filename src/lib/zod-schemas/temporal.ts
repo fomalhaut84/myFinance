@@ -73,12 +73,14 @@ export const dateRangeSchema = z
         message: '유효한 종료일을 입력해주세요.',
       })
     }
+    // calendar-day 기준 비교 — 호출 측이 to 를 inclusive day 로 처리하는 경우 (trades 등) 까지 보호.
+    // 같은 날짜의 ISO datetime (예: from='2026-06-17T23:00Z', to='2026-06-17') 도 정상 통과.
     if (
       d.from &&
       d.to &&
       !isNaN(Date.parse(d.from)) &&
       !isNaN(Date.parse(d.to)) &&
-      Date.parse(d.from) > Date.parse(d.to)
+      d.from.slice(0, 10) > d.to.slice(0, 10)
     ) {
       ctx.addIssue({
         code: 'custom',

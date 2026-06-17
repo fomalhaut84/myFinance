@@ -139,4 +139,18 @@ describe('dateRangeSchema', () => {
   it('from = to → 통과', () => {
     expect(dateRangeSchema.safeParse({ from: '2026-06-15', to: '2026-06-15' }).success).toBe(true)
   })
+  it('동일 calendar-day 의 ISO datetime → 통과 (trades inclusive-day 호환)', () => {
+    const r = dateRangeSchema.safeParse({
+      from: '2026-06-17T23:00:00Z',
+      to: '2026-06-17',
+    })
+    expect(r.success).toBe(true)
+  })
+  it('실제 calendar-day 모순 → 실패', () => {
+    const r = dateRangeSchema.safeParse({
+      from: '2026-06-18T00:00:00Z',
+      to: '2026-06-17',
+    })
+    expect(r.success).toBe(false)
+  })
 })
