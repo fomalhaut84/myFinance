@@ -50,8 +50,12 @@ export const yearMonthSchema = z.object({
 })
 
 /**
- * 날짜 범위 schema. from/to 각각 ISO 문자열 파싱 가능해야 하고, from <= to 보장.
+ * 날짜 범위 schema. schema 단계에서는 from/to 각각의 parse 가능 여부만 검증.
  * 둘 다 optional.
+ *
+ * from > to 같은 의미 검증은 라우트 책임 — inclusive-day 확장(예: trades 의 to+1day),
+ * timezone offset 처리 방식이 라우트마다 달라 schema 가 일반화하면 false negative 가
+ * 발생한다. 도메인 의미는 호출 측이 알아서 처리.
  */
 export const dateRangeSchema = z
   .object({
@@ -59,33 +63,18 @@ export const dateRangeSchema = z
     to: z.string().nullable().optional(),
   })
   .superRefine((d, ctx) => {
-    if (d.from && d.from !== '' && isNaN(Date.parse(d.from))) {
+    if (d.from && isNaN(Date.parse(d.from))) {
       ctx.addIssue({
         code: 'custom',
         path: ['from'],
         message: '유효한 시작일을 입력해주세요.',
       })
     }
-    if (d.to && d.to !== '' && isNaN(Date.parse(d.to))) {
+    if (d.to && isNaN(Date.parse(d.to))) {
       ctx.addIssue({
         code: 'custom',
         path: ['to'],
         message: '유효한 종료일을 입력해주세요.',
-      })
-    }
-    // calendar-day 기준 비교 — 호출 측이 to 를 inclusive day 로 처리하는 경우 (trades 등) 까지 보호.
-    // 같은 날짜의 ISO datetime (예: from='2026-06-17T23:00Z', to='2026-06-17') 도 정상 통과.
-    if (
-      d.from &&
-      d.to &&
-      !isNaN(Date.parse(d.from)) &&
-      !isNaN(Date.parse(d.to)) &&
-      d.from.slice(0, 10) > d.to.slice(0, 10)
-    ) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['to'],
-        message: '시작일이 종료일보다 뒤일 수 없습니다.',
       })
     }
   })

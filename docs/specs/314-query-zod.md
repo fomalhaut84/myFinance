@@ -77,23 +77,21 @@ export const monthSchema = z
   .transform((v) => (v == null || v === '' ? undefined : Number(v)))
   .pipe(z.number().int().min(1).max(12).optional())
 
+// from > to 같은 의미 검증은 라우트 책임 (inclusive-day, timezone offset 처리가 라우트마다 다름).
+// schema 단계에서는 parse 가능 여부만 검증.
 export const dateRangeSchema = z
   .object({
     from: z.string().nullable().optional(),
     to: z.string().nullable().optional(),
   })
-  .refine(
-    (d) => !d.from || !isNaN(Date.parse(d.from)),
-    { path: ['from'], message: '유효한 시작일을 입력해주세요.' },
-  )
-  .refine(
-    (d) => !d.to || !isNaN(Date.parse(d.to)),
-    { path: ['to'], message: '유효한 종료일을 입력해주세요.' },
-  )
-  .refine(
-    (d) => !d.from || !d.to || Date.parse(d.from) <= Date.parse(d.to),
-    { path: ['to'], message: '시작일이 종료일보다 뒤일 수 없습니다.' },
-  )
+  .superRefine((d, ctx) => {
+    if (d.from && isNaN(Date.parse(d.from))) {
+      ctx.addIssue({ code: 'custom', path: ['from'], message: '유효한 시작일을 입력해주세요.' })
+    }
+    if (d.to && isNaN(Date.parse(d.to))) {
+      ctx.addIssue({ code: 'custom', path: ['to'], message: '유효한 종료일을 입력해주세요.' })
+    }
+  })
 ```
 
 ### 2. 라우트 적용 패턴

@@ -129,28 +129,20 @@ describe('dateRangeSchema', () => {
     const r = dateRangeSchema.safeParse({ to: 'bad-date' })
     expect(r.success).toBe(false)
   })
-  it('from > to → 실패', () => {
-    const r = dateRangeSchema.safeParse({ from: '2026-12-31', to: '2026-01-01' })
-    expect(r.success).toBe(false)
-    if (!r.success) {
-      expect(r.error.issues[0].message).toContain('종료일')
-    }
-  })
   it('from = to → 통과', () => {
     expect(dateRangeSchema.safeParse({ from: '2026-06-15', to: '2026-06-15' }).success).toBe(true)
   })
-  it('동일 calendar-day 의 ISO datetime → 통과 (trades inclusive-day 호환)', () => {
-    const r = dateRangeSchema.safeParse({
-      from: '2026-06-17T23:00:00Z',
-      to: '2026-06-17',
-    })
-    expect(r.success).toBe(true)
+  it('의미 검증 (from > to) 은 라우트 책임 — schema 는 parse 만', () => {
+    // schema 단계에서는 의미 모순을 차단하지 않는다 (timezone/inclusive-day 처리가 라우트마다 다름).
+    expect(dateRangeSchema.safeParse({ from: '2026-12-31', to: '2026-01-01' }).success).toBe(true)
   })
-  it('실제 calendar-day 모순 → 실패', () => {
-    const r = dateRangeSchema.safeParse({
-      from: '2026-06-18T00:00:00Z',
-      to: '2026-06-17',
-    })
-    expect(r.success).toBe(false)
+  it('positive timezone offset 도 통과', () => {
+    // 예: from=KST 6/18 00:30 = UTC 6/17 15:30. raw prefix 비교 같은 timezone-naive 검증을 하지 않음.
+    expect(
+      dateRangeSchema.safeParse({
+        from: '2026-06-18T00:30:00+09:00',
+        to: '2026-06-17',
+      }).success,
+    ).toBe(true)
   })
 })
