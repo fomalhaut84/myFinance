@@ -19,6 +19,15 @@ describe('escapeICSText', () => {
   it('일반 한국어 유지', () => {
     expect(escapeICSText('RSU 베스팅')).toBe('RSU 베스팅')
   })
+  it('CRLF (Windows 줄종결) 정규화', () => {
+    expect(escapeICSText('a\r\nb')).toBe('a\\nb')
+  })
+  it('단독 CR 정규화 (raw \\r 이 content line 종결자와 충돌 차단)', () => {
+    expect(escapeICSText('a\rb')).toBe('a\\nb')
+  })
+  it('혼합 줄종결 모두 정규화', () => {
+    expect(escapeICSText('a\r\nb\rc\nd')).toBe('a\\nb\\nc\\nd')
+  })
 })
 
 describe('buildICS — 빈 events', () => {

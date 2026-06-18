@@ -23,11 +23,15 @@ export interface BuildICSOptions {
 const DEFAULT_PROD_ID = '-//myFinance//Vesting Calendar//KO'
 const DEFAULT_CAL_NAME = 'myFinance 베스팅'
 
-/** RFC 5545 텍스트 이스케이프: \, comma, semicolon, newline. */
+/**
+ * RFC 5545 텍스트 이스케이프: \, comma, semicolon, newline.
+ * CRLF/CR/LF 모두 리터럴 `\n` 으로 정규화 — raw CR/LF 가 content line 종결자와
+ * 충돌하지 않도록 보장.
+ */
 export function escapeICSText(value: string): string {
   return value
     .replace(/\\/g, '\\\\')
-    .replace(/\n/g, '\\n')
+    .replace(/\r\n|\r|\n/g, '\\n')
     .replace(/,/g, '\\,')
     .replace(/;/g, '\\;')
 }
