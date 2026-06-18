@@ -1,0 +1,86 @@
+/**
+ * RFC 5545 (iCalendar) 직렬화 헬퍼.
+ * 종일 이벤트 위주 (DTSTART;VALUE=DATE).
+ * CRLF 라인 종결, 텍스트 이스케이프 처리.
+ */
+
+export interface ICSEvent {
+  /** 안정된 식별자. 동일 이벤트는 동일 UID. */
+  uid: string
+  summary: string
+  /** YYYY-MM-DD (KST 또는 사용자 로컬 캘린더 날짜). */
+  date: string
+  description?: string
+}
+
+export interface BuildICSOptions {
+  prodId?: string
+  calName?: string
+  /** ISO 8601 UTC 타임스탬프. 미지정 시 호출 시점 사용 (테스트에서는 명시 권장). */
+  dtstamp?: string
+}
+
+const DEFAULT_PROD_ID = '-//myFinance//Vesting Calendar//KO'
+const DEFAULT_CAL_NAME = 'myFinance 베스팅'
+
+/** RFC 5545 텍스트 이스케이프: \, comma, semicolon, newline. */
+export function escapeICSText(value: string): string {
+  return value
+    .replace(/\\/g, '\\\\')
+    .replace(/\n/g, '\\n')
+    .replace(/,/g, '\\,')
+    .replace(/;/g, '\\;')
+}
+
+/** YYYY-MM-DD → YYYYMMDD (RFC 5545 DATE 형식). */
+function formatICSDate(date: string): string {
+  return date.replace(/-/g, '')
+}
+
+/** Date → 20260615T120000Z (RFC 5545 DATE-TIME UTC 형식). */
+function formatICSDateTimeUTC(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return (
+    `${d.getUTCFullYear()}${pad(d.getUTCMonth() + 1)}${pad(d.getUTCDate())}` +
+    `T${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}${pad(d.getUTCSeconds())}Z`
+  )
+}
+
+/**
+ * ICSEvent[] 를 RFC 5545 iCalendar 문자열로 직렬화.
+ * 종일 이벤트(DTSTART;VALUE=DATE)로만 출력.
+ */
+export function buildICS(events: ICSEvent[], opts?: BuildICSOptions): string {
+  const prodId = opts?.prodId ?? DEFAULT_PROD_ID
+  const calName = opts?.calName ?? DEFAULT_CAL_NAME
+  const dtstamp = opts?.dtstamp
+    ? formatICSDateTimeUTC(new Date(opts.dtstamp))
+    : formatICSDateTimeUTC(new Date())
+
+  const lines: string[] = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    `PRODID:${escapeICSText(prodId)}`,
+    `X-WR-CALNAME:${escapeICSText(calName)}`,
+    'CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH',
+  ]
+
+  for (const ev of events) {
+    lines.push(
+      'BEGIN:VEVENT',
+      `UID:${ev.uid}`,
+      `DTSTAMP:${dtstamp}`,
+      `DTSTART;VALUE=DATE:${formatICSDate(ev.date)}`,
+      `SUMMARY:${escapeICSText(ev.summary)}`,
+    )
+    if (ev.description) {
+      lines.push(`DESCRIPTION:${escapeICSText(ev.description)}`)
+    }
+    lines.push('END:VEVENT')
+  }
+
+  lines.push('END:VCALENDAR')
+
+  return lines.join('\r\n') + '\r\n'
+}
