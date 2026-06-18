@@ -44,6 +44,10 @@ const textDecoder = new TextDecoder()
  * RFC 5545 §3.1 content line folding.
  * 75 octets 초과 시 CRLF + (space) 로 줄 접기.
  * UTF-8 multi-byte 문자 중간을 자르지 않도록 boundary 보존.
+ *
+ * RFC 5545 의 75 octets 한계는 "line break 제외" 이므로 leading space (1 byte)
+ * 는 line 의 일부로 카운트된다. 따라서 첫 segment 는 75 octets, 연속 segments 는
+ * 74 octets 까지만 허용 (1 byte 를 leading space 에 예약).
  */
 export function foldICSLine(line: string): string {
   const bytes = textEncoder.encode(line)
@@ -52,7 +56,8 @@ export function foldICSLine(line: string): string {
   const segments: string[] = []
   let start = 0
   while (start < bytes.length) {
-    let end = Math.min(start + MAX_LINE_OCTETS, bytes.length)
+    const limit = segments.length === 0 ? MAX_LINE_OCTETS : MAX_LINE_OCTETS - 1
+    let end = Math.min(start + limit, bytes.length)
     // UTF-8 boundary 후퇴: 10xxxxxx 는 continuation byte
     while (end < bytes.length && (bytes[end] & 0xc0) === 0x80) {
       end--

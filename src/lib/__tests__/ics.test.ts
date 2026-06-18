@@ -141,6 +141,19 @@ describe('foldICSLine — RFC 5545 §3.1', () => {
     const folded = foldICSLine(line)
     expect(folded).toBe('a'.repeat(75) + '\r\n ' + 'a'.repeat(5))
   })
+  it('연속 segments 도 75 octets 한계 준수 (leading space + 74)', () => {
+    // 첫 75 + 연속(space + 74) + 연속(space + 1) = 총 150 bytes
+    const line = 'a'.repeat(150)
+    const folded = foldICSLine(line)
+    expect(folded).toBe(
+      'a'.repeat(75) + '\r\n ' + 'a'.repeat(74) + '\r\n ' + 'a'.repeat(1),
+    )
+    // 모든 물리 line 이 75 octets 이하인지 검증 (leading space 포함)
+    const physicalLines = folded.split('\r\n')
+    for (const pl of physicalLines) {
+      expect(new TextEncoder().encode(pl).length).toBeLessThanOrEqual(75)
+    }
+  })
   it('한국어 multi-byte UTF-8 → boundary 보존하여 접기', () => {
     // 한국어 1자 = UTF-8 3 bytes. '가' × 30 = 90 bytes (75 초과)
     const line = '가'.repeat(30)
