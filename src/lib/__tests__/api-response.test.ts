@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ok, fail, paginated } from '../api-response'
+import { ok, fail, noContent, paginated } from '../api-response'
 
 describe('ok — 단순 성공', () => {
   it('data 임베드 + success: true + status 200', async () => {
@@ -59,6 +59,47 @@ describe('fail — 실패 응답', () => {
   it('status 500 (서버 오류)', async () => {
     const res = fail('서버 오류', 500)
     expect(res.status).toBe(500)
+  })
+})
+
+describe('noContent — 본문 없는 응답', () => {
+  it('기본 status 204 + 빈 body', async () => {
+    const res = noContent()
+    expect(res.status).toBe(204)
+    const text = await res.text()
+    expect(text).toBe('')
+  })
+
+  it('205 / 304 status 허용', () => {
+    expect(noContent(205).status).toBe(205)
+    expect(noContent(304).status).toBe(304)
+  })
+
+  it('body 허용 status 는 throw', () => {
+    expect(() => noContent(200)).toThrow(/no-body status/)
+    expect(() => noContent(400)).toThrow(/no-body status/)
+  })
+})
+
+describe('ok — no-body status 자동 분기', () => {
+  it('status 204 시 NextResponse.json TypeError 회피 (data 무시)', async () => {
+    const res = ok({ should: 'be-ignored' }, { status: 204 })
+    expect(res.status).toBe(204)
+    expect(await res.text()).toBe('')
+  })
+
+  it('status 304 도 자동 분기', async () => {
+    const res = ok(null, { status: 304 })
+    expect(res.status).toBe(304)
+    expect(await res.text()).toBe('')
+  })
+
+  it('no-body status 시 meta 도 운반 불가 (silent drop, 의도된 동작)', async () => {
+    // RFC 9110: 204/205/304 는 body 자체가 없으므로 meta 도 표현 불가.
+    // 호출자가 실수로 전달해도 status 가 우선 — body 없이 통과.
+    const res = ok([1, 2, 3], { status: 204, meta: { total: 100, limit: 10, offset: 0 } })
+    expect(res.status).toBe(204)
+    expect(await res.text()).toBe('')
   })
 })
 

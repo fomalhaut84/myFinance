@@ -40,11 +40,39 @@ interface OkOptions {
   meta?: ApiResponseMeta
 }
 
-/** 성공 응답. status 미지정 시 200. */
+/**
+ * No-body HTTP status. Response 생성자가 body 동봉을 거부하므로 별도 처리.
+ * RFC 9110 §15.4.5 (304), RFC 9110 §15.3.5 (204), §15.3.6 (205).
+ */
+const NO_BODY_STATUSES = new Set([204, 205, 304])
+
+/**
+ * 본문 없는 성공 응답 (HTTP 204 No Content 기본).
+ * DELETE / 빈 ack 용. status 옵션으로 205, 304 도 사용 가능.
+ */
+export function noContent(status = 204): NextResponse {
+  if (!NO_BODY_STATUSES.has(status)) {
+    throw new Error(`noContent() requires a no-body status (204/205/304), got ${status}`)
+  }
+  return new NextResponse(null, { status })
+}
+
+/**
+ * 성공 응답. status 미지정 시 200.
+ *
+ * status 가 no-body (204/205/304) 면 자동으로 noContent() 와 동일하게 처리.
+ * 이때 data 와 meta 는 운반 불가하므로 무시된다 (의도된 동작 — RFC 9110 § 15 가
+ * body 자체를 허용하지 않음).
+ */
 export function ok<T>(data: T, options?: OkOptions): NextResponse {
+  const status = options?.status ?? 200
+  // no-body status 는 NextResponse.json 이 TypeError 를 던지므로 자동 분기
+  if (NO_BODY_STATUSES.has(status)) {
+    return noContent(status)
+  }
   const body: ApiResponse<T> = { success: true, data }
   if (options?.meta) body.meta = options.meta
-  return NextResponse.json(body, { status: options?.status ?? 200 })
+  return NextResponse.json(body, { status })
 }
 
 /** 실패 응답. status 미지정 시 400. */

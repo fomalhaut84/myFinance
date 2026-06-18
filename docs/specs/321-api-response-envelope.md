@@ -16,9 +16,10 @@
 
 - [ ] `src/lib/api-response.ts` 신규
   - `ApiResponse<T>` 타입
-  - `ok<T>(data: T, meta?): NextResponse`
+  - `ok<T>(data: T, { status?, meta? }?): NextResponse` (no-body status 자동 분기)
+  - `noContent(status = 204): NextResponse` (204/205/304 전용)
   - `fail(error: string, status?): NextResponse`
-  - `paginated<T>(data: T[], total: number, limit: number, offset: number): NextResponse`
+  - `paginated<T>(data: T[], total: number, limit: number, offset: number, status?): NextResponse`
 - [ ] 단위 테스트 (`__tests__/api-response.test.ts`)
 - [ ] 라우트/클라이언트 변경 **없음** (호환 100%)
 
