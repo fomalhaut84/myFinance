@@ -32,6 +32,33 @@ export function escapeICSText(value: string): string {
     .replace(/;/g, '\\;')
 }
 
+const MAX_LINE_OCTETS = 75
+const textEncoder = new TextEncoder()
+const textDecoder = new TextDecoder()
+
+/**
+ * RFC 5545 §3.1 content line folding.
+ * 75 octets 초과 시 CRLF + (space) 로 줄 접기.
+ * UTF-8 multi-byte 문자 중간을 자르지 않도록 boundary 보존.
+ */
+export function foldICSLine(line: string): string {
+  const bytes = textEncoder.encode(line)
+  if (bytes.length <= MAX_LINE_OCTETS) return line
+
+  const segments: string[] = []
+  let start = 0
+  while (start < bytes.length) {
+    let end = Math.min(start + MAX_LINE_OCTETS, bytes.length)
+    // UTF-8 boundary 후퇴: 10xxxxxx 는 continuation byte
+    while (end < bytes.length && (bytes[end] & 0xc0) === 0x80) {
+      end--
+    }
+    segments.push(textDecoder.decode(bytes.slice(start, end)))
+    start = end
+  }
+  return segments.join('\r\n ')
+}
+
 /** YYYY-MM-DD → YYYYMMDD (RFC 5545 DATE 형식). */
 function formatICSDate(date: string): string {
   return date.replace(/-/g, '')
@@ -82,5 +109,5 @@ export function buildICS(events: ICSEvent[], opts?: BuildICSOptions): string {
 
   lines.push('END:VCALENDAR')
 
-  return lines.join('\r\n') + '\r\n'
+  return lines.map(foldICSLine).join('\r\n') + '\r\n'
 }

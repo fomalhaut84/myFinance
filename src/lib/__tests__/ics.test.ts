@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildICS, escapeICSText, type ICSEvent } from '../ics'
+import { buildICS, escapeICSText, foldICSLine, type ICSEvent } from '../ics'
 
 const FIXED_DTSTAMP = '2026-06-18T00:00:00Z'
 
@@ -119,5 +119,44 @@ describe('buildICS — 옵션 prodId / calName', () => {
     })
     expect(ics).toContain('PRODID:-//Custom//Test//EN\r\n')
     expect(ics).toContain('X-WR-CALNAME:CustomCal\r\n')
+  })
+})
+
+describe('foldICSLine — RFC 5545 §3.1', () => {
+  it('75 octets 이하 — 그대로 반환', () => {
+    const short = 'a'.repeat(75)
+    expect(foldICSLine(short)).toBe(short)
+  })
+  it('75 초과 ASCII → CRLF + space 로 접기', () => {
+    const line = 'a'.repeat(80)
+    const folded = foldICSLine(line)
+    expect(folded).toBe('a'.repeat(75) + '\r\n ' + 'a'.repeat(5))
+  })
+  it('한국어 multi-byte UTF-8 → boundary 보존하여 접기', () => {
+    // 한국어 1자 = UTF-8 3 bytes. '가' × 30 = 90 bytes (75 초과)
+    const line = '가'.repeat(30)
+    const folded = foldICSLine(line)
+    // 줄 접기 발생
+    expect(folded).toContain('\r\n ')
+    // multi-byte 문자가 잘리지 않음 — decode 했을 때 손상 없이 원본 복원
+    const reassembled = folded.split('\r\n ').join('')
+    expect(reassembled).toBe(line)
+  })
+  it('빈 문자열 — 그대로', () => {
+    expect(foldICSLine('')).toBe('')
+  })
+})
+
+describe('buildICS — 긴 SUMMARY/DESCRIPTION 자동 folding', () => {
+  it('긴 한국어 description 도 RFC 5545 § 3.1 준수', () => {
+    const ev: ICSEvent = {
+      uid: 'long@x',
+      summary: 'Test',
+      date: '2026-06-15',
+      description: '가'.repeat(50), // 150 bytes
+    }
+    const ics = buildICS([ev], { dtstamp: FIXED_DTSTAMP })
+    // 75 octets 단위 fold 적용 → "DESCRIPTION:" + content 가 CRLF+space 로 접힘
+    expect(ics).toMatch(/DESCRIPTION:[^\r]+\r\n /)
   })
 })
