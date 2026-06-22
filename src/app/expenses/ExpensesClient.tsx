@@ -51,6 +51,38 @@ interface ApiResponse {
   year: number
 }
 
+interface TransactionsEnvelope {
+  success: boolean
+  data?: {
+    transactions: TransactionRow[]
+    summary?: ApiResponse['summary']
+    byMonth?: MonthlyData[]
+    byCategory?: CategoryData[]
+    year: number
+  }
+  meta?: { total: number; limit: number; offset: number }
+}
+
+/**
+ * 27-D envelope 응답을 컴포넌트가 사용하는 flat shape 로 변환.
+ * listOnly 모드 응답은 summary/byMonth/byCategory 가 없으니 prev 값을 유지하기 위해
+ * 호출처에서 mergePrev 로 보완한다.
+ */
+function envelopeToFlat(env: TransactionsEnvelope): ApiResponse | null {
+  if (!env?.data || !env?.meta) return null
+  const d = env.data
+  return {
+    transactions: d.transactions,
+    total: env.meta.total,
+    limit: env.meta.limit,
+    offset: env.meta.offset,
+    summary: d.summary ?? { totalExpense: 0, totalIncome: 0, net: 0, count: 0 },
+    byMonth: d.byMonth ?? [],
+    byCategory: d.byCategory ?? [],
+    year: d.year,
+  }
+}
+
 interface ExpensesClientProps {
   initialData: ApiResponse
 }
@@ -125,22 +157,26 @@ export default function ExpensesClient({ initialData }: ExpensesClientProps) {
 
       const res = await fetch(`/api/transactions?${params}`, { signal: controller.signal })
       if (res.ok) {
-        const json: ApiResponse = await res.json()
-        // 삭제 후 offset >= total이면 마지막 유효 페이지로 보정
-        if (requestOffset > 0 && json.transactions.length === 0 && json.total > 0) {
-          const corrected = Math.max(0, Math.floor((json.total - 1) / json.limit) * json.limit)
-          setOffset(corrected)
-          // 보정된 offset으로 재조회
-          const retryParams = new URLSearchParams({ year: String(y), offset: String(corrected) })
-          if (m) retryParams.set('month', String(m))
-          if (t !== 'all') retryParams.set('type', t)
-          const retryRes = await fetch(`/api/transactions?${retryParams}`, { signal: controller.signal })
-          if (retryRes.ok) {
-            setData(await retryRes.json())
+        const env: TransactionsEnvelope = await res.json()
+        const flat = envelopeToFlat(env)
+        if (flat) {
+          // 삭제 후 offset >= total이면 마지막 유효 페이지로 보정
+          if (requestOffset > 0 && flat.transactions.length === 0 && flat.total > 0) {
+            const corrected = Math.max(0, Math.floor((flat.total - 1) / flat.limit) * flat.limit)
+            setOffset(corrected)
+            // 보정된 offset으로 재조회
+            const retryParams = new URLSearchParams({ year: String(y), offset: String(corrected) })
+            if (m) retryParams.set('month', String(m))
+            if (t !== 'all') retryParams.set('type', t)
+            const retryRes = await fetch(`/api/transactions?${retryParams}`, { signal: controller.signal })
+            if (retryRes.ok) {
+              const retryFlat = envelopeToFlat(await retryRes.json())
+              if (retryFlat) setData(retryFlat)
+            }
+          } else {
+            setData(flat)
+            setOffset(requestOffset)
           }
-        } else {
-          setData(json)
-          setOffset(requestOffset)
         }
       }
       // 월 선택 시 분석 데이터도 조회 (소비 탭 또는 전체 탭에서만)
@@ -199,12 +235,16 @@ export default function ExpensesClient({ initialData }: ExpensesClientProps) {
 
       const res = await fetch(`/api/transactions?${params}`, { signal: controller.signal })
       if (res.ok) {
-        const json = await res.json()
-        setData((prev) => ({
-          ...prev,
-          transactions: json.transactions,
-          total: json.total,
-        }))
+        const env: TransactionsEnvelope = await res.json()
+        if (env?.data && env?.meta) {
+          setData((prev) => ({
+            ...prev,
+            transactions: env.data!.transactions,
+            total: env.meta!.total,
+          }))
+        } else {
+          setOffset(prevOffset)
+        }
       } else {
         setOffset(prevOffset)
       }
