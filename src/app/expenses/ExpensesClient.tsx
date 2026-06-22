@@ -65,20 +65,22 @@ interface TransactionsEnvelope {
 
 /**
  * 27-D envelope 응답을 컴포넌트가 사용하는 flat shape 로 변환.
- * listOnly 모드 응답은 summary/byMonth/byCategory 가 없으니 prev 값을 유지하기 위해
- * 호출처에서 mergePrev 로 보완한다.
+ *
+ * 전체 모드 (listOnly 미지정) 응답 전용 — summary/byMonth/byCategory 가 반드시 포함된다.
+ * listOnly 응답은 setData prev merge 패턴으로 별도 처리 (handlePageChange).
  */
-function envelopeToFlat(env: TransactionsEnvelope): ApiResponse | null {
+function fullEnvelopeToFlat(env: TransactionsEnvelope): ApiResponse | null {
   if (!env?.data || !env?.meta) return null
   const d = env.data
+  if (!d.summary || !d.byMonth || !d.byCategory) return null
   return {
     transactions: d.transactions,
     total: env.meta.total,
     limit: env.meta.limit,
     offset: env.meta.offset,
-    summary: d.summary ?? { totalExpense: 0, totalIncome: 0, net: 0, count: 0 },
-    byMonth: d.byMonth ?? [],
-    byCategory: d.byCategory ?? [],
+    summary: d.summary,
+    byMonth: d.byMonth,
+    byCategory: d.byCategory,
     year: d.year,
   }
 }
@@ -158,7 +160,7 @@ export default function ExpensesClient({ initialData }: ExpensesClientProps) {
       const res = await fetch(`/api/transactions?${params}`, { signal: controller.signal })
       if (res.ok) {
         const env: TransactionsEnvelope = await res.json()
-        const flat = envelopeToFlat(env)
+        const flat = fullEnvelopeToFlat(env)
         if (flat) {
           // 삭제 후 offset >= total이면 마지막 유효 페이지로 보정
           if (requestOffset > 0 && flat.transactions.length === 0 && flat.total > 0) {
@@ -170,7 +172,7 @@ export default function ExpensesClient({ initialData }: ExpensesClientProps) {
             if (t !== 'all') retryParams.set('type', t)
             const retryRes = await fetch(`/api/transactions?${retryParams}`, { signal: controller.signal })
             if (retryRes.ok) {
-              const retryFlat = envelopeToFlat(await retryRes.json())
+              const retryFlat = fullEnvelopeToFlat(await retryRes.json())
               if (retryFlat) setData(retryFlat)
             }
           } else {
