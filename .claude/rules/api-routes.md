@@ -13,7 +13,21 @@
 
 ## 응답 envelope (`ApiResponse<T>`)
 
-모든 API 응답은 `@/lib/api-response` 의 헬퍼를 사용해 통일된 envelope 으로 반환한다 (Phase 27).
+**신규 라우트** 와 **마이그 완료 라우트** (아래 "적용 범위" 참고) 는 `@/lib/api-response` 의 헬퍼를 사용해 통일된 envelope 으로 반환한다 (Phase 27).
+
+### 적용 범위
+
+| 상태 | 도메인 |
+|---|---|
+| ✅ 마이그 완료 (27-A~D) | trades, dividends, deposits, transactions, rsu, stock-options, watchlist, recurring, settings, income-profiles, categories, budgets, assets, exports/* (에러 path), 그 외 27-B 단순 GET |
+| ⏳ 마이그 예정 (28차 마일스톤 후보) | accounts, networth, performance/*, prices/*, reports, tax/gift, backtest, ai/ask |
+
+**중요**: 미마이그 라우트의 응답을 envelope 으로 바꾸려면 **반드시 클라이언트 fetcher 도 함께 업데이트** 한다 (envelope 일방 변경은 화면 깨짐을 유발). 신규 라우트는 처음부터 envelope 사용.
+
+### 예외 (envelope 미적용)
+
+- **파일 응답**: CSV (`csvResponse()`), ICS (`new Response(ics, ...)`), PDF 등 — Content-Disposition 헤더 필요. **에러 path 만** envelope 적용 (`exports/*` 참고).
+- **스트리밍 / SSE**: 비표준 응답 본문.
 
 ### 응답 구조
 
@@ -99,11 +113,6 @@ if (!res.ok) {
 const items = json?.data ?? []
 const total = json?.meta?.total ?? 0
 ```
-
-### 예외 — 파일 응답
-
-CSV / ICS 등 다운로드 응답은 raw Response (`csvResponse()`, `new Response(ics, {...})`) 를 그대로 사용한다 — Content-Disposition 헤더 필요.
-**에러 path 만** envelope (`fail()`) 적용한다 (`src/app/api/exports/*` 참고).
 
 ## 신규 라우트 작성 체크리스트
 
