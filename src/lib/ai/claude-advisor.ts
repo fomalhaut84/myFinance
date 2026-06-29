@@ -33,9 +33,12 @@ export class AdvisorTimeoutError extends Error {
 }
 
 export class AdvisorError extends Error {
-  constructor(message: string) {
+  /** 디버깅용 상세 (예: claude CLI stderr tail). 사용자 노출 금지. */
+  detail?: string
+  constructor(message: string, detail?: string) {
     super(message)
     this.name = 'AdvisorError'
+    this.detail = detail
   }
 }
 
@@ -219,11 +222,10 @@ export async function askAdvisor(
       const stderr = Buffer.concat(errChunks).toString('utf-8').trim()
 
       if (code !== 0) {
-        // 디버깅을 위해 stderr 일부 (≤ 1KB) 를 에러 메시지에 포함
+        // 디버깅 detail: stderr 끝 1KB 만 별도 프로퍼티로 전달 (message 는 사용자 노출 가능한 정적 문장)
         const stderrTail = stderr.slice(-1024)
-        const detail = stderrTail ? `\nstderr: ${stderrTail}` : ''
-        if (stderr) console.error('[advisor] claude stderr:', stderrTail)
-        reject(new AdvisorError(`Claude CLI 종료 코드: ${code}${detail}`))
+        if (stderrTail) console.error('[advisor] claude stderr:', stderrTail)
+        reject(new AdvisorError(`Claude CLI 종료 코드: ${code}`, stderrTail || undefined))
         return
       }
 
