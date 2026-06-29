@@ -92,8 +92,6 @@ const ALLOWED_TOOLS = [
   'mcp__myfinance__update_stock_option_vesting',
   'mcp__myfinance__delete_stock_option_vesting',
   'mcp__myfinance__exercise_vesting',
-  'mcp__firecrawl__firecrawl_search',
-  'mcp__firecrawl__firecrawl_scrape',
   'WebSearch',
   'WebFetch',
 ].join(',')
@@ -185,6 +183,10 @@ export async function askAdvisor(
 
   return new Promise<AdvisorResult>((resolve, reject) => {
     const chunks: Buffer[] = []
+    const errChunks: Buffer[] = []
+    /** stderr 최대 캡처량 — buffer full → child hang 방지 + 로그 폭증 차단 */
+    const STDERR_MAX_BYTES = 64 * 1024
+    let errBytes = 0
     let timedOut = false
 
     const child = spawn('sh', ['-c', cmd], {
@@ -199,6 +201,11 @@ export async function askAdvisor(
     }, timeout)
 
     child.stdout.on('data', (chunk: Buffer) => chunks.push(chunk))
+    child.stderr.on('data', (chunk: Buffer) => {
+      if (errBytes >= STDERR_MAX_BYTES) return
+      errChunks.push(chunk)
+      errBytes += chunk.length
+    })
 
     child.on('close', (code) => {
       clearTimeout(timer)
@@ -209,9 +216,14 @@ export async function askAdvisor(
       }
 
       const stdout = Buffer.concat(chunks).toString('utf-8')
+      const stderr = Buffer.concat(errChunks).toString('utf-8').trim()
 
       if (code !== 0) {
-        reject(new AdvisorError(`Claude CLI 종료 코드: ${code}`))
+        // 디버깅을 위해 stderr 일부 (≤ 1KB) 를 에러 메시지에 포함
+        const stderrTail = stderr.slice(-1024)
+        const detail = stderrTail ? `\nstderr: ${stderrTail}` : ''
+        if (stderr) console.error('[advisor] claude stderr:', stderrTail)
+        reject(new AdvisorError(`Claude CLI 종료 코드: ${code}${detail}`))
         return
       }
 
