@@ -186,10 +186,11 @@ export async function askAdvisor(
 
   return new Promise<AdvisorResult>((resolve, reject) => {
     const chunks: Buffer[] = []
-    const errChunks: Buffer[] = []
-    /** stderr 최대 캡처량 — buffer full → child hang 방지 + 로그 폭증 차단 */
+    /** stderr 최대 보유량 — buffer full → child hang 방지 + 로그 폭증 차단.
+     *  rolling buffer 로 항상 **마지막** STDERR_MAX_BYTES 만 유지 (앞 chunk drop).
+     *  claude/npx 가 verbose 출력 뒤에 진짜 에러를 마지막에 찍는 경우를 위해 tail 보존이 핵심. */
     const STDERR_MAX_BYTES = 64 * 1024
-    let errBytes = 0
+    let errBuf: Buffer = Buffer.alloc(0)
     let timedOut = false
 
     const child = spawn('sh', ['-c', cmd], {
@@ -205,9 +206,10 @@ export async function askAdvisor(
 
     child.stdout.on('data', (chunk: Buffer) => chunks.push(chunk))
     child.stderr.on('data', (chunk: Buffer) => {
-      if (errBytes >= STDERR_MAX_BYTES) return
-      errChunks.push(chunk)
-      errBytes += chunk.length
+      errBuf = Buffer.concat([errBuf, chunk])
+      if (errBuf.length > STDERR_MAX_BYTES) {
+        errBuf = errBuf.subarray(errBuf.length - STDERR_MAX_BYTES)
+      }
     })
 
     child.on('close', (code) => {
@@ -219,7 +221,7 @@ export async function askAdvisor(
       }
 
       const stdout = Buffer.concat(chunks).toString('utf-8')
-      const stderr = Buffer.concat(errChunks).toString('utf-8').trim()
+      const stderr = errBuf.toString('utf-8').trim()
 
       if (code !== 0) {
         // 디버깅 detail: stderr 끝 1KB 만 별도 프로퍼티로 전달 (message 는 사용자 노출 가능한 정적 문장)
