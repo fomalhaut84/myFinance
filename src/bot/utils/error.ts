@@ -46,7 +46,9 @@ export function sanitizeError(err: unknown): string {
     }
     depth++
   }
-  return parts.join(' | ')
+  // 이중 보호: 각 part 가 이미 sanitize 됐지만, 누락된 필드 (예: cur.toString() 에 토큰 잔존)
+  // 가 join 시 섞이는 경우를 대비해 최종 결과에도 한 번 더 적용.
+  return sanitizeMessage(parts.join(' | '))
 }
 
 export function getErrorCode(err: unknown): string | undefined {
