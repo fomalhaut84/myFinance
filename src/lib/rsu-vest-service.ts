@@ -25,6 +25,7 @@ export type RsuVestErrorCode =
   | 'ALREADY_VESTED'
   | 'INVALID_SELL_SHARES'
   | 'INVALID_PRICE'
+  | 'NOT_YET_VESTED'
 
 export class RsuVestError extends Error {
   constructor(public code: RsuVestErrorCode) {
@@ -39,6 +40,7 @@ const RSU_VEST_ERROR_MESSAGE: Record<RsuVestErrorCode, string> = {
   ALREADY_VESTED: '이미 베스팅 처리된 스케줄입니다.',
   INVALID_SELL_SHARES: '매도 수량이 베스팅 수량을 초과합니다.',
   INVALID_PRICE: '베스팅일 종가는 0보다 큰 숫자여야 합니다.',
+  NOT_YET_VESTED: '베스팅일이 아직 도래하지 않았습니다. 베스팅일 이후 다시 시도해주세요.',
 }
 
 export function rsuVestErrorMessage(err: RsuVestError): string {
@@ -147,6 +149,10 @@ export async function processRsuVest(id: string, vestPrice: number, autoSell: bo
       const schedule = await tx.rSUSchedule.findUnique({ where: { id } })
       if (!schedule) throw new RsuVestError('NOT_FOUND')
       if (schedule.status !== 'pending') throw new RsuVestError('ALREADY_VESTED')
+      // 미래 베스팅을 현재가/preview 가격으로 commit 방지 — vestingDate 도래 후에만 처리 가능
+      if (schedule.vestingDate.getTime() > Date.now()) {
+        throw new RsuVestError('NOT_YET_VESTED')
+      }
       if (schedule.sellShares != null && (schedule.sellShares < 0 || schedule.sellShares > schedule.shares)) {
         throw new RsuVestError('INVALID_SELL_SHARES')
       }

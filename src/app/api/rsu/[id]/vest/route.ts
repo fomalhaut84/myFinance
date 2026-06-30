@@ -31,7 +31,11 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
     return ok(result)
   } catch (error) {
     if (error instanceof RsuVestError) {
-      const status = error.code === 'NOT_FOUND' ? 404 : 400
+      // NOT_FOUND → 404, NOT_YET_VESTED → 409 (상태 충돌), 그 외 → 400
+      const status =
+        error.code === 'NOT_FOUND' ? 404
+        : error.code === 'NOT_YET_VESTED' ? 409
+        : 400
       return fail(rsuVestErrorMessage(error), status)
     }
     // recalcHolding 의 비즈니스 예외 (예: "보유 수량 부족: ...") 사용자에게 한국어 그대로 노출
