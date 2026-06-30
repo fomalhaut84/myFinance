@@ -37,8 +37,8 @@
 
 - [ ] **F1**: 봇은 deploy 시 graceful reload 대신 **hard restart** (단일 인스턴스 보장)
 - [ ] **F2**: PM2 가 봇에 더 긴 종료 유예 시간 제공 (`kill_timeout: 15000`)
-- [ ] **F3**: 재시작 사이 텔레그램 polling 세션 정리 시간 (`restart_delay: 5000`)
-- [ ] **F4**: 무한 crash loop 차단 (`min_uptime: 30000`, `max_restarts: 10`)
+- [ ] **F3**: 재시작 사이 텔레그램 polling 세션 정리 시간 (`restart_delay: 5000`) — PM2 가 비정상 종료(autorestart) 또는 hard restart 후 새 spawn 까지 5s 대기. **deploy 직후 startOrRestart 의 즉시 spawn 에는 적용 안 될 수 있음** (텔레그램 측은 클라이언트가 abort 하면 즉시 해제되므로 실용상 무관).
+- [ ] **F4**: 무한 crash loop 차단 (`min_uptime: 30000`, `max_restarts: 10`) — 30s 안에 10회 죽으면 봇이 영구 stopped. 봇 자체가 알림 채널이라 단일 장애점이 됨 → **사용자가 다른 채널로 봇 상태 모니터링 권장** (예: 별도 health check cron, `pm2 status` 주기 점검).
 - [ ] 웹 (Next.js) 은 그대로 `startOrReload` 유지 (stateless, zero-downtime 유지)
 
 ## 4. 변경
