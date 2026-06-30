@@ -55,21 +55,10 @@ export function registerVestConfirmHandler(bot: Bot): void {
       return
     }
 
+    // commit 단계 — vest 트랜잭션 실패만 처리. 성공하면 result 보장.
+    let result
     try {
-      const result = await processRsuVest(rsuId, preview.vestPrice, preview.autoSellDefault)
-      const lines = [
-        '✅ RSU 베스팅 처리 완료',
-        '',
-        `종목: ${preview.displayName} (${preview.ticker})`,
-        `계좌: ${preview.accountName}`,
-        `종가: ${formatKRWFull(result.vestPrice)} (${preview.vestPriceSource})`,
-        `매수: ${result.buyShares}주`,
-      ]
-      if (result.sellShares > 0) lines.push(`매도: ${result.sellShares}주`)
-      if (result.holding) lines.push(`보유: ${result.holding.shares}주 (평단 ${formatKRWFull(Math.round(result.holding.avgPrice))})`)
-
-      await ctx.editMessageText(lines.join('\n'))
-      await ctx.answerCallbackQuery({ text: '완료' })
+      result = await processRsuVest(rsuId, preview.vestPrice, preview.autoSellDefault)
     } catch (err) {
       if (err instanceof RsuVestError) {
         await ctx.answerCallbackQuery({ text: rsuVestErrorMessage(err), show_alert: true })
@@ -82,6 +71,31 @@ export function registerVestConfirmHandler(bot: Bot): void {
       }
       console.error(`[vest-confirm] processRsuVest 실패: ${sanitizeError(err)}`)
       await ctx.answerCallbackQuery({ text: '처리 실패. 잠시 후 다시 시도하거나 웹에서 처리해주세요.', show_alert: true })
+      return
+    }
+
+    // commit 성공 이후의 telegram API 호출은 best-effort.
+    // 실패해도 vest 는 이미 DB 반영됐으니 사용자에 '처리 실패' 메시지를 보여서는 안 됨.
+    const lines = [
+      '✅ RSU 베스팅 처리 완료',
+      '',
+      `종목: ${preview.displayName} (${preview.ticker})`,
+      `계좌: ${preview.accountName}`,
+      `종가: ${formatKRWFull(result.vestPrice)} (${preview.vestPriceSource})`,
+      `매수: ${result.buyShares}주`,
+    ]
+    if (result.sellShares > 0) lines.push(`매도: ${result.sellShares}주`)
+    if (result.holding) lines.push(`보유: ${result.holding.shares}주 (평단 ${formatKRWFull(Math.round(result.holding.avgPrice))})`)
+
+    try {
+      await ctx.editMessageText(lines.join('\n'))
+    } catch (err) {
+      console.error(`[vest-confirm] editMessageText 실패 (commit 완료 후): ${sanitizeError(err)}`)
+    }
+    try {
+      await ctx.answerCallbackQuery({ text: '완료' })
+    } catch (err) {
+      console.error(`[vest-confirm] answerCallbackQuery 실패 (commit 완료 후): ${sanitizeError(err)}`)
     }
   })
 }
