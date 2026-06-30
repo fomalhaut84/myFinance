@@ -13,6 +13,7 @@ const NETWORK_CODES = new Set([
   'EAI_AGAIN',
   'ECONNREFUSED',
   'EHOSTUNREACH',
+  'ENOTFOUND', // DNS 일시 실패 (기존 isRetryableNetworkError 호환 보존)
 ])
 
 export function sanitizeMessage(msg: string): string {
