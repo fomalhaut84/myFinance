@@ -1,8 +1,12 @@
 /**
- * RSU 베스팅일 + 스톡옵션 행사 가능일 리마인더
- * 매일 09:00 KST 실행, D-7 / D-1 대상 확인.
+ * RSU 베스팅일 + 스톡옵션 행사 가능일 리마인더.
  *
- * D-1 RSU 알림은 inline keyboard ([✅ 확정] [✖️ 취소]) 첨부 — 한 번 탭으로 vest 처리.
+ * - `sendRSUReminders` (매일 09:00 KST): D-7 / D-1 정보성 알림만 발송.
+ *   → 사용자가 베스팅 임박을 미리 인지.
+ * - `sendRSUVestConfirmations` (매일 15:35 KST): D-day RSU pending 만 발송 +
+ *   inline keyboard ([✅ 확정] [✖️ 취소]) 첨부 → 한 번 탭으로 vest 처리.
+ *   → KRX 마감(15:30) + 안전 마진 후라 yahoo historical 종가 확정 시점.
+ *
  * callback 처리는 src/bot/commands/vest-confirm.ts.
  */
 
@@ -30,6 +34,10 @@ function diffDays(target: Date): number {
   return Math.round((kstTarget.getTime() - kstNow.getTime()) / (1000 * 60 * 60 * 24))
 }
 
+/**
+ * 09:00 KST cron — D-7 / D-1 정보성 알림.
+ * D-day 처리 키보드는 마감 후 sendRSUVestConfirmations 가 발송.
+ */
 export async function sendRSUReminders(chatIds: number[]): Promise<void> {
   const bot = getBot()
   const lines: string[] = []
@@ -43,7 +51,7 @@ export async function sendRSUReminders(chatIds: number[]): Promise<void> {
   const rangeEnd = new Date(kstNow)
   rangeEnd.setDate(rangeEnd.getDate() + 8) // D-7 포함 (exclusive upper bound)
 
-  // RSU 베스팅 확인 (D-1 ~ D-7 범위만 조회)
+  // RSU 베스팅 (D-7 / D-1 정보성)
   const pendingRSU = await prisma.rSUSchedule.findMany({
     where: {
       status: 'pending',
@@ -53,18 +61,16 @@ export async function sendRSUReminders(chatIds: number[]): Promise<void> {
     orderBy: { vestingDate: 'asc' },
   })
 
-  // D-1 RSU 는 인라인 키보드 첨부 후 개별 발송, D-7 은 summary lines 에 합산
-  const d1Rsus: typeof pendingRSU = []
   for (const rsu of pendingRSU) {
     const daysLeft = diffDays(rsu.vestingDate)
-    if (daysLeft === 1) {
-      d1Rsus.push(rsu)
-    } else if (daysLeft === 7) {
+    if (daysLeft === 7 || daysLeft === 1) {
+      const label = daysLeft === 1 ? '⚠️ D-1' : '📅 D-7'
       lines.push(
-        `${h.b('📅 D-7 RSU 베스팅')}\n` +
+        `${h.b(label + ' RSU 베스팅')}\n` +
         `  ${escapeHtml(rsu.account.name)} | ${rsu.shares}주\n` +
         `  베스팅일: ${formatDate(rsu.vestingDate)}\n` +
-        `  기준가: ${formatKRWFull(rsu.basisValue)}`
+        `  기준가: ${formatKRWFull(rsu.basisValue)}` +
+        (daysLeft === 1 ? `\n  <i>내일 15:35 KST 이후 [확정] 알림 발송됨</i>` : '')
       )
     }
   }
@@ -96,21 +102,52 @@ export async function sendRSUReminders(chatIds: number[]): Promise<void> {
     }
   }
 
-  // 일반 summary (D-7 RSU + D-7/D-1 스톡옵션)
-  if (lines.length > 0) {
-    const fullMessage = `🔔 ${h.b('RSU/스톡옵션 리마인더')}\n\n${lines.join('\n\n')}`
-    for (const chatId of chatIds) {
-      try {
-        await sendHtml(bot, chatId, fullMessage)
-      } catch (error) {
-        console.error(`[notification] RSU 리마인더 발송 실패 (chatId: ${chatId}): ${sanitizeError(error)}`)
-      }
-    }
+  if (lines.length === 0) {
+    console.log('[notification] RSU/스톡옵션 리마인더 대상 없음')
+    return
   }
 
-  // D-1 RSU 는 인라인 키보드 첨부, 종가 자동 조회 결과 포함, 개별 발송
-  for (const rsu of d1Rsus) {
-    let priceLine = ''
+  const fullMessage = `🔔 ${h.b('RSU/스톡옵션 리마인더')}\n\n${lines.join('\n\n')}`
+  for (const chatId of chatIds) {
+    try {
+      await sendHtml(bot, chatId, fullMessage)
+    } catch (error) {
+      console.error(`[notification] RSU 리마인더 발송 실패 (chatId: ${chatId}): ${sanitizeError(error)}`)
+    }
+  }
+  console.log('[notification] RSU/스톡옵션 리마인더 발송 완료')
+}
+
+/**
+ * 15:35 KST cron — D-day RSU pending 만 발송 + inline keyboard 첨부.
+ * KRX 마감(15:30) + 안전 마진 5분 후라 yahoo historical daily candle 의 종가 확정 보장.
+ *
+ * 사용자는 [✅ 확정] 한 번 탭으로 처리 — 종가는 자동 조회.
+ */
+export async function sendRSUVestConfirmations(chatIds: number[]): Promise<void> {
+  const bot = getBot()
+
+  // D-day (KST 기준 오늘)
+  const now = new Date()
+  const kstNow = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Seoul' }))
+  kstNow.setHours(0, 0, 0, 0)
+  const todayStart = new Date(kstNow)
+  const todayEnd = new Date(kstNow)
+  todayEnd.setDate(todayEnd.getDate() + 1)
+
+  const todayRsus = await prisma.rSUSchedule.findMany({
+    where: {
+      status: 'pending',
+      vestingDate: { gte: todayStart, lt: todayEnd },
+    },
+    include: { account: { select: { name: true } } },
+    orderBy: { vestingDate: 'asc' },
+  })
+
+  if (todayRsus.length === 0) return
+
+  for (const rsu of todayRsus) {
+    let priceLine = `  종가: <i>조회 중...</i>`
     let autoSellLine = (rsu.sellShares ?? 0) > 0
       ? `  매도 예정: ${rsu.sellShares}주 (autoSell=✓)`
       : `  매도 예정: 없음 (autoSell=✗)`
@@ -121,7 +158,6 @@ export async function sendRSUReminders(chatIds: number[]): Promise<void> {
       } else {
         priceLine = `  종가: <i>자동 조회 실패 — 웹에서 직접 처리</i>`
       }
-      // autoSell 기본값을 preview 기준으로 갱신 (sellShares 변경 가능성)
       autoSellLine = preview.autoSellDefault
         ? `  매도 예정: ${preview.sellShares ?? 0}주 (autoSell=✓)`
         : `  매도 예정: 없음 (autoSell=✗)`
@@ -131,13 +167,13 @@ export async function sendRSUReminders(chatIds: number[]): Promise<void> {
     }
 
     const msg =
-      `🎯 ${h.b('D-1 RSU 베스팅 — 내일 처리 준비')}\n` +
+      `🎯 ${h.b('D-day RSU 베스팅 — 오늘 처리 가능')}\n` +
       `  ${escapeHtml(rsu.account.name)} | ${rsu.shares}주\n` +
       `  베스팅일: ${formatDate(rsu.vestingDate)}\n` +
       `  기준가: ${formatKRWFull(rsu.basisValue)}\n` +
       `${priceLine}\n` +
       `${autoSellLine}\n\n` +
-      `<i>D-day 다시 알림이 오면 [확정] 버튼 한 번으로 처리됩니다.</i>`
+      `<i>아래 [확정] 한 번 탭으로 BUY/SELL Trade + Holding 자동 반영됩니다.</i>`
 
     const keyboard = new InlineKeyboard()
       .text('✅ 확정', `vest:confirm:${rsu.id}`)
@@ -150,10 +186,9 @@ export async function sendRSUReminders(chatIds: number[]): Promise<void> {
           reply_markup: keyboard,
         })
       } catch (error) {
-        console.error(`[notification] D-1 RSU 알림 발송 실패 (chatId: ${chatId}): ${sanitizeError(error)}`)
+        console.error(`[notification] D-day RSU 알림 발송 실패 (chatId: ${chatId}): ${sanitizeError(error)}`)
       }
     }
   }
-
-  console.log('[notification] RSU/스톡옵션 리마인더 발송 완료')
+  console.log(`[notification] D-day RSU 확정 알림 발송 완료 (${todayRsus.length}건)`)
 }

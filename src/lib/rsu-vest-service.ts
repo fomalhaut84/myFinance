@@ -26,6 +26,7 @@ export type RsuVestErrorCode =
   | 'INVALID_SELL_SHARES'
   | 'INVALID_PRICE'
   | 'NOT_YET_VESTED'
+  | 'PRICE_NOT_SETTLED'
 
 export class RsuVestError extends Error {
   constructor(public code: RsuVestErrorCode) {
@@ -41,6 +42,35 @@ const RSU_VEST_ERROR_MESSAGE: Record<RsuVestErrorCode, string> = {
   INVALID_SELL_SHARES: '매도 수량이 베스팅 수량을 초과합니다.',
   INVALID_PRICE: '베스팅일 종가는 0보다 큰 숫자여야 합니다.',
   NOT_YET_VESTED: '베스팅일이 아직 도래하지 않았습니다. 베스팅일 이후 다시 시도해주세요.',
+  PRICE_NOT_SETTLED: 'KRX 장 마감 전이라 종가가 확정되지 않았습니다. 마감(15:30 KST) 후 다시 시도해주세요.',
+}
+
+/** KRX 정규장 마감 시각 + 종가 확정 안전 마진 (KST) */
+const MARKET_CLOSE_HOUR_KST = 15
+const MARKET_CLOSE_MIN_KST_INCLUSIVE = 35 // 15:35 KST 부터 commit 허용
+
+/**
+ * 베스팅일 종가가 확정되었는지 검사.
+ * - vestingDate 가 과거 캘린더일: 항상 OK (마감된 historical close 가 있음)
+ * - vestingDate 가 오늘 (KST): 마감 + 안전 마진 (15:35 KST) 통과 시만 OK
+ * - vestingDate 가 미래: 별도 NOT_YET_VESTED 분기에서 차단됨 (호출 전 검사)
+ */
+function isVestPriceSettled(vestingDate: Date, nowMs: number): boolean {
+  const KST_OFFSET_MS = 9 * 60 * 60 * 1000
+  const nowKst = new Date(nowMs + KST_OFFSET_MS)
+  const vestKst = new Date(vestingDate.getTime() + KST_OFFSET_MS)
+  const nowYmd = `${nowKst.getUTCFullYear()}-${nowKst.getUTCMonth()}-${nowKst.getUTCDate()}`
+  const vestYmd = `${vestKst.getUTCFullYear()}-${vestKst.getUTCMonth()}-${vestKst.getUTCDate()}`
+  if (nowYmd !== vestYmd) {
+    // 과거: settled. 미래: 호출처에서 NOT_YET_VESTED 가드.
+    return vestingDate.getTime() <= nowMs
+  }
+  // 오늘: 마감 + 마진 통과 여부
+  const h = nowKst.getUTCHours()
+  const m = nowKst.getUTCMinutes()
+  if (h > MARKET_CLOSE_HOUR_KST) return true
+  if (h === MARKET_CLOSE_HOUR_KST && m >= MARKET_CLOSE_MIN_KST_INCLUSIVE) return true
+  return false
 }
 
 export function rsuVestErrorMessage(err: RsuVestError): string {
@@ -149,16 +179,22 @@ export async function processRsuVest(id: string, vestPrice: number, autoSell: bo
       const schedule = await tx.rSUSchedule.findUnique({ where: { id } })
       if (!schedule) throw new RsuVestError('NOT_FOUND')
       if (schedule.status !== 'pending') throw new RsuVestError('ALREADY_VESTED')
+      const now = Date.now()
       // 미래 베스팅을 현재가/preview 가격으로 commit 방지 — vestingDate 도래 후에만 처리 가능
-      if (schedule.vestingDate.getTime() > Date.now()) {
+      if (schedule.vestingDate.getTime() > now) {
         throw new RsuVestError('NOT_YET_VESTED')
+      }
+      // 베스팅일 당일이지만 KRX 장 마감 전이면 yahoo daily candle 이 intraday → 종가 미확정.
+      // 마감 + 안전 마진 (15:35 KST) 통과 후에만 commit 허용.
+      if (!isVestPriceSettled(schedule.vestingDate, now)) {
+        throw new RsuVestError('PRICE_NOT_SETTLED')
       }
       if (schedule.sellShares != null && (schedule.sellShares < 0 || schedule.sellShares > schedule.shares)) {
         throw new RsuVestError('INVALID_SELL_SHARES')
       }
 
       const accountId = schedule.accountId
-      const now = new Date()
+      const nowDate = new Date(now)
 
       // 1. BUY Trade
       const buyTotalKRW = calcTotalKRW(vestPrice, schedule.shares, RSU_CURRENCY)
@@ -238,7 +274,7 @@ export async function processRsuVest(id: string, vestPrice: number, autoSell: bo
       // 4. schedule.status='vested'
       const updated = await tx.rSUSchedule.update({
         where: { id },
-        data: { status: 'vested', vestPrice, vestedAt: now },
+        data: { status: 'vested', vestPrice, vestedAt: nowDate },
       })
 
       return {

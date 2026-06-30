@@ -31,10 +31,10 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
     return ok(result)
   } catch (error) {
     if (error instanceof RsuVestError) {
-      // NOT_FOUND → 404, NOT_YET_VESTED → 409 (상태 충돌), 그 외 → 400
+      // NOT_FOUND → 404, 상태/타이밍 충돌 → 409, 입력 검증 → 400
       const status =
         error.code === 'NOT_FOUND' ? 404
-        : error.code === 'NOT_YET_VESTED' ? 409
+        : error.code === 'NOT_YET_VESTED' || error.code === 'PRICE_NOT_SETTLED' ? 409
         : 400
       return fail(rsuVestErrorMessage(error), status)
     }
