@@ -20,11 +20,29 @@ const RSU_CURRENCY = 'KRW'
 
 const yahooFinance = new YahooFinance()
 
+export type RsuVestErrorCode =
+  | 'NOT_FOUND'
+  | 'ALREADY_VESTED'
+  | 'INVALID_SELL_SHARES'
+  | 'INVALID_PRICE'
+
 export class RsuVestError extends Error {
-  constructor(public code: 'NOT_FOUND' | 'ALREADY_VESTED' | 'INVALID_SELL_SHARES' | 'INVALID_PRICE') {
+  constructor(public code: RsuVestErrorCode) {
     super(code)
     this.name = 'RsuVestError'
   }
+}
+
+/** 사용자(웹/봇/AI) 노출용 한국어 메시지. 모든 호출처에서 동일 매핑 사용. */
+const RSU_VEST_ERROR_MESSAGE: Record<RsuVestErrorCode, string> = {
+  NOT_FOUND: 'RSU 스케줄을 찾을 수 없습니다.',
+  ALREADY_VESTED: '이미 베스팅 처리된 스케줄입니다.',
+  INVALID_SELL_SHARES: '매도 수량이 베스팅 수량을 초과합니다.',
+  INVALID_PRICE: '베스팅일 종가는 0보다 큰 숫자여야 합니다.',
+}
+
+export function rsuVestErrorMessage(err: RsuVestError): string {
+  return RSU_VEST_ERROR_MESSAGE[err.code]
 }
 
 export interface RsuVestPreview {

@@ -12,7 +12,9 @@ import {
   getRsuVestPreview,
   processRsuVest,
   RsuVestError,
+  rsuVestErrorMessage,
 } from '@/lib/rsu-vest-service'
+import { isSafeBusinessError } from '@/lib/api-errors'
 import { formatKRWFull } from '@/bot/utils/formatter'
 import { sanitizeError } from '@/bot/utils/error'
 
@@ -37,10 +39,7 @@ export function registerVestConfirmHandler(bot: Bot): void {
       preview = await getRsuVestPreview(rsuId)
     } catch (err) {
       if (err instanceof RsuVestError) {
-        const msg = err.code === 'NOT_FOUND'
-          ? 'RSU 스케줄을 찾을 수 없습니다.'
-          : '이미 처리된 베스팅입니다.'
-        await ctx.answerCallbackQuery({ text: msg, show_alert: true })
+        await ctx.answerCallbackQuery({ text: rsuVestErrorMessage(err), show_alert: true })
         return
       }
       console.error(`[vest-confirm] preview 실패: ${sanitizeError(err)}`)
@@ -73,7 +72,12 @@ export function registerVestConfirmHandler(bot: Bot): void {
       await ctx.answerCallbackQuery({ text: '완료' })
     } catch (err) {
       if (err instanceof RsuVestError) {
-        await ctx.answerCallbackQuery({ text: `처리 실패: ${err.code}`, show_alert: true })
+        await ctx.answerCallbackQuery({ text: rsuVestErrorMessage(err), show_alert: true })
+        return
+      }
+      if (isSafeBusinessError(err)) {
+        // recalcHolding 의 한국어 비즈니스 예외 (예: "보유 수량 부족: ...")
+        await ctx.answerCallbackQuery({ text: err.message, show_alert: true })
         return
       }
       console.error(`[vest-confirm] processRsuVest 실패: ${sanitizeError(err)}`)

@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { ok, fail } from '@/lib/api-response'
-import { processRsuVest, RsuVestError } from '@/lib/rsu-vest-service'
+import { businessErrorResponse } from '@/lib/api-errors'
+import { processRsuVest, RsuVestError, rsuVestErrorMessage } from '@/lib/rsu-vest-service'
 
 export async function POST(request: NextRequest, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
@@ -30,11 +31,12 @@ export async function POST(request: NextRequest, props: { params: Promise<{ id: 
     return ok(result)
   } catch (error) {
     if (error instanceof RsuVestError) {
-      if (error.code === 'NOT_FOUND') return fail('RSU 스케줄을 찾을 수 없습니다.', 404)
-      if (error.code === 'ALREADY_VESTED') return fail('이미 베스팅 처리된 스케줄입니다.', 400)
-      if (error.code === 'INVALID_SELL_SHARES') return fail('매도 수량이 베스팅 수량을 초과합니다.', 400)
-      if (error.code === 'INVALID_PRICE') return fail('베스팅일 종가는 0보다 큰 숫자여야 합니다.', 400)
+      const status = error.code === 'NOT_FOUND' ? 404 : 400
+      return fail(rsuVestErrorMessage(error), status)
     }
+    // recalcHolding 의 비즈니스 예외 (예: "보유 수량 부족: ...") 사용자에게 한국어 그대로 노출
+    const businessResponse = businessErrorResponse(error)
+    if (businessResponse) return businessResponse
     if (
       error != null &&
       typeof error === 'object' &&

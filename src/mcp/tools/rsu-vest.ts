@@ -12,7 +12,9 @@ import {
   getRsuVestPreview,
   processRsuVest,
   RsuVestError,
+  rsuVestErrorMessage,
 } from '@/lib/rsu-vest-service'
+import { isSafeBusinessError } from '@/lib/api-errors'
 import { toolResult, toolError } from '../utils'
 
 export async function vestRsu(args: {
@@ -50,12 +52,8 @@ export async function vestRsu(args: {
     }
     return toolResult(lines.join('\n'))
   } catch (error) {
-    if (error instanceof RsuVestError) {
-      if (error.code === 'NOT_FOUND') return toolError('RSU 스케줄을 찾을 수 없습니다.')
-      if (error.code === 'ALREADY_VESTED') return toolError('이미 베스팅 처리된 스케줄입니다.')
-      if (error.code === 'INVALID_SELL_SHARES') return toolError('매도 수량이 베스팅 수량을 초과합니다.')
-      if (error.code === 'INVALID_PRICE') return toolError('베스팅일 종가는 0보다 큰 숫자여야 합니다.')
-    }
+    if (error instanceof RsuVestError) return toolError(rsuVestErrorMessage(error))
+    if (isSafeBusinessError(error)) return toolError(error.message)
     return toolError(error)
   }
 }
