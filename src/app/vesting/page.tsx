@@ -41,15 +41,14 @@ export default async function VestingPage() {
       e.date.startsWith(currentYear),
   ).length
 
-  // 만료 임박: 옵션 expiryDate D-90 이내 + remainingShares > 0 (행사 기회 임박)
-  // 이미 만료 + 잔여수량 있으면 "기회 영구 손실" → 함께 sub 로 노출
+  // 만료 임박: 옵션 expiryDate D-90 이내 (오늘 포함) + remainingShares > 0 (행사 기회 임박).
+  // 이미 만료된 옵션은 cron 이 vesting.status='expired' 만 처리하고 StockOption.remainingShares 는
+  // 차감하지 않아 매년 누적되는 잘못된 메트릭이 됨 → 본 카드에서는 제외하고 임박만 표기.
   let expiringSoonCount = 0
-  let expiredLostCount = 0
   for (const opt of options) {
     if (opt.remainingShares <= 0) continue
     const days = diffDaysKST(toKSTDateString(opt.expiryDate), todayMs)
-    if (days < 0) expiredLostCount += 1
-    else if (days <= EXPIRING_SOON_DAYS) expiringSoonCount += 1
+    if (days >= 0 && days <= EXPIRING_SOON_DAYS) expiringSoonCount += 1
   }
 
   const summaryCards: Array<{ label: string; value: string; sub?: string; color?: string }> = [
@@ -59,9 +58,7 @@ export default async function VestingPage() {
     {
       label: '만료 임박',
       value: `${expiringSoonCount}건`,
-      sub: expiredLostCount > 0
-        ? `${EXPIRING_SOON_DAYS}일 이내 · 기회 손실 ${expiredLostCount}건`
-        : `${EXPIRING_SOON_DAYS}일 이내`,
+      sub: `${EXPIRING_SOON_DAYS}일 이내`,
       color: 'text-amber-400',
     },
   ]
