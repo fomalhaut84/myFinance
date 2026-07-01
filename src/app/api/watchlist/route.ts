@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { ok, fail } from '@/lib/api-response'
+import { fetchQuote } from '@/lib/price-fetcher'
 
 export const dynamic = 'force-dynamic'
 
@@ -77,6 +78,12 @@ export async function POST(request: NextRequest) {
         entryLow,
         entryHigh,
       },
+    })
+
+    // 시세 warm-up — 다음 cron 사이클(최대 10분) 기다리지 않고 즉시 priceCache 채우기.
+    // fetchQuote 내부에서 priceCache upsert. 실패는 non-blocking (log만) — 사용자 UX 유지.
+    fetchQuote(item.ticker).catch((err) => {
+      console.error(`[api/watchlist] warm-up 실패 (${item.ticker}):`, err instanceof Error ? err.message : err)
     })
 
     return ok(item, { status: 201 })
