@@ -16,11 +16,20 @@ import { sanitizeError } from '@/bot/utils/error'
 type MarketSession = 'KR' | 'US'
 
 const ACTIVE_REVIEW_KEY = 'active_review'
+const ACTIVE_REVIEW_LABEL = '능동 AI 리뷰 (on/off)'
 
+/**
+ * `active_review` 키 조회 + row 없으면 lazy upsert (기본 'on').
+ * seed 재실행 없이도 기존 배포에서 사용자가 `PUT /api/alerts/config` 로 off 로 변경 가능하게 함
+ * (해당 라우트는 존재하지 않는 key 를 404 반환하므로).
+ */
 async function isActiveReviewEnabled(): Promise<boolean> {
-  const config = await prisma.alertConfig.findUnique({ where: { key: ACTIVE_REVIEW_KEY } })
-  // 미설정 시 기본 on
-  return (config?.value ?? 'on').toLowerCase() !== 'off'
+  const config = await prisma.alertConfig.upsert({
+    where: { key: ACTIVE_REVIEW_KEY },
+    update: {},
+    create: { key: ACTIVE_REVIEW_KEY, value: 'on', label: ACTIVE_REVIEW_LABEL },
+  })
+  return config.value.toLowerCase() !== 'off'
 }
 
 function buildClosingPrompt(session: MarketSession): string {
