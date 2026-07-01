@@ -215,10 +215,13 @@ export function scheduleNotifications(): void {
       { timezone: 'Asia/Seoul' }
     )
 
-    // 미국장 클로징 리뷰: 06:15 KST 화~토 (미국장 마감 05:00 KST + 마진 75분)
+    // 미국장 클로징 리뷰: 07:15 KST 화~토
+    // 미국장 마감은 DST 여부에 따라 달라짐:
+    //  - EDT (3~11월): 05:00 KST 마감 → 07:15 는 135분 마진
+    //  - EST (11~3월): 06:00 KST 마감 → 07:15 는 75분 마진 (yahoo daily candle 확정 안전)
     // 화~토인 이유: 월(KST) = 일(EST) → 마감 없음. 화~금 = 미국장 월~목 마감, 토 = 미국장 금 마감.
     cron.schedule(
-      '15 6 * * 2-6',
+      '15 7 * * 2-6',
       async () => {
         try {
           await sendClosingReview(chatIds, 'US')
