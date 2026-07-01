@@ -7,7 +7,7 @@ import cron from 'node-cron'
 import { prisma } from '@/lib/prisma'
 import { sendQuarterlyReminder } from './quarterly'
 import { sendRSUReminders, sendRSUVestConfirmations } from './rsu'
-import { sendClosingReview, sendWeeklyReview } from './active-review'
+import { sendClosingReview, sendWeeklyReview, ensureActiveReviewSetting } from './active-review'
 import { sendMonthlyReminder } from './monthly'
 import { sendDailySummary } from './daily'
 import { sendMonthlyReport } from './monthly-report'
@@ -39,6 +39,13 @@ export function scheduleNotifications(): void {
     console.log('[notification] TELEGRAM_ALLOWED_CHAT_IDS 미설정, 알림 스케줄 건너뜀')
     return
   }
+
+  // active_review AlertConfig 키를 배포 직후 즉시 upsert — 첫 클로징/주간 cron 실행
+  // 전에 사용자가 PUT /api/alerts/config 로 off 설정 가능하도록 (라우트가 존재하지 않는
+  // 키는 404). 실패는 log 만, cron 등록은 계속 진행.
+  ensureActiveReviewSetting().catch((error) => {
+    console.error('[notification] ensureActiveReviewSetting 실패:', error)
+  })
 
   try {
     // 일일 포트폴리오 요약: 매시 정각 체크 → AlertConfig.daily_summary_hour 매칭 시 발송
