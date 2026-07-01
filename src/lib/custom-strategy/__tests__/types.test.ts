@@ -50,6 +50,12 @@ describe('validateCondition', () => {
     ).toBe(false)
   })
 
+  it('change_pct 는 timeframe 필수 — 없으면 무효', () => {
+    expect(
+      validateCondition({ type: 'change_pct', operator: '<', value: -5 }),
+    ).toBe(false)
+  })
+
   it('unknown type → 무효', () => {
     expect(validateCondition({ type: 'volume', operator: '>', value: 1000 })).toBe(false)
   })

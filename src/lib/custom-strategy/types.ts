@@ -68,7 +68,8 @@ export function validateCondition(c: unknown): c is Condition {
     if (!NUMERIC_OPS.has(cond.operator as Operator)) return false
     if (typeof cond.value !== 'number' || !Number.isFinite(cond.value)) return false
     if (type === 'change_pct') {
-      if (cond.timeframe !== undefined && !VALID_TIMEFRAMES.has(cond.timeframe as Timeframe)) return false
+      // timeframe 필수 — evaluator 폴백을 방지해 조건 의도가 명확해지도록
+      if (!VALID_TIMEFRAMES.has(cond.timeframe as Timeframe)) return false
     }
     return true
   }

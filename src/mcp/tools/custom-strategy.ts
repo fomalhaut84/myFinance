@@ -7,7 +7,7 @@
 
 import { prisma } from '@/lib/prisma'
 import { parseStrategyText } from '@/lib/custom-strategy/parser'
-import { conditionToString, validateParsedStrategy, type Condition, type Frequency, type LogicOp } from '@/lib/custom-strategy/types'
+import { conditionToString, type Condition, type Frequency, type LogicOp } from '@/lib/custom-strategy/types'
 import { toolResult, toolError, ToolInputError } from '../utils'
 
 const MAX_STRATEGIES = 50
@@ -167,5 +167,3 @@ export async function deleteCustomStrategy(args: { id: string }) {
   }
 }
 
-// validateParsedStrategy 재수출 방지용 dummy — parser.ts 가 이미 사용
-export { validateParsedStrategy }

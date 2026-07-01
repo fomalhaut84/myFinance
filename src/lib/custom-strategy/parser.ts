@@ -76,9 +76,15 @@ export async function parseStrategyText(text: string): Promise<ParsedStrategy> {
     maxBudgetUsd: 0.2,
   })
 
-  // 응답에서 JSON 추출 (코드블록 감싸는 경우 대비)
+  // 응답에서 JSON 추출 — AI 가 코드블록/서론과 함께 감쌀 수 있음.
+  // 첫 { ... 대응하는 마지막 } 사이만 파싱.
   const raw = result.response.trim()
-  const cleaned = raw.replace(/^```(?:json)?\n?/i, '').replace(/\n?```$/, '').trim()
+  const firstBrace = raw.indexOf('{')
+  const lastBrace = raw.lastIndexOf('}')
+  if (firstBrace === -1 || lastBrace === -1 || lastBrace < firstBrace) {
+    throw new Error(`AI 파싱 응답에 JSON 오브젝트가 없습니다. 표현을 바꿔서 재시도해주세요.\n원문: ${raw.slice(0, 200)}`)
+  }
+  const cleaned = raw.slice(firstBrace, lastBrace + 1).trim()
 
   let parsed: unknown
   try {

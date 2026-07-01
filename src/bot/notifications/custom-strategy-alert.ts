@@ -92,13 +92,35 @@ function shouldFire(
 }
 
 /**
+ * 동시 실행 방지 mutex — cron 이 10 분마다 fire-and-forget 로 호출하므로,
+ * TA 리포트 fetch 지연 등으로 이전 스캔이 진행 중이면 중복 알림 발송을 차단해야 함.
+ */
+let scanRunning = false
+
+/**
  * 활성 커스텀 전략을 모두 스캔 → 만족 조건 텔레그램 발송.
  * refreshPrices() 직후 호출.
  */
 export async function checkCustomStrategies(chatIds: number[]): Promise<void> {
   if (chatIds.length === 0) return
 
+  if (scanRunning) {
+    console.warn('[custom-strategy] 이전 스캔 진행 중, 건너뜀')
+    return
+  }
+  scanRunning = true
+  try {
+    await runScan(chatIds)
+  } finally {
+    scanRunning = false
+  }
+}
+
+async function runScan(chatIds: number[]): Promise<void> {
   if (!(await isCustomStrategyAlertsEnabled())) return
+
+  // 봇 초기화 실패 시 DB 상태 갱신 전에 fail-fast — "발동 기록만 남고 발송은 안 됨" 방지
+  const bot = getBot()
 
   const strategies = await prisma.customStrategy.findMany({
     where: { isActive: true },
@@ -186,7 +208,25 @@ export async function checkCustomStrategies(chatIds: number[]): Promise<void> {
     )
   }
 
-  // DB 상태 갱신 (fire 기록 + once → 자동 비활성)
+  if (alerts.length === 0) return
+
+  // 최소 1개 chatId 에 발송 성공한 뒤에만 DB 상태 갱신 — 실패 시 다음 tick 에서 재시도.
+  const message = `🧠 <b>커스텀 전략 발동</b> (${todayKST()})\n\n${alerts.join('\n\n')}`
+  let sentCount = 0
+  for (const chatId of chatIds) {
+    try {
+      await sendHtml(bot, chatId, message)
+      sentCount++
+    } catch (error) {
+      console.error(`[custom-strategy] 알림 발송 실패 (chatId: ${chatId}):`, error)
+    }
+  }
+
+  if (sentCount === 0) {
+    console.warn('[custom-strategy] 전체 chatId 발송 실패 — DB 상태 갱신 보류 (다음 tick 재시도)')
+    return
+  }
+
   if (firedIds.length > 0) {
     await prisma.customStrategy.updateMany({
       where: { id: { in: firedIds } },
@@ -200,17 +240,5 @@ export async function checkCustomStrategies(chatIds: number[]): Promise<void> {
     })
   }
 
-  if (alerts.length === 0) return
-
-  const bot = getBot()
-  const message = `🧠 <b>커스텀 전략 발동</b> (${todayKST()})\n\n${alerts.join('\n\n')}`
-  for (const chatId of chatIds) {
-    try {
-      await sendHtml(bot, chatId, message)
-    } catch (error) {
-      console.error(`[custom-strategy] 알림 발송 실패 (chatId: ${chatId}):`, error)
-    }
-  }
-
-  console.log(`[custom-strategy] 알림 발송: ${alerts.length}건`)
+  console.log(`[custom-strategy] 알림 발송: ${alerts.length}건 → ${sentCount}/${chatIds.length} chats`)
 }
