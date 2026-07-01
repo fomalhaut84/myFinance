@@ -7,6 +7,7 @@ import cron from 'node-cron'
 import { prisma } from '@/lib/prisma'
 import { sendQuarterlyReminder } from './quarterly'
 import { sendRSUReminders, sendRSUVestConfirmations } from './rsu'
+import { sendClosingReview, sendWeeklyReview } from './active-review'
 import { sendMonthlyReminder } from './monthly'
 import { sendDailySummary } from './daily'
 import { sendMonthlyReport } from './monthly-report'
@@ -194,8 +195,48 @@ export function scheduleNotifications(): void {
       { timezone: 'Asia/Seoul' }
     )
 
+    // 한국장 클로징 리뷰: 15:40 KST 월~금 (KRX 마감 15:30 + 마진 10분)
+    cron.schedule(
+      '40 15 * * 1-5',
+      async () => {
+        try {
+          await sendClosingReview(chatIds, 'KR')
+        } catch (error) {
+          console.error('[notification] 한국장 클로징 리뷰 실패:', error)
+        }
+      },
+      { timezone: 'Asia/Seoul' }
+    )
+
+    // 미국장 클로징 리뷰: 06:15 KST 화~토 (미국장 마감 05:00 KST + 마진 75분)
+    // 화~토인 이유: 월(KST) = 일(EST) → 마감 없음. 화~금 = 미국장 월~목 마감, 토 = 미국장 금 마감.
+    cron.schedule(
+      '15 6 * * 2-6',
+      async () => {
+        try {
+          await sendClosingReview(chatIds, 'US')
+        } catch (error) {
+          console.error('[notification] 미국장 클로징 리뷰 실패:', error)
+        }
+      },
+      { timezone: 'Asia/Seoul' }
+    )
+
+    // 주간 리뷰: 매주 토 09:00 KST — 지난주 회고 + 다음주 캘린더
+    cron.schedule(
+      '0 9 * * 6',
+      async () => {
+        try {
+          await sendWeeklyReview(chatIds)
+        } catch (error) {
+          console.error('[notification] 주간 리뷰 실패:', error)
+        }
+      },
+      { timezone: 'Asia/Seoul' }
+    )
+
     scheduled = true
-    console.log('[notification] 알림 스케줄러 등록 (일일요약 + 브리핑 + 순자산 + 분기점검 + RSU + 월적립 + 월간리포트)')
+    console.log('[notification] 알림 스케줄러 등록 (일일요약 + 브리핑 + 클로징 + 주간 + 순자산 + 분기점검 + RSU + 월적립 + 월간리포트)')
   } catch (error) {
     console.error('[notification] 알림 스케줄러 등록 실패:', error)
   }
