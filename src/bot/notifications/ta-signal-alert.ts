@@ -79,6 +79,10 @@ function checkSignals(report: TAReport, strategy: string): Signal[] {
       if (report.signalSummary.overall === 'STRONG_SELL') {
         signals.push({ id: 'STRONG_SELL', message: `⚠️ 종합 STRONG_SELL — ${report.signalSummary.reasons.slice(0, 2).join(', ')}` })
       }
+      // 장기보유는 하락 매수 기회 포착이 핵심 — STRONG_BUY 시그널 발생 시 추가 매수 검토 알림
+      if (report.signalSummary.overall === 'STRONG_BUY') {
+        signals.push({ id: 'STRONG_BUY', message: `💰 종합 STRONG_BUY — ${report.signalSummary.reasons.slice(0, 2).join(', ')} — 추가 매수 검토` })
+      }
       break
   }
 
@@ -116,9 +120,9 @@ async function doCheckTASignals(chatIds: number[]): Promise<void> {
     include: { holding: { select: { ticker: true, displayName: true, market: true } } },
   })
 
-  // 관심종목 중 액티브 전략 (long_hold 제외 — 관심종목에 장기보유는 해당 없음)
+  // 관심종목 중 액티브 전략 (long_hold 포함 — 장기보유 관심종목도 매수 기회 알림 대상)
   const watchlist = await prisma.watchlist.findMany({
-    where: { strategy: { in: ['swing', 'momentum', 'scalp'] } },
+    where: { strategy: { in: ['swing', 'momentum', 'scalp', 'long_hold'] } },
   })
 
   // 티커별 전략 수집 (다중 전략 지원)
