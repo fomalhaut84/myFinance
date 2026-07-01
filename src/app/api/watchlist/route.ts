@@ -80,11 +80,15 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    // 시세 warm-up — 다음 cron 사이클(최대 10분) 기다리지 않고 즉시 priceCache 채우기.
-    // fetchQuote 내부에서 priceCache upsert. 실패는 non-blocking (log만) — 사용자 UX 유지.
-    fetchQuote(item.ticker).catch((err) => {
+    // 시세 warm-up — 응답 전 await 로 priceCache 채우기 완료 보장.
+    // client 가 POST 성공 후 즉시 GET /api/watchlist 로 refetch 하는 race 방지 —
+    // await 안 하면 refetch 가 priceCache 미채워진 상태 조회 → currentPrice null.
+    // yahoo API 왕복 ~1s 지연 감수 (연 몇 회 사용). 실패는 log 후 응답 유지 (best-effort).
+    try {
+      await fetchQuote(item.ticker)
+    } catch (err) {
       console.error(`[api/watchlist] warm-up 실패 (${item.ticker}):`, err instanceof Error ? err.message : err)
-    })
+    }
 
     return ok(item, { status: 201 })
   } catch (error) {
