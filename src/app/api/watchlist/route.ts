@@ -80,15 +80,18 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    // 시세 warm-up — 응답 전 await 로 priceCache 채우기 완료 보장.
-    // client 가 POST 성공 후 즉시 GET /api/watchlist 로 refetch 하는 race 방지 —
-    // await 안 하면 refetch 가 priceCache 미채워진 상태 조회 → currentPrice null.
-    // yahoo API 왕복 ~1s 지연 감수 (연 몇 회 사용). 실패는 log 후 응답 유지 (best-effort).
-    try {
-      await fetchQuote(item.ticker)
-    } catch (err) {
+    // 시세 warm-up — 응답 전 priceCache 채우기 시도 (client refetch race 방지) BUT
+    // yahoo 가 느리거나 unreachable 하면 무한 대기 → client timeout → retry → 409 위험.
+    // → 5s timeout 후 즉시 응답. fetchQuote 는 background 로 계속 진행되어 priceCache
+    // 결국 채워짐. 사용자가 그 사이 refetch 하면 currentPrice=null (다음 refresh 시 표시).
+    const WARM_UP_TIMEOUT_MS = 5000
+    const warmUp = fetchQuote(item.ticker).catch((err) => {
       console.error(`[api/watchlist] warm-up 실패 (${item.ticker}):`, err instanceof Error ? err.message : err)
-    }
+    })
+    await Promise.race([
+      warmUp,
+      new Promise<void>((resolve) => setTimeout(resolve, WARM_UP_TIMEOUT_MS)),
+    ])
 
     return ok(item, { status: 201 })
   } catch (error) {
