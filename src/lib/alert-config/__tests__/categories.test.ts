@@ -35,6 +35,17 @@ describe('inputTypeOf', () => {
 
   it('매핑 없고 숫자 값이면 integer', () => {
     expect(inputTypeOf('random_key_y', '123')).toBe('integer')
+    expect(inputTypeOf('random_key_y', '-5')).toBe('integer')
+    expect(inputTypeOf('random_key_y', '3.14')).toBe('integer')
+  })
+
+  it('매핑 없고 비숫자 문자열은 text (URL/토큰 값 보존)', () => {
+    // codex P2 회귀 방지 — integer 로 판정하면 <input type="number"> 가 값을 blank 처리
+    expect(inputTypeOf('whooing_url', 'https://example.com/webhook')).toBe('text')
+    expect(inputTypeOf('some_token', 'abc-def-123')).toBe('text')
+    expect(inputTypeOf('random_key', 'hello world')).toBe('text')
+    expect(inputTypeOf('empty_key', '')).toBe('text')
+    expect(inputTypeOf('space_key', '   ')).toBe('text')
   })
 })
 

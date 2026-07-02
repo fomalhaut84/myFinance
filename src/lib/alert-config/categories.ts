@@ -75,7 +75,7 @@ export const ALERT_KEY_CATEGORY: Record<string, AlertCategoryKey> = {
   custom_strategy_alerts: 'ai',
 }
 
-export type AlertInputType = 'toggle' | 'percent' | 'currency_krw' | 'hour' | 'day' | 'minutes' | 'integer'
+export type AlertInputType = 'toggle' | 'percent' | 'currency_krw' | 'hour' | 'day' | 'minutes' | 'integer' | 'text'
 
 /** 키별 입력 타입 오버라이드 (없으면 값 형태 추론) */
 export const ALERT_KEY_INPUT_TYPE: Record<string, AlertInputType> = {
@@ -110,13 +110,26 @@ export function categoryOf(key: string): AlertCategoryKey {
   return ALERT_KEY_CATEGORY[key] ?? 'general'
 }
 
-/** 값이 on/off 문자열이면 toggle 로 판정 (매핑 우선) */
+/**
+ * 값 형태로 입력 타입 추론 (매핑 우선).
+ *
+ * fallback 순서:
+ *   1. `ALERT_KEY_INPUT_TYPE` 오버라이드
+ *   2. on/off → toggle
+ *   3. 유한 숫자 → integer
+ *   4. 그 외 → text (URL/토큰 등 문자열 값 보존)
+ *
+ * `integer` fallback 이 넓으면 `<input type="number">` 가 문자열 값을
+ * blank 처리 → 데이터 손실 (#396 codex P2 회귀 방지).
+ */
 export function inputTypeOf(key: string, value: string): AlertInputType {
   const overridden = ALERT_KEY_INPUT_TYPE[key]
   if (overridden) return overridden
   const lower = value.toLowerCase()
   if (lower === 'on' || lower === 'off') return 'toggle'
-  return 'integer'
+  const trimmed = value.trim()
+  if (trimmed !== '' && Number.isFinite(Number(trimmed))) return 'integer'
+  return 'text'
 }
 
 /** 카테고리별 그루핑 헬퍼 */

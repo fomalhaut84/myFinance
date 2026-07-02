@@ -29,6 +29,7 @@ const UNIT_BY_TYPE: Record<AlertInputType, string> = {
   day: '일',
   minutes: '분',
   integer: '',
+  text: '',
 }
 
 /** 카테고리 색상 → tailwind 유틸 클래스 매핑 */
@@ -169,11 +170,13 @@ export default function AlertConfigEditor() {
       )
     }
 
+    const isText = c.inputType === 'text'
+
     if (editingKey === c.key) {
       return (
         <div className="flex items-center gap-2">
           <input
-            type="number"
+            type={isText ? 'text' : 'number'}
             value={editValue}
             onChange={(e) => setEditValue(e.target.value)}
             onKeyDown={(e) => {
@@ -181,9 +184,13 @@ export default function AlertConfigEditor() {
               if (e.key === 'Escape') cancelEdit()
             }}
             autoFocus
-            className="bg-surface-dim border border-border rounded-md px-2.5 py-1.5 text-[13px] font-semibold text-bright w-20 text-right tabular-nums focus:outline-none focus:border-sejin"
+            className={`bg-surface-dim border border-border rounded-md px-2.5 py-1.5 text-[13px] font-semibold text-bright focus:outline-none focus:border-sejin ${
+              isText ? 'w-56' : 'w-20 text-right tabular-nums'
+            }`}
           />
-          <span className="text-[11px] text-sub">{UNIT_BY_TYPE[c.inputType]}</span>
+          {UNIT_BY_TYPE[c.inputType] && (
+            <span className="text-[11px] text-sub">{UNIT_BY_TYPE[c.inputType]}</span>
+          )}
           <button
             onClick={() => commitEdit(c)}
             disabled={savingKey === c.key}
@@ -202,16 +209,19 @@ export default function AlertConfigEditor() {
     }
 
     return (
-      <div className="flex items-center gap-3">
-        <span className="text-[15px] font-bold text-bright tabular-nums">
-          {c.value}
+      <div className="flex items-center gap-3 min-w-0">
+        <span
+          className={`text-[15px] font-bold text-bright ${isText ? 'truncate max-w-[280px]' : 'tabular-nums'}`}
+          title={isText ? c.value : undefined}
+        >
+          {c.value || <span className="text-dim">(비어 있음)</span>}
           {UNIT_BY_TYPE[c.inputType] && (
             <span className="text-[11px] text-sub ml-0.5">{UNIT_BY_TYPE[c.inputType]}</span>
           )}
         </span>
         <button
           onClick={() => startEdit(c)}
-          className="text-[12px] font-semibold text-sub bg-surface-dim border border-border rounded-md px-3 py-1.5 hover:bg-surface hover:text-bright transition-all"
+          className="text-[12px] font-semibold text-sub bg-surface-dim border border-border rounded-md px-3 py-1.5 hover:bg-surface hover:text-bright transition-all flex-shrink-0"
         >
           수정
         </button>
