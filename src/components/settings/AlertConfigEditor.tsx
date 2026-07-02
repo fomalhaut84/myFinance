@@ -257,36 +257,36 @@ export default function AlertConfigEditor() {
       {grouped.map(({ category, items }) => {
         const colors = COLOR_CLASS[category.color]
         const isOpen = openCategories[category.key] ?? true
+        // Header 는 toggle 버튼 + 옵션 Link 를 flex 로 분리 — <a> in <button> nesting 회피 (invalid HTML).
         return (
           <section key={category.key} className="rounded-[14px] border border-border bg-card overflow-hidden">
-            <button
-              type="button"
-              onClick={() => toggleSection(category.key)}
-              className="w-full flex items-center gap-3 px-5 py-4 bg-surface-dim hover:bg-surface transition-colors border-b border-border text-left"
-              aria-expanded={isOpen}
-            >
-              <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-lg flex-shrink-0 ${colors.icon}`}>
-                {category.icon}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="text-bright font-bold text-sm flex items-center gap-2 flex-wrap">
-                  {category.label}
-                  {category.pageLink && (
-                    <Link
-                      href={category.pageLink.href}
-                      onClick={(e) => e.stopPropagation()}
-                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border border-border bg-surface text-sub hover:text-bright hover:bg-surface-hover"
-                    >
-                      {category.pageLink.label} →
-                    </Link>
-                  )}
+            <div className="flex items-stretch bg-surface-dim border-b border-border">
+              <button
+                type="button"
+                onClick={() => toggleSection(category.key)}
+                className="flex-1 flex items-center gap-3 px-5 py-4 hover:bg-surface transition-colors text-left"
+                aria-expanded={isOpen}
+              >
+                <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-lg flex-shrink-0 ${colors.icon}`}>
+                  {category.icon}
                 </div>
-                <div className="text-sub text-xs mt-0.5">
-                  {category.description} <span className="text-dim">· {items.length}개 키</span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-bright font-bold text-sm">{category.label}</div>
+                  <div className="text-sub text-xs mt-0.5">
+                    {category.description} <span className="text-dim">· {items.length}개 키</span>
+                  </div>
                 </div>
-              </div>
-              <span className={`text-sub transition-transform ${isOpen ? '' : '-rotate-90'}`}>▾</span>
-            </button>
+                <span className={`text-sub transition-transform ${isOpen ? '' : '-rotate-90'}`}>▾</span>
+              </button>
+              {category.pageLink && (
+                <Link
+                  href={category.pageLink.href}
+                  className="flex items-center gap-1 px-4 border-l border-border text-[11px] font-semibold text-sub hover:text-bright hover:bg-surface transition-colors whitespace-nowrap"
+                >
+                  {category.pageLink.label} →
+                </Link>
+              )}
+            </div>
             {isOpen && (
               <div>
                 {items.map((c) => (
