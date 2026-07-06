@@ -103,8 +103,9 @@ fi
 
 # 첫 배포에서 새 앱을 추가한 뒤 pm2 save 를 하지 않으면 host reboot 후
 # pm2 resurrect 가 이전 저장된 프로세스 목록만 복원 → myfinance-mcp 실종.
-# 매 배포마다 save 로 최신 프로세스 목록 동기화.
-pm2 save --force || true
+# 매 배포마다 save 로 최신 프로세스 목록 동기화. save 실패 (권한/PM2_HOME 등)
+# 시 조용히 넘어가면 reboot 후 MCP 실종 위험 → set -e 로 abort.
+pm2 save --force
 
 echo "=== 8. PM2 — 웹/봇 재시작 ==="
 # 웹: stateless → graceful reload (zero-downtime)
