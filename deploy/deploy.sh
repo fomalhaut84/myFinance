@@ -107,9 +107,7 @@ npm ci
 echo "=== 4. DB Migrate ==="
 npx prisma migrate deploy
 
-# build 는 dist/mcp/server.cjs 를 덮어씀. MCP restart 실패 (health 미통과) 시
-# rollback 을 위해 build 전 old dist 를 백업. 성공적으로 새 MCP 가 health 통과
-# 하면 백업 삭제.
+# Build 전 old dist 백업. MCP restart 실패 (health 미통과) 시 rollback.
 DIST_MCP_BACKUP=""
 if [ -f dist/mcp/server.cjs ]; then
     DIST_MCP_BACKUP=$(mktemp -t mcp-dist.old.XXXXXX.cjs)
@@ -117,8 +115,19 @@ if [ -f dist/mcp/server.cjs ]; then
     echo "backed up existing dist/mcp/server.cjs to $DIST_MCP_BACKUP"
 fi
 
-echo "=== 5. Build ==="
-npm run build
+echo "=== 5. Build (out-of-place MCP) ==="
+# Build:mcp 를 staged 로 out-of-place 로 실행 → dist/mcp/server.cjs 는 그대로 유지.
+# subprocess spawn (bot/web AI 호출) 이 build/pre-flight 창 (~수분) 동안에도
+# old dist 를 참조하도록 보장. Pre-flight 통과 후 mv 로 atomic 활성화.
+if [ "$IS_HTTP_MCP" = "1" ]; then
+    npx --no-install next build
+    npm run build:mcp:staged
+    npm run build:bot
+else
+    # stdio 경로: 기존 flow 유지 (in-place). 이 경로는 subprocess spawn 만 사용하니
+    # build:mcp:activate 도 build 안에서 실행.
+    npm run build
+fi
 
 if [ "$IS_HTTP_MCP" = "1" ]; then
     echo "=== 6. MCP — pre-flight check (old 인스턴스 유지 상태에서 새 빌드 검증) ==="
@@ -148,8 +157,9 @@ if [ "$IS_HTTP_MCP" = "1" ]; then
         fi
     fi
 
+    # Staged build 산출물을 실행 — dist/mcp/server.cjs 는 old 인스턴스가 계속 사용 중.
     PREFLIGHT_LOG=$(mktemp -t mcp-preflight-XXXXXX.log)
-    MCP_TRANSPORT=http MCP_PORT="$PREFLIGHT_PORT" node dist/mcp/server.cjs > "$PREFLIGHT_LOG" 2>&1 &
+    MCP_TRANSPORT=http MCP_PORT="$PREFLIGHT_PORT" node dist/mcp/server.staged.cjs > "$PREFLIGHT_LOG" 2>&1 &
     PREFLIGHT_PID=$!
 
     PREFLIGHT_OK=0
@@ -167,12 +177,10 @@ if [ "$IS_HTTP_MCP" = "1" ]; then
             echo "ERROR: pre-flight 프로세스가 조기 종료. 스택 트레이스:"
             cat "$PREFLIGHT_LOG" || true
             rm -f "$PREFLIGHT_LOG"
-            # dist 롤백 — 이후 PM2 auto-restart 가 broken build 를 픽업하지 않도록.
-            if [ -n "$DIST_MCP_BACKUP" ] && [ -f "$DIST_MCP_BACKUP" ]; then
-                cp "$DIST_MCP_BACKUP" dist/mcp/server.cjs
-                echo "restored old dist/mcp/server.cjs (subsequent auto-restart 안전)"
-            fi
-            echo "old MCP 는 그대로 유지 (서비스 무중단). 배포 abort."
+            # Staged 파일 정리. Server.cjs 는 old 그대로 (덮어쓰지 않음) → dist 롤백 불필요.
+            rm -f dist/mcp/server.staged.cjs
+            echo "removed staged build. dist/mcp/server.cjs 는 old 유지 → 서비스 무중단."
+            echo "배포 abort."
             exit 1
         fi
         sleep 1
@@ -186,14 +194,16 @@ if [ "$IS_HTTP_MCP" = "1" ]; then
         echo "ERROR: pre-flight health 실패. 로그:"
         cat "$PREFLIGHT_LOG" || true
         rm -f "$PREFLIGHT_LOG"
-        if [ -n "$DIST_MCP_BACKUP" ] && [ -f "$DIST_MCP_BACKUP" ]; then
-            cp "$DIST_MCP_BACKUP" dist/mcp/server.cjs
-            echo "restored old dist/mcp/server.cjs"
-        fi
-        echo "old MCP 는 그대로 유지 (서비스 무중단). 배포 abort."
+        rm -f dist/mcp/server.staged.cjs
+        echo "removed staged build. dist/mcp/server.cjs 는 old 유지 → 서비스 무중단."
+        echo "배포 abort."
         exit 1
     fi
     rm -f "$PREFLIGHT_LOG"
+
+    # Pre-flight 통과 → staged → server.cjs atomic activate.
+    # 이 시점부터 subprocess spawn (bot AI 호출) 은 새 dist 를 로드.
+    npm run build:mcp:activate
 
     echo "=== 7. PM2 — MCP 재시작 + health 재확인 ==="
     # pre-flight 통과 후에만 실제 서비스 포트 (4200) 인스턴스 교체.
