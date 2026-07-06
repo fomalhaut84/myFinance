@@ -9,7 +9,7 @@ import { createServer as createHttpServer, type IncomingMessage, type ServerResp
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 
-import { pickStaleSessions } from './session-utils'
+import { pickStaleSessions, resolveSessionRequest } from './session-utils'
 
 import { getPortfolio, getTrades } from './tools/portfolio'
 import { getPerformance } from './tools/performance'
@@ -770,12 +770,17 @@ async function startHttp(): Promise<void> {
         const isInit = method === 'initialize'
 
         let transport: StreamableHTTPServerTransport | undefined
+        const resolution = resolveSessionRequest({
+          sessionIdHeader,
+          hasSession: sessionIdHeader ? transports.has(sessionIdHeader) : false,
+          isInitialize: isInit,
+        })
 
-        if (sessionIdHeader && transports.has(sessionIdHeader)) {
-          const entry = transports.get(sessionIdHeader)!
+        if (resolution === 'reuse') {
+          const entry = transports.get(sessionIdHeader!)!
           entry.lastActivityAt = Date.now() // TTL 갱신
           transport = entry.transport
-        } else if (isInit && !sessionIdHeader) {
+        } else if (resolution === 'create') {
           // sid 를 outer 로 캡처 → SDK 가 sessionId 를 언제 clear 하든 onclose 에서 안정적 삭제.
           let assignedSid: string | undefined
           transport = new StreamableHTTPServerTransport({
@@ -794,7 +799,19 @@ async function startHttp(): Promise<void> {
           }
           const s = createMyFinanceMcpServer()
           await s.connect(transport)
+        } else if (resolution === 'expired') {
+          // Session id 는 있지만 서버에 없음 (sweeper 정리 or 프로세스 재시작).
+          // MCP 표준: 404 로 클라이언트가 stale 세션 폐기 후 재초기화하도록 시그널.
+          // 400 은 프로토콜 오류로 오해되어 recoverable 상황을 실패로 처리하게 만듬.
+          res.writeHead(404, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({
+            jsonrpc: '2.0',
+            error: { code: -32001, message: `Session not found: ${sessionIdHeader}` },
+            id: null,
+          }))
+          return
         } else {
+          // resolution === 'invalid' — session id 없고 initialize 도 아님.
           res.writeHead(400, { 'Content-Type': 'application/json' })
           res.end(JSON.stringify({
             jsonrpc: '2.0',

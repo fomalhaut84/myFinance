@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { pickStaleSessions } from '../session-utils'
+import { pickStaleSessions, resolveSessionRequest } from '../session-utils'
 
 interface Entry { lastActivityAt: number }
 
@@ -48,5 +48,45 @@ describe('pickStaleSessions', () => {
       ['b', { lastActivityAt: NOW - 30_000 }],
     ]
     expect(pickStaleSessions(arr, NOW, TTL)).toEqual(['a'])
+  })
+})
+
+describe('resolveSessionRequest', () => {
+  it('reuse — sessionId 존재 + hasSession=true', () => {
+    expect(
+      resolveSessionRequest({ sessionIdHeader: 'abc', hasSession: true, isInitialize: false }),
+    ).toBe('reuse')
+  })
+
+  it('reuse 는 initialize 여부와 무관', () => {
+    expect(
+      resolveSessionRequest({ sessionIdHeader: 'abc', hasSession: true, isInitialize: true }),
+    ).toBe('reuse')
+  })
+
+  it('create — sessionId 없고 initialize 요청', () => {
+    expect(
+      resolveSessionRequest({ sessionIdHeader: null, hasSession: false, isInitialize: true }),
+    ).toBe('create')
+  })
+
+  it('expired — sessionId 있지만 hasSession=false (sweeper 정리 후 재요청 or 프로세스 재시작)', () => {
+    expect(
+      resolveSessionRequest({ sessionIdHeader: 'stale', hasSession: false, isInitialize: false }),
+    ).toBe('expired')
+  })
+
+  it('expired — sessionId 있고 initialize 요청이지만 hasSession=false 도 expired 로 분류', () => {
+    // Client 가 재시도로 initialize 를 보낼 수도 있지만 명시 session id 를 함께 보냈다면
+    // 이는 stale 세션에 대한 재시도로 간주하고 expired 로 응답 (클라이언트가 sid 폐기).
+    expect(
+      resolveSessionRequest({ sessionIdHeader: 'stale', hasSession: false, isInitialize: true }),
+    ).toBe('expired')
+  })
+
+  it('invalid — sessionId 없고 initialize 도 아님', () => {
+    expect(
+      resolveSessionRequest({ sessionIdHeader: null, hasSession: false, isInitialize: false }),
+    ).toBe('invalid')
   })
 })
