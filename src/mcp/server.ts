@@ -9,6 +9,8 @@ import { createServer as createHttpServer, type IncomingMessage, type ServerResp
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 
+import { pickStaleSessions } from './session-utils'
+
 import { getPortfolio, getTrades } from './tools/portfolio'
 import { getPerformance } from './tools/performance'
 import { getGiftTaxStatus, getDividends } from './tools/tax'
@@ -721,8 +723,22 @@ async function startStdio(): Promise<void> {
  * 세션마다 별도 `StreamableHTTPServerTransport` + `McpServer` 페어를 생성해
  * `mcp-session-id` 헤더로 라우팅. 단일 transport 재사용은 재초기화 reject 됨.
  */
+/**
+ * 세션 idle 상한. 이 시간 동안 요청이 없으면 sweeper 가 정리.
+ * Claude CLI 가 timeout/SIGKILL 로 죽으면 DELETE 도 onclose 도 트리거되지 않아
+ * transports Map 이 무한 누적. 방어책.
+ */
+const SESSION_IDLE_TTL_MS = 30 * 60 * 1000 // 30분
+const SESSION_SWEEP_INTERVAL_MS = 5 * 60 * 1000 // 5분
+
+interface SessionEntry {
+  transport: StreamableHTTPServerTransport
+  lastActivityAt: number
+}
+
+
 async function startHttp(): Promise<void> {
-  const transports = new Map<string, StreamableHTTPServerTransport>()
+  const transports = new Map<string, SessionEntry>()
 
   const httpServer = createHttpServer(async (req: IncomingMessage, res: ServerResponse) => {
     const url = req.url ?? '/'
@@ -756,7 +772,9 @@ async function startHttp(): Promise<void> {
         let transport: StreamableHTTPServerTransport | undefined
 
         if (sessionIdHeader && transports.has(sessionIdHeader)) {
-          transport = transports.get(sessionIdHeader)
+          const entry = transports.get(sessionIdHeader)!
+          entry.lastActivityAt = Date.now() // TTL 갱신
+          transport = entry.transport
         } else if (isInit && !sessionIdHeader) {
           // sid 를 outer 로 캡처 → SDK 가 sessionId 를 언제 clear 하든 onclose 에서 안정적 삭제.
           let assignedSid: string | undefined
@@ -764,7 +782,7 @@ async function startHttp(): Promise<void> {
             sessionIdGenerator: () => randomUUID(),
             onsessioninitialized: (sid: string) => {
               assignedSid = sid
-              transports.set(sid, transport!)
+              transports.set(sid, { transport: transport!, lastActivityAt: Date.now() })
               console.log(`[mcp] session initialized: ${sid} (total=${transports.size})`)
             },
           })
@@ -814,6 +832,22 @@ async function startHttp(): Promise<void> {
     console.log(`[mcp] health: http://${HTTP_HOST}:${HTTP_PORT}/health`)
   })
 
+  // Idle session sweeper — Claude CLI 가 timeout/SIGKILL 로 죽으면 DELETE 도
+  // onclose 도 트리거되지 않아 transports 가 누적. 주기적으로 idle 세션 close.
+  const sweeper = setInterval(() => {
+    const stale = pickStaleSessions(transports.entries(), Date.now(), SESSION_IDLE_TTL_MS)
+    if (stale.length === 0) return
+    console.log(`[mcp] sweeping ${stale.length} idle session(s) (ttl=${SESSION_IDLE_TTL_MS / 60_000}min)`)
+    for (const sid of stale) {
+      const entry = transports.get(sid)
+      if (!entry) continue
+      Promise.resolve(entry.transport.close?.()).catch(() => { /* ignore */ })
+      // onclose 콜백이 실행되어야 Map 이 정리되지만, 안전망으로 직접 삭제.
+      transports.delete(sid)
+    }
+  }, SESSION_SWEEP_INTERVAL_MS)
+  sweeper.unref?.() // 이벤트 루프 blocker 방지 (shutdown 시 정상 종료 허용)
+
   // Graceful shutdown — PM2 SIGTERM 대응.
   // httpServer.close() 는 새 연결만 거부하고 SSE 스트림은 유지되므로,
   // 활성 transport 를 명시적으로 close → transports Map 정리 → httpServer close 순서.
@@ -821,9 +855,10 @@ async function startHttp(): Promise<void> {
   const shutdown = async (signal: string) => {
     if (shuttingDown) return
     shuttingDown = true
+    clearInterval(sweeper)
     console.log(`[mcp] received ${signal}, closing ${transports.size} active session(s)`)
-    const closeTasks = Array.from(transports.values()).map((t) =>
-      Promise.resolve(t.close?.()).catch((err) => {
+    const closeTasks = Array.from(transports.values()).map((entry) =>
+      Promise.resolve(entry.transport.close?.()).catch((err) => {
         console.error('[mcp] transport close error:', err)
       }),
     )
