@@ -18,12 +18,44 @@ cd "$REPO_ROOT"
 echo "=== 1. Fetch latest ==="
 git fetch origin --tags
 
+# claude-advisor.ts 는 매번 src/lib/ai/mcp-config.json 을 읽어 Claude CLI 에
+# --mcp-config 로 넘김. 이 파일이 HTTP url 로 바뀌는 순간 실행 중인 web/bot 은
+# 즉시 새 config 를 참조하므로, MCP HTTP 서버가 뜨기 전에 checkout 하면 배포
+# 소요 시간 (수분) 동안 AI 기능이 다운됨.
+# 대응: checkout 전 old config 백업 → checkout 후 즉시 복원 → MCP HTTP 검증
+# 완료 후에만 최종 swap. 배포 중 서비스 무중단.
+MCP_CONFIG_REL="src/lib/ai/mcp-config.json"
+MCP_CONFIG_BACKUP=""
+if [ -f "$MCP_CONFIG_REL" ]; then
+    MCP_CONFIG_BACKUP=$(mktemp -t mcp-config.old.XXXXXX.json)
+    cp "$MCP_CONFIG_REL" "$MCP_CONFIG_BACKUP"
+    echo "backed up existing mcp-config to $MCP_CONFIG_BACKUP"
+fi
+
+# 실패 시 백업 정리 + old config 복원 (git tree 는 원 상태로)
+cleanup_on_error() {
+    if [ -n "$MCP_CONFIG_BACKUP" ] && [ -f "$MCP_CONFIG_BACKUP" ]; then
+        cp "$MCP_CONFIG_BACKUP" "$MCP_CONFIG_REL" 2>/dev/null || true
+        rm -f "$MCP_CONFIG_BACKUP"
+        echo "restored mcp-config from backup after failure"
+    fi
+}
+trap cleanup_on_error EXIT
+
 echo "=== 2. Checkout: $TARGET ==="
 git checkout "$TARGET"
 
 # 브랜치인 경우 pull, 태그인 경우 이미 detached HEAD
 if git symbolic-ref -q HEAD >/dev/null 2>&1; then
     git pull origin "$TARGET"
+fi
+
+# checkout 이 mcp-config.json 을 새 (HTTP) 로 바꿨다면 즉시 old (stdio) 로 되돌림.
+# 실행 중인 web/bot 은 계속 old config 로 동작 → 배포 소요 시간 동안 AI 무중단.
+# MCP HTTP 서버 준비 완료 후 (step 7 통과) 최종 swap 진행.
+if [ -n "$MCP_CONFIG_BACKUP" ] && [ -f "$MCP_CONFIG_BACKUP" ]; then
+    cp "$MCP_CONFIG_BACKUP" "$MCP_CONFIG_REL"
+    echo "restored old mcp-config for during-deploy AI availability"
 fi
 
 echo "=== 3. Install dependencies ==="
@@ -106,6 +138,18 @@ fi
 # 매 배포마다 save 로 최신 프로세스 목록 동기화. save 실패 (권한/PM2_HOME 등)
 # 시 조용히 넘어가면 reboot 후 MCP 실종 위험 → set -e 로 abort.
 pm2 save --force
+
+# MCP HTTP 서버가 검증 완료된 지금 시점에 mcp-config.json 을 최종 swap.
+# git tree 의 새 config (HTTP url) 로 되돌려 이후 AI 호출이 HTTP 로 라우팅.
+# 실행 중인 old web/bot 도 (재시작 전에도) 다음 AI 호출부터 즉시 새 config 사용.
+if [ -n "$MCP_CONFIG_BACKUP" ]; then
+    git checkout HEAD -- "$MCP_CONFIG_REL"
+    rm -f "$MCP_CONFIG_BACKUP"
+    MCP_CONFIG_BACKUP=""
+    echo "swapped mcp-config to new HTTP config"
+fi
+# 이 지점 이후 배포 실패 시 config 롤백 불필요 (MCP HTTP 는 running, 새 config 는 정합).
+trap - EXIT
 
 echo "=== 8. PM2 — 웹/봇 재시작 ==="
 # 웹: stateless → graceful reload (zero-downtime)
