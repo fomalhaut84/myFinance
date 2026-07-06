@@ -20,6 +20,10 @@ import { randomUUID } from 'node:crypto'
 const LOG_DIR = process.env.MCP_LOG_DIR ?? path.join(process.cwd(), 'logs')
 const LOG_ENABLE_FILE = process.env.MCP_LOG_TEE_FILE === '1'
 const LOG_LEVEL = process.env.MCP_LOG_LEVEL ?? 'info'
+// stdio 모드에서는 stdout 이 MCP JSON-RPC 통신 채널이라 로그가 섞이면 프로토콜 파손.
+// 로그는 stderr 로 라우팅. HTTP 모드에서는 stdout 이 자유이므로 그대로 (PM2 로그 흡수).
+const IS_STDIO_MODE = (process.env.MCP_TRANSPORT ?? 'stdio') === 'stdio'
+const LOG_OUT_STREAM = IS_STDIO_MODE ? process.stderr : process.stdout
 
 /**
  * pino multistream — stdout (항상) + 옵션 파일.
@@ -67,7 +71,7 @@ function scheduleFileRotation() {
 
 function buildStreams(): pino.StreamEntry[] {
   const streams: pino.StreamEntry[] = [
-    { level: LOG_LEVEL as pino.Level, stream: process.stdout },
+    { level: LOG_LEVEL as pino.Level, stream: LOG_OUT_STREAM },
   ]
 
   currentFileStream = openFileStream()
