@@ -18,13 +18,21 @@ cd "$REPO_ROOT"
 echo "=== 1. Fetch latest ==="
 git fetch origin --tags
 
+# 이전 배포가 실패해 mcp-config.json 이 tracked 이지만 modified 상태로 남았을 수 있음.
+# 그대로 두면 이후 checkout / pull 이 local changes 로 abort → 복구 불가.
+# 다음 checkout 이 어차피 target 내용으로 덮으므로 여기서 강제 리셋.
+MCP_CONFIG_REL="src/lib/ai/mcp-config.json"
+if ! git diff --quiet -- "$MCP_CONFIG_REL" 2>/dev/null; then
+    echo "WARN: mcp-config.json 이 dirty (이전 배포 실패 흔적). HEAD 로 리셋."
+    git checkout HEAD -- "$MCP_CONFIG_REL"
+fi
+
 # claude-advisor.ts 는 매번 src/lib/ai/mcp-config.json 을 읽어 Claude CLI 에
 # --mcp-config 로 넘김. 이 파일이 HTTP url 로 바뀌는 순간 실행 중인 web/bot 은
 # 즉시 새 config 를 참조하므로, MCP HTTP 서버가 뜨기 전에 checkout 하면 배포
 # 소요 시간 (수분) 동안 AI 기능이 다운됨.
 # 대응: checkout 전 old config 백업 → checkout 후 즉시 복원 → MCP HTTP 검증
 # 완료 후에만 최종 swap. 배포 중 서비스 무중단.
-MCP_CONFIG_REL="src/lib/ai/mcp-config.json"
 MCP_CONFIG_BACKUP=""
 if [ -f "$MCP_CONFIG_REL" ]; then
     MCP_CONFIG_BACKUP=$(mktemp -t mcp-config.old.XXXXXX.json)
@@ -32,12 +40,16 @@ if [ -f "$MCP_CONFIG_REL" ]; then
     echo "backed up existing mcp-config to $MCP_CONFIG_BACKUP"
 fi
 
-# 실패 시 백업 정리 + old config 복원 (git tree 는 원 상태로)
+# 실패 시: backup 을 tracked file 로 복원 (실행 중 web/bot 이 계속 old config 로 동작)
+# DIST_MCP_BACKUP 은 개별 failure branch 에서 이미 처리하지만 남아있으면 정리.
 cleanup_on_error() {
     if [ -n "$MCP_CONFIG_BACKUP" ] && [ -f "$MCP_CONFIG_BACKUP" ]; then
         cp "$MCP_CONFIG_BACKUP" "$MCP_CONFIG_REL" 2>/dev/null || true
         rm -f "$MCP_CONFIG_BACKUP"
-        echo "restored mcp-config from backup after failure"
+        echo "restored mcp-config from backup after failure (worktree may be dirty; next deploy 초입에서 자동 리셋)"
+    fi
+    if [ -n "$DIST_MCP_BACKUP" ] && [ -f "$DIST_MCP_BACKUP" ]; then
+        rm -f "$DIST_MCP_BACKUP"
     fi
 }
 trap cleanup_on_error EXIT
@@ -87,6 +99,16 @@ npm ci
 echo "=== 4. DB Migrate ==="
 npx prisma migrate deploy
 
+# build 는 dist/mcp/server.cjs 를 덮어씀. MCP restart 실패 (health 미통과) 시
+# rollback 을 위해 build 전 old dist 를 백업. 성공적으로 새 MCP 가 health 통과
+# 하면 백업 삭제.
+DIST_MCP_BACKUP=""
+if [ -f dist/mcp/server.cjs ]; then
+    DIST_MCP_BACKUP=$(mktemp -t mcp-dist.old.XXXXXX.cjs)
+    cp dist/mcp/server.cjs "$DIST_MCP_BACKUP"
+    echo "backed up existing dist/mcp/server.cjs to $DIST_MCP_BACKUP"
+fi
+
 echo "=== 5. Build ==="
 npm run build
 
@@ -114,6 +136,11 @@ if [ "$IS_HTTP_MCP" = "1" ]; then
             echo "ERROR: pre-flight 프로세스가 조기 종료. 스택 트레이스:"
             cat "$PREFLIGHT_LOG" || true
             rm -f "$PREFLIGHT_LOG"
+            # dist 롤백 — 이후 PM2 auto-restart 가 broken build 를 픽업하지 않도록.
+            if [ -n "$DIST_MCP_BACKUP" ] && [ -f "$DIST_MCP_BACKUP" ]; then
+                cp "$DIST_MCP_BACKUP" dist/mcp/server.cjs
+                echo "restored old dist/mcp/server.cjs (subsequent auto-restart 안전)"
+            fi
             echo "old MCP 는 그대로 유지 (서비스 무중단). 배포 abort."
             exit 1
         fi
@@ -128,6 +155,10 @@ if [ "$IS_HTTP_MCP" = "1" ]; then
         echo "ERROR: pre-flight health 실패. 로그:"
         cat "$PREFLIGHT_LOG" || true
         rm -f "$PREFLIGHT_LOG"
+        if [ -n "$DIST_MCP_BACKUP" ] && [ -f "$DIST_MCP_BACKUP" ]; then
+            cp "$DIST_MCP_BACKUP" dist/mcp/server.cjs
+            echo "restored old dist/mcp/server.cjs"
+        fi
         echo "old MCP 는 그대로 유지 (서비스 무중단). 배포 abort."
         exit 1
     fi
@@ -153,8 +184,29 @@ if [ "$IS_HTTP_MCP" = "1" ]; then
     if [ "$MCP_HEALTHY" != "1" ]; then
         echo "ERROR: MCP restart 후 health 실패 (pre-flight 는 통과했지만 실서비스 포트 문제 가능)."
         pm2 logs myfinance-mcp --lines 50 --nostream || true
-        echo "웹/봇 재시작 X (구 인스턴스 유지). 배포 abort."
+
+        # No-downtime rollback 유지: 새 dist 로 restart 했더니 health 실패 →
+        # old dist 로 되돌리고 pm2 restart 로 이전 프로세스 복구 시도.
+        if [ -n "$DIST_MCP_BACKUP" ] && [ -f "$DIST_MCP_BACKUP" ]; then
+            echo "attempting rollback: restore old dist/mcp/server.cjs + pm2 restart"
+            cp "$DIST_MCP_BACKUP" dist/mcp/server.cjs
+            pm2 restart myfinance-mcp --update-env 2>&1 | tail -5 || true
+            for i in {1..10}; do
+                if curl -sS -f -o /dev/null http://127.0.0.1:4200/health; then
+                    echo "old MCP 복구 성공 (after ${i}s) — 웹/봇 은 old 상태 유지 (재시작 skip)"
+                    break
+                fi
+                sleep 1
+            done
+        fi
+        echo "웹/봇 재시작 X. 배포 abort. mcp-config trap 이 old 로 복원."
         exit 1
+    fi
+
+    # health 성공 → 새 MCP 정상. old dist 백업 삭제.
+    if [ -n "$DIST_MCP_BACKUP" ]; then
+        rm -f "$DIST_MCP_BACKUP"
+        DIST_MCP_BACKUP=""
     fi
 
     # 첫 배포에서 새 앱을 추가한 뒤 pm2 save 를 하지 않으면 host reboot 후
@@ -183,6 +235,11 @@ else
         echo "stopping/deleting myfinance-mcp (stdio target 은 standalone MCP 불사용)"
         pm2 delete myfinance-mcp || true
         pm2 save --force
+    fi
+    # stdio path 는 dist rollback 이 불필요 → 백업 정리.
+    if [ -n "$DIST_MCP_BACKUP" ]; then
+        rm -f "$DIST_MCP_BACKUP"
+        DIST_MCP_BACKUP=""
     fi
 fi
 
