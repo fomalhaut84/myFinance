@@ -10,6 +10,7 @@ import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 
 import { pickStaleSessions, resolveSessionRequest } from './session-utils'
+import { logger, newTraceId, summarizeArgs, installCrashHandlers } from './logger'
 
 import { getPortfolio, getTrades } from './tools/portfolio'
 import { getPerformance } from './tools/performance'
@@ -52,12 +53,63 @@ const PERIODS = ['1M', '3M', '6M', '1Y', 'ALL'] as const
 /**
  * MCP server factory — 세션마다 fresh 인스턴스 필요 (multi-session HTTP 대응).
  * stdio 모드에서는 단일 호출로 충분, HTTP 모드에서는 initialize 마다 호출.
+ *
+ * server.tool 을 wrapping 하여 모든 tool 호출을 구조화 로그로 기록.
+ * (Phase 32-C — pino instrument)
  */
 export function createMyFinanceMcpServer(): McpServer {
   const server = new McpServer({
     name: 'myfinance',
     version: '1.0.0',
   })
+
+  // Monkey-patch server.tool → 각 handler 를 latency/status/traceId 로 계측.
+  // 원래 signature 다양 (arg count 4~5) 지만 handler 는 항상 마지막 인자.
+  const originalTool = server.tool.bind(server) as (...args: unknown[]) => unknown
+  ;(server as unknown as { tool: unknown }).tool = (...args: unknown[]) => {
+    if (args.length === 0) return originalTool(...args)
+    const toolName = typeof args[0] === 'string' ? args[0] : 'unknown'
+    const lastIdx = args.length - 1
+    const originalHandler = args[lastIdx]
+    if (typeof originalHandler !== 'function') return originalTool(...args)
+
+    const instrumentedHandler = async (...handlerArgs: unknown[]) => {
+      const traceId = newTraceId()
+      const start = Date.now()
+      try {
+        const result = await (originalHandler as (...a: unknown[]) => Promise<unknown>)(...handlerArgs)
+        logger.info(
+          {
+            tool: toolName,
+            traceId,
+            latency_ms: Date.now() - start,
+            status: 'ok',
+            args: summarizeArgs(handlerArgs[0]),
+          },
+          'tool_call',
+        )
+        return result
+      } catch (error) {
+        logger.error(
+          {
+            tool: toolName,
+            traceId,
+            latency_ms: Date.now() - start,
+            status: 'error',
+            args: summarizeArgs(handlerArgs[0]),
+            err: error instanceof Error
+              ? { message: error.message, stack: error.stack, name: error.name }
+              : { message: String(error) },
+          },
+          'tool_call_failed',
+        )
+        throw error
+      }
+    }
+
+    const patchedArgs = [...args.slice(0, lastIdx), instrumentedHandler]
+    return originalTool(...patchedArgs)
+  }
 
   // --- 포트폴리오 ---
 
@@ -714,7 +766,7 @@ async function startStdio(): Promise<void> {
   const server = createMyFinanceMcpServer()
   const transport = new StdioServerTransport()
   await server.connect(transport)
-  console.error('[mcp] stdio transport ready')
+  logger.info({ transport: 'stdio' }, 'transport_ready')
 }
 
 /**
@@ -788,13 +840,13 @@ async function startHttp(): Promise<void> {
             onsessioninitialized: (sid: string) => {
               assignedSid = sid
               transports.set(sid, { transport: transport!, lastActivityAt: Date.now() })
-              console.log(`[mcp] session initialized: ${sid} (total=${transports.size})`)
+              logger.info({ sid, total: transports.size }, 'session_initialized')
             },
           })
           transport.onclose = () => {
             if (assignedSid) {
               transports.delete(assignedSid)
-              console.log(`[mcp] session closed: ${assignedSid} (total=${transports.size})`)
+              logger.info({ sid: assignedSid, total: transports.size }, 'session_closed')
             }
           }
           const s = createMyFinanceMcpServer()
@@ -822,10 +874,13 @@ async function startHttp(): Promise<void> {
         }
 
         await transport!.handleRequest(req, res, body)
-        console.log(`[mcp] ${req.method} ${method} session=${sessionIdHeader ?? '(new)'} in ${Date.now() - t0}ms`)
+        logger.info(
+          { httpMethod: req.method, rpcMethod: method, sid: sessionIdHeader ?? '(new)', latency_ms: Date.now() - t0 },
+          'http_request',
+        )
         return
       } catch (error) {
-        console.error('[mcp] request handling error:', error)
+        logger.error({ err: error instanceof Error ? { message: error.message, stack: error.stack } : String(error) }, 'http_request_error')
         if (!res.headersSent) {
           res.writeHead(500, { 'Content-Type': 'application/json' })
           res.end(JSON.stringify({ error: 'internal_error' }))
@@ -840,13 +895,12 @@ async function startHttp(): Promise<void> {
 
   httpServer.on('error', (err) => {
     // EADDRINUSE 등 listen 실패 시 즉시 종료 → PM2 backoff 로 재시도 (이전 프로세스 정리 대기).
-    console.error(`[mcp] http server error:`, err)
+    logger.fatal({ err: { message: err.message, stack: err.stack } }, 'http_server_error')
     process.exit(1)
   })
 
   httpServer.listen(HTTP_PORT, HTTP_HOST, () => {
-    console.log(`[mcp] http transport listening at http://${HTTP_HOST}:${HTTP_PORT}/mcp`)
-    console.log(`[mcp] health: http://${HTTP_HOST}:${HTTP_PORT}/health`)
+    logger.info({ transport: 'http', host: HTTP_HOST, port: HTTP_PORT }, 'transport_ready')
   })
 
   // Idle session sweeper — Claude CLI 가 timeout/SIGKILL 로 죽으면 DELETE 도
@@ -854,7 +908,7 @@ async function startHttp(): Promise<void> {
   const sweeper = setInterval(() => {
     const stale = pickStaleSessions(transports.entries(), Date.now(), SESSION_IDLE_TTL_MS)
     if (stale.length === 0) return
-    console.log(`[mcp] sweeping ${stale.length} idle session(s) (ttl=${SESSION_IDLE_TTL_MS / 60_000}min)`)
+    logger.info({ count: stale.length, ttl_min: SESSION_IDLE_TTL_MS / 60_000 }, 'session_sweep')
     for (const sid of stale) {
       const entry = transports.get(sid)
       if (!entry) continue
@@ -873,16 +927,16 @@ async function startHttp(): Promise<void> {
     if (shuttingDown) return
     shuttingDown = true
     clearInterval(sweeper)
-    console.log(`[mcp] received ${signal}, closing ${transports.size} active session(s)`)
+    logger.info({ signal, active_sessions: transports.size }, 'shutdown_started')
     const closeTasks = Array.from(transports.values()).map((entry) =>
       Promise.resolve(entry.transport.close?.()).catch((err) => {
-        console.error('[mcp] transport close error:', err)
+        logger.warn({ err: err instanceof Error ? { message: err.message } : String(err) }, 'transport_close_error')
       }),
     )
     await Promise.allSettled(closeTasks)
     transports.clear()
     httpServer.close(() => {
-      console.log('[mcp] http server closed')
+      logger.info({}, 'http_server_closed')
       process.exit(0)
     })
     // Node 18.2+: 활성 소켓도 강제 종료 → SSE 스트림 lingering 방지
@@ -891,7 +945,7 @@ async function startHttp(): Promise<void> {
     }
     // 15s 이내 강제 종료 (safety net) — unref 하지 않아 이벤트 루프 blocker 로 유지.
     setTimeout(() => {
-      console.warn('[mcp] force exit after 15s')
+      logger.warn({}, 'force_exit_timeout')
       process.exit(1)
     }, 15000)
   }
@@ -900,6 +954,9 @@ async function startHttp(): Promise<void> {
 }
 
 async function main() {
+  // Uncaught/unhandled 크래시를 로그 파일에 stack 과 함께 강제 기록 (PM2 restart 별개).
+  installCrashHandlers()
+
   if (TRANSPORT_MODE === 'http') {
     await startHttp()
   } else {
@@ -908,6 +965,6 @@ async function main() {
 }
 
 main().catch((error) => {
-  console.error('MCP server error:', error)
+  logger.fatal({ err: error instanceof Error ? { message: error.message, stack: error.stack } : String(error) }, 'server_fatal')
   process.exit(1)
 })
