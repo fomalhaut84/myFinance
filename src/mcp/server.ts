@@ -1,5 +1,8 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
+import { createServer as createHttpServer, type IncomingMessage, type ServerResponse } from 'node:http'
+import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 
 import { getPortfolio, getTrades } from './tools/portfolio'
@@ -40,12 +43,17 @@ const ACCOUNT_NAMES = ['세진', '소담', '다솜', '전체'] as const
 const WRITE_ACCOUNT_NAMES = ['세진', '소담', '다솜'] as const  // '전체' 제외 (쓰기 도구용)
 const PERIODS = ['1M', '3M', '6M', '1Y', 'ALL'] as const
 
-const server = new McpServer({
-  name: 'myfinance',
-  version: '1.0.0',
-})
+/**
+ * MCP server factory — 세션마다 fresh 인스턴스 필요 (multi-session HTTP 대응).
+ * stdio 모드에서는 단일 호출로 충분, HTTP 모드에서는 initialize 마다 호출.
+ */
+export function createMyFinanceMcpServer(): McpServer {
+  const server = new McpServer({
+    name: 'myfinance',
+    version: '1.0.0',
+  })
 
-// --- 포트폴리오 ---
+  // --- 포트폴리오 ---
 
 server.tool(
   'get_portfolio',
@@ -687,11 +695,160 @@ server.tool(
   async (args) => exerciseVesting(args)
 )
 
+  return server
+}
+
 // --- 서버 시작 ---
 
-async function main() {
+const TRANSPORT_MODE = process.env.MCP_TRANSPORT ?? 'stdio'
+const HTTP_PORT = parseInt(process.env.MCP_PORT ?? '4200', 10)
+const HTTP_HOST = '127.0.0.1'
+
+async function startStdio(): Promise<void> {
+  const server = createMyFinanceMcpServer()
   const transport = new StdioServerTransport()
   await server.connect(transport)
+  console.error('[mcp] stdio transport ready')
+}
+
+/**
+ * Multi-session HTTP mode — Phase 32-A PoC 결과 반영.
+ *
+ * 세션마다 별도 `StreamableHTTPServerTransport` + `McpServer` 페어를 생성해
+ * `mcp-session-id` 헤더로 라우팅. 단일 transport 재사용은 재초기화 reject 됨.
+ */
+async function startHttp(): Promise<void> {
+  const transports = new Map<string, StreamableHTTPServerTransport>()
+
+  const httpServer = createHttpServer(async (req: IncomingMessage, res: ServerResponse) => {
+    const url = req.url ?? '/'
+
+    if (url === '/health') {
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({
+        ok: true,
+        uptime: process.uptime(),
+        sessions: transports.size,
+        version: '1.0.0',
+      }))
+      return
+    }
+
+    if (url === '/mcp' || url.startsWith('/mcp?')) {
+      const t0 = Date.now()
+      const sessionIdHeader = (req.headers['mcp-session-id'] as string | undefined) ?? null
+      try {
+        let body: unknown
+        if (req.method === 'POST') {
+          const chunks: Buffer[] = []
+          for await (const chunk of req) chunks.push(chunk as Buffer)
+          const bodyText = Buffer.concat(chunks).toString('utf-8')
+          body = bodyText ? JSON.parse(bodyText) : undefined
+        }
+
+        const method = (body as { method?: string } | undefined)?.method ?? '(no-body)'
+        const isInit = method === 'initialize'
+
+        let transport: StreamableHTTPServerTransport | undefined
+
+        if (sessionIdHeader && transports.has(sessionIdHeader)) {
+          transport = transports.get(sessionIdHeader)
+        } else if (isInit && !sessionIdHeader) {
+          // sid 를 outer 로 캡처 → SDK 가 sessionId 를 언제 clear 하든 onclose 에서 안정적 삭제.
+          let assignedSid: string | undefined
+          transport = new StreamableHTTPServerTransport({
+            sessionIdGenerator: () => randomUUID(),
+            onsessioninitialized: (sid: string) => {
+              assignedSid = sid
+              transports.set(sid, transport!)
+              console.log(`[mcp] session initialized: ${sid} (total=${transports.size})`)
+            },
+          })
+          transport.onclose = () => {
+            if (assignedSid) {
+              transports.delete(assignedSid)
+              console.log(`[mcp] session closed: ${assignedSid} (total=${transports.size})`)
+            }
+          }
+          const s = createMyFinanceMcpServer()
+          await s.connect(transport)
+        } else {
+          res.writeHead(400, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({
+            jsonrpc: '2.0',
+            error: { code: -32600, message: 'Bad Request: no session id and not initialize' },
+            id: null,
+          }))
+          return
+        }
+
+        await transport!.handleRequest(req, res, body)
+        console.log(`[mcp] ${req.method} ${method} session=${sessionIdHeader ?? '(new)'} in ${Date.now() - t0}ms`)
+        return
+      } catch (error) {
+        console.error('[mcp] request handling error:', error)
+        if (!res.headersSent) {
+          res.writeHead(500, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: 'internal_error' }))
+        }
+        return
+      }
+    }
+
+    res.writeHead(404, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ error: 'not_found', url }))
+  })
+
+  httpServer.on('error', (err) => {
+    // EADDRINUSE 등 listen 실패 시 즉시 종료 → PM2 backoff 로 재시도 (이전 프로세스 정리 대기).
+    console.error(`[mcp] http server error:`, err)
+    process.exit(1)
+  })
+
+  httpServer.listen(HTTP_PORT, HTTP_HOST, () => {
+    console.log(`[mcp] http transport listening at http://${HTTP_HOST}:${HTTP_PORT}/mcp`)
+    console.log(`[mcp] health: http://${HTTP_HOST}:${HTTP_PORT}/health`)
+  })
+
+  // Graceful shutdown — PM2 SIGTERM 대응.
+  // httpServer.close() 는 새 연결만 거부하고 SSE 스트림은 유지되므로,
+  // 활성 transport 를 명시적으로 close → transports Map 정리 → httpServer close 순서.
+  let shuttingDown = false
+  const shutdown = async (signal: string) => {
+    if (shuttingDown) return
+    shuttingDown = true
+    console.log(`[mcp] received ${signal}, closing ${transports.size} active session(s)`)
+    const closeTasks = Array.from(transports.values()).map((t) =>
+      Promise.resolve(t.close?.()).catch((err) => {
+        console.error('[mcp] transport close error:', err)
+      }),
+    )
+    await Promise.allSettled(closeTasks)
+    transports.clear()
+    httpServer.close(() => {
+      console.log('[mcp] http server closed')
+      process.exit(0)
+    })
+    // Node 18.2+: 활성 소켓도 강제 종료 → SSE 스트림 lingering 방지
+    if (typeof (httpServer as unknown as { closeAllConnections?: () => void }).closeAllConnections === 'function') {
+      ;(httpServer as unknown as { closeAllConnections: () => void }).closeAllConnections()
+    }
+    // 15s 이내 강제 종료 (safety net) — unref 하지 않아 이벤트 루프 blocker 로 유지.
+    setTimeout(() => {
+      console.warn('[mcp] force exit after 15s')
+      process.exit(1)
+    }, 15000)
+  }
+  process.on('SIGTERM', () => void shutdown('SIGTERM'))
+  process.on('SIGINT', () => void shutdown('SIGINT'))
+}
+
+async function main() {
+  if (TRANSPORT_MODE === 'http') {
+    await startHttp()
+  } else {
+    await startStdio()
+  }
 }
 
 main().catch((error) => {
