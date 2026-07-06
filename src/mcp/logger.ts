@@ -1,15 +1,15 @@
 /**
  * MCP structured logging — Phase 32-C.
  *
- * pino 기반 구조화 로그를 stdout 으로 sync 출력. PM2 가 stdout 을 캡처해
- * 파일 (`~/.pm2/logs/myfinance-mcp-out.log`) 로 저장하며, PM2 log rotation
- * (기본 pm2 logrotate 모듈) 이 일별/크기별 회전을 담당.
+ * pino 기반 구조화 로그를 sync 스트림으로 출력.
+ * - HTTP 모드: stdout (PM2 log 흡수)
+ * - stdio 모드: stderr (stdout 은 MCP JSON-RPC 채널이라 섞이면 프로토콜 파손)
  *
- * pino.transport (worker thread) 는 esbuild 번들에서 worker 파일 참조 문제로
- * 로그 유실 가능 → sync destination 만 사용.
+ * pino.transport (worker thread) 는 esbuild 번들에서 worker 파일 참조 문제로 로그 유실
+ * 가능 → sync destination + multistream 만 사용.
  *
- * 사용자용 로그 파일 (프로젝트 루트 `logs/mcp-YYYY-MM-DD.log`) 도 필요하면
- * `MCP_LOG_TEE_FILE=1` 로 sonic-boom sync stream 을 추가. 기본은 stdout only.
+ * 옵션: `MCP_LOG_TEE_FILE=1` 로 프로젝트 루트 `logs/mcp-YYYY-MM-DD.log` tee 활성화.
+ * 파일명 날짜는 KST (Asia/Seoul) 기준 — 한국 시간대 자정에 새 파일로 교체.
  */
 
 import pino from 'pino'
@@ -22,18 +22,19 @@ const LOG_ENABLE_FILE = process.env.MCP_LOG_TEE_FILE === '1'
 const LOG_LEVEL = process.env.MCP_LOG_LEVEL ?? 'info'
 // stdio 모드에서는 stdout 이 MCP JSON-RPC 통신 채널이라 로그가 섞이면 프로토콜 파손.
 // 로그는 stderr 로 라우팅. HTTP 모드에서는 stdout 이 자유이므로 그대로 (PM2 로그 흡수).
-const IS_STDIO_MODE = (process.env.MCP_TRANSPORT ?? 'stdio') === 'stdio'
+export const IS_STDIO_MODE = (process.env.MCP_TRANSPORT ?? 'stdio') === 'stdio'
 const LOG_OUT_STREAM = IS_STDIO_MODE ? process.stderr : process.stdout
 
 /**
- * pino multistream — stdout (항상) + 옵션 파일.
- * 파일 tee 는 sonic-boom sync 스트림 (기본 pino/file destination).
- * Rotation 은 PM2 or 시스템 logrotate 위임.
+ * KST 기준 오늘 날짜 (YYYY-MM-DD).
+ * UTC 기준을 쓰면 KST 자정 (UTC 15:00) 과 실제 파일명 회전 (UTC 자정, KST 09:00) 이
+ * 어긋나 KST 00:00~09:00 로그가 "전날" 파일에 append 됨 → 사후 조회 혼선. KST 로 통일.
  */
-/**
- * 자정 감지 후 파일 스트림을 새 날짜로 교체. Long-running MCP 프로세스가 24h 넘어가면
- * 이전 날짜 파일에 계속 append 되던 문제 해결. 재기록 실패해도 서비스는 stdout 로 지속.
- */
+function kstDateString(): string {
+  const kst = new Date(Date.now() + 9 * 60 * 60 * 1000)
+  return kst.toISOString().slice(0, 10)
+}
+
 let currentFileStream: pino.DestinationStream | null = null
 let currentFileDate = ''
 
@@ -41,29 +42,36 @@ function openFileStream(): pino.DestinationStream | null {
   if (!LOG_ENABLE_FILE) return null
   try {
     fs.mkdirSync(LOG_DIR, { recursive: true })
-    const today = new Date().toISOString().slice(0, 10)
-    currentFileDate = today
-    const filePath = path.join(LOG_DIR, `mcp-${today}.log`)
+    currentFileDate = kstDateString()
+    const filePath = path.join(LOG_DIR, `mcp-${currentFileDate}.log`)
     return pino.destination({ dest: filePath, sync: true, mkdir: true })
   } catch (error) {
+    // 파일 로거 초기화 실패는 stdout/stderr only 로 fallback.
+    // stdio 모드에서도 로거는 stderr 이라 프로토콜 채널과 충돌 없음.
     console.error('[mcp/logger] file tee 초기화 실패:', LOG_DIR, error)
     return null
   }
 }
 
 /**
- * 자정 넘어가면 파일 스트림 교체. 매 로그 시점 검사보다는 5분 주기 setInterval 로 관리.
+ * 자정 감지 후 파일 스트림 교체. 5분 주기 setInterval (로그 시점마다 검사 X).
+ * 순서: flushSync (in-flight write 안전) → 새 stream open → old stream end.
  */
-function scheduleFileRotation() {
+function scheduleFileRotation(): void {
   if (!LOG_ENABLE_FILE) return
   const check = setInterval(() => {
-    const today = new Date().toISOString().slice(0, 10)
+    const today = kstDateString()
     if (today !== currentFileDate && currentFileStream) {
-      // 다음 setImmediate 로 log write 완료 대기 후 stream 교체.
       const oldStream = currentFileStream
+      // 새 스트림을 먼저 만든 뒤 old 를 flush + end → 그 사이 write 는 old 로 감.
+      // wrapper 에서 currentFileStream 을 참조하므로 새 write 는 자동으로 new 로 전환.
       currentFileStream = openFileStream()
-      // 이후 로그부터 새 파일. old stream 은 close.
-      ;(oldStream as unknown as { end?: () => void }).end?.()
+      try {
+        ;(oldStream as unknown as { flushSync?: () => void }).flushSync?.()
+      } catch { /* best effort */ }
+      try {
+        ;(oldStream as unknown as { end?: () => void }).end?.()
+      } catch { /* best effort */ }
     }
   }, 5 * 60 * 1000)
   check.unref()
@@ -76,12 +84,17 @@ function buildStreams(): pino.StreamEntry[] {
 
   currentFileStream = openFileStream()
   if (currentFileStream) {
+    // Wrapper: currentFileStream 이 rotation 으로 교체돼도 새 stream 을 즉시 참조.
+    // write 실패 (rotation race / EPIPE) 는 조용히 삼킴 — 로그 시스템이 서비스에 영향 X.
     streams.push({
       level: LOG_LEVEL as pino.Level,
-      // pino.multistream 은 stream 을 lazily 참조하지 않으므로 wrapper 로 현재 stream 위임.
       stream: {
         write(chunk: string) {
-          currentFileStream?.write(chunk)
+          try {
+            currentFileStream?.write(chunk)
+          } catch {
+            // ignore — 다음 write 에서 새 stream 사용
+          }
         },
       } as pino.DestinationStream,
     })
@@ -97,9 +110,17 @@ export const logger = pino(
     formatters: {
       level: (label) => ({ level: label }),
     },
+    // Sensitive path — MCP 도구는 대부분 내부용이라 실제 노출 위험은 낮지만 defensive.
+    // 최상위 args.* 및 중첩 *.password 형태 모두 커버.
     redact: {
-      paths: ['args.password', 'args.token', 'args.secret'],
+      paths: [
+        'args.password', 'args.token', 'args.secret', 'args.apiKey',
+        '*.password', '*.token', '*.secret', '*.apiKey', '*.jwt',
+        'args.body.password', 'args.body.token',
+        'DATABASE_URL', 'TELEGRAM_BOT_TOKEN',
+      ],
       censor: '[REDACTED]',
+      remove: false,
     },
     level: LOG_LEVEL,
   },
@@ -123,22 +144,25 @@ export function summarizeArgs(args: unknown, maxLen = 200): unknown {
 }
 
 /**
- * 프로세스 크래시 핸들러 — uncaughtException / unhandledRejection 을 로그로 강제 기록.
- * PM2 auto-restart 는 별개로 로그에 stack 이 남아 사후 분석 가능.
- */
-/**
  * 파일 스트림에 buffered write flush. pino.multistream 은 flush 를 no-op 로 두므로
  * currentFileStream (sonic-boom) 의 flushSync 를 직접 호출.
  */
 function flushAll(): void {
   try {
     ;(currentFileStream as unknown as { flushSync?: () => void })?.flushSync?.()
-  } catch {
-    // ignore — best effort
-  }
+  } catch { /* best effort */ }
 }
 
+/**
+ * 프로세스 크래시 핸들러 — uncaughtException / unhandledRejection 을 로그로 강제 기록.
+ * PM2 auto-restart 와 별개로 로그에 stack 이 남아 사후 분석 가능.
+ * 부수 효과로 rotation 스케줄러도 시작. 다중 호출은 handler 중복 등록 위험 → 가드.
+ */
+let crashHandlersInstalled = false
 export function installCrashHandlers(): void {
+  if (crashHandlersInstalled) return
+  crashHandlersInstalled = true
+
   process.on('uncaughtException', (err) => {
     logger.fatal(
       { err: { message: err.message, stack: err.stack, name: err.name } },
@@ -163,6 +187,5 @@ export function installCrashHandlers(): void {
     setTimeout(() => process.exit(1), 100).unref()
   })
 
-  // 자정 넘어가면 파일 스트림 교체 (long-running 프로세스 대응).
   scheduleFileRotation()
 }
