@@ -1,3 +1,7 @@
+// 32-B: standalone PM2 프로세스로 승격 후에는 .env 를 스스로 로드해야 함
+// (기존 stdio 모드는 부모 프로세스인 bot/next 가 로드해서 상속받았음).
+// import 순서상 다른 import 보다 먼저 — Prisma / prisma client 가 DATABASE_URL 을 module load 시점 검사.
+import 'dotenv/config'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'

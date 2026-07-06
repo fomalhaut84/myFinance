@@ -35,17 +35,13 @@ npx prisma migrate deploy
 echo "=== 5. Build ==="
 npm run build
 
-echo "=== 6. PM2 Restart ==="
-# MCP 서버 먼저 (봇/웹이 붙기 전에 tool endpoint 준비). HTTP 서버라 graceful reload 가능.
+echo "=== 6. PM2 — MCP 먼저 + health 검증 ==="
+# MCP 서버를 먼저 reload 하고 health 를 확인한 뒤 웹/봇 을 재시작.
+# 순서 이유: 웹/봇 은 mcp-config.json 이 http://127.0.0.1:4200/mcp 를 가리키므로
+# MCP endpoint 가 준비되기 전에 재시작하면 AI tool 호출이 조용히 실패한 채 노출됨.
+# MCP 실패 시 abort → 이전 (구) 웹/봇 은 그대로 유지되어 서비스 안전.
 pm2 startOrReload ecosystem.config.js --only myfinance-mcp
-# 웹: stateless → graceful reload (zero-downtime)
-pm2 startOrReload ecosystem.config.js --only myfinance
-# 봇: 텔레그램 long polling 은 토큰당 1 인스턴스만 허용 → reload 시 두 봇이 겹치면
-# 409 Conflict. fork 단일 인스턴스라 hard restart 가 안전 (옛 인스턴스 stop 후 새로 spawn).
-# docs/specs/356-bot-409-conflict-fix.md 참조.
-pm2 startOrRestart ecosystem.config.js --only myfinance-bot
 
-echo "=== 7. MCP health check ==="
 # 첫 배포는 startOrReload 가 pm2 start 로 동작 — bundle load + prisma init 지연 대응 위해 최대 20s retry.
 MCP_HEALTHY=0
 for i in {1..20}; do
@@ -57,10 +53,18 @@ for i in {1..20}; do
     sleep 1
 done
 if [ "$MCP_HEALTHY" != "1" ]; then
-    echo "ERROR: MCP health check 실패 — 봇 AI 도구가 동작 안 함. 배포 abort."
+    echo "ERROR: MCP health check 실패 — 웹/봇 재시작 X (구 인스턴스 유지). 배포 abort."
     pm2 logs myfinance-mcp --lines 50 --nostream || true
     exit 1
 fi
+
+echo "=== 7. PM2 — 웹/봇 재시작 ==="
+# 웹: stateless → graceful reload (zero-downtime)
+pm2 startOrReload ecosystem.config.js --only myfinance
+# 봇: 텔레그램 long polling 은 토큰당 1 인스턴스만 허용 → reload 시 두 봇이 겹치면
+# 409 Conflict. fork 단일 인스턴스라 hard restart 가 안전 (옛 인스턴스 stop 후 새로 spawn).
+# docs/specs/356-bot-409-conflict-fix.md 참조.
+pm2 startOrRestart ecosystem.config.js --only myfinance-bot
 
 echo ""
 echo "=== Deploy complete: $TARGET ==="
