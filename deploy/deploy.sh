@@ -128,15 +128,38 @@ if [ "$IS_HTTP_MCP" = "1" ]; then
     #
     # 프로덕션 포트 4200 은 old 인스턴스가 잡고 있을 수 있으므로 임시 포트 4299 사용.
     PREFLIGHT_PORT=4299
+
+    # 이전 배포가 interrupt 되어 4299 에 좀비 프로세스가 남아있을 수 있음.
+    # 있다면 새 pre-flight 는 EADDRINUSE 로 바로 죽는데 curl 은 좀비에게 응답 받아
+    # false-positive 통과 → production MCP 를 검증 없이 교체 → 크래시 리스크.
+    # 사전에 응답 여부 체크 → 있으면 정리하거나 abort.
+    if curl -sS -f -o /dev/null "http://127.0.0.1:${PREFLIGHT_PORT}/health" 2>/dev/null; then
+        echo "WARN: pre-flight port ${PREFLIGHT_PORT} 이 이미 응답 중 (좀비 프로세스 의심)."
+        # port 로 lsof 조회해 정리 시도. 실패해도 계속 — 이후 PID liveness 로 재검증.
+        if command -v lsof >/dev/null 2>&1; then
+            STALE_PIDS=$(lsof -ti "tcp:${PREFLIGHT_PORT}" 2>/dev/null || true)
+            if [ -n "$STALE_PIDS" ]; then
+                echo "stopping stale process(es): $STALE_PIDS"
+                echo "$STALE_PIDS" | xargs -r kill -TERM 2>/dev/null || true
+                sleep 2
+                # 여전히 살아있으면 SIGKILL
+                echo "$STALE_PIDS" | xargs -r kill -KILL 2>/dev/null || true
+            fi
+        fi
+    fi
+
     PREFLIGHT_LOG=$(mktemp -t mcp-preflight-XXXXXX.log)
     MCP_TRANSPORT=http MCP_PORT="$PREFLIGHT_PORT" node dist/mcp/server.cjs > "$PREFLIGHT_LOG" 2>&1 &
     PREFLIGHT_PID=$!
 
     PREFLIGHT_OK=0
     for i in {1..20}; do
-        if curl -sS -f -o /dev/null "http://127.0.0.1:${PREFLIGHT_PORT}/health"; then
+        # curl 성공 자체는 응답만 확인 — spawned PID 가 실제로 살아있는지도 병행 검증.
+        # (좀비 정리 이후에도 재바인딩 실패 등 예외 방어)
+        if curl -sS -f -o /dev/null "http://127.0.0.1:${PREFLIGHT_PORT}/health" \
+           && kill -0 "$PREFLIGHT_PID" 2>/dev/null; then
             PREFLIGHT_OK=1
-            echo "pre-flight OK (after ${i}s)"
+            echo "pre-flight OK (after ${i}s, PID $PREFLIGHT_PID alive)"
             break
         fi
         # 프로세스가 이미 죽었는지 확인 (early exit 감지)
