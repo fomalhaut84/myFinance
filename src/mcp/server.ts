@@ -51,6 +51,22 @@ const WRITE_ACCOUNT_NAMES = ['세진', '소담', '다솜'] as const  // '전체'
 const PERIODS = ['1M', '3M', '6M', '1Y', 'ALL'] as const
 
 /**
+ * MCP tool result 에서 에러 메시지 추출. toolError() 가 반환하는
+ * { isError: true, content: [{ type:'text', text:'오류: ...' }] } 형태 대상.
+ */
+function extractErrorMessage(result: unknown): string {
+  if (!result || typeof result !== 'object') return 'unknown tool error'
+  const content = (result as { content?: unknown }).content
+  if (Array.isArray(content) && content.length > 0) {
+    const first = content[0]
+    if (typeof first === 'object' && first !== null && typeof (first as { text?: unknown }).text === 'string') {
+      return (first as { text: string }).text
+    }
+  }
+  return 'unknown tool error'
+}
+
+/**
  * MCP server factory — 세션마다 fresh 인스턴스 필요 (multi-session HTTP 대응).
  * stdio 모드에서는 단일 호출로 충분, HTTP 모드에서는 initialize 마다 호출.
  *
@@ -78,16 +94,38 @@ export function createMyFinanceMcpServer(): McpServer {
       const start = Date.now()
       try {
         const result = await (originalHandler as (...a: unknown[]) => Promise<unknown>)(...handlerArgs)
-        logger.info(
-          {
-            tool: toolName,
-            traceId,
-            latency_ms: Date.now() - start,
-            status: 'ok',
-            args: summarizeArgs(handlerArgs[0]),
-          },
-          'tool_call',
-        )
+        // MCP tool 은 실패를 두 방식으로 시그널: (1) throw, (2) toolError() 가 반환하는
+        // { isError: true, content } (resolved result). 후자는 utils.ts 의 SAFE_BUSINESS_PATTERNS
+        // 계열 사용자 오류로 자주 발생. status 를 result.isError 로 판단하지 않으면
+        // 실패가 로그에서 성공으로 오분류 → 에러율 모니터링 사각지대.
+        const isError = typeof result === 'object'
+          && result !== null
+          && (result as { isError?: unknown }).isError === true
+        if (isError) {
+          const errMsg = extractErrorMessage(result)
+          logger.warn(
+            {
+              tool: toolName,
+              traceId,
+              latency_ms: Date.now() - start,
+              status: 'error',
+              args: summarizeArgs(handlerArgs[0]),
+              err: { message: errMsg, kind: 'tool_reported_error' },
+            },
+            'tool_call_reported_error',
+          )
+        } else {
+          logger.info(
+            {
+              tool: toolName,
+              traceId,
+              latency_ms: Date.now() - start,
+              status: 'ok',
+              args: summarizeArgs(handlerArgs[0]),
+            },
+            'tool_call',
+          )
+        }
         return result
       } catch (error) {
         logger.error(

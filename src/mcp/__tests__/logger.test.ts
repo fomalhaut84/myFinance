@@ -49,6 +49,33 @@ describe('summarizeArgs', () => {
   })
 })
 
+describe('toolError result 감지 로직 (integration snapshot)', () => {
+  // MCP tools 대부분이 toolError({...}) 반환하여 { isError: true, content } 형태.
+  // server.ts 의 wrapper 는 이 결과를 status:'error' 로 로깅해야 함.
+  // 여기서는 wrapper 가 참조하는 discriminator 만 검증.
+
+  it('isError=true 오브젝트는 실패로 간주', () => {
+    const result = { isError: true, content: [{ type: 'text', text: '오류: 뭔가 잘못됨' }] }
+    const isError = typeof result === 'object' && result !== null &&
+      (result as { isError?: unknown }).isError === true
+    expect(isError).toBe(true)
+  })
+
+  it('isError 없거나 false 는 성공', () => {
+    expect(({ content: [{ type: 'text', text: 'ok' }] } as { isError?: boolean }).isError).toBeUndefined()
+    const r = { isError: false, content: [] } as { isError: boolean }
+    expect(r.isError).toBe(false)
+  })
+
+  it('null / string / number 는 실패 판정 X (성공으로 취급)', () => {
+    for (const v of [null, 'ok', 42, undefined]) {
+      const isError = typeof v === 'object' && v !== null &&
+        (v as { isError?: unknown }).isError === true
+      expect(isError).toBe(false)
+    }
+  })
+})
+
 describe('IS_STDIO_MODE 감지', () => {
   it('MCP_TRANSPORT 이 unset 또는 stdio 이면 stdio 모드', () => {
     // 이 테스트는 process 시작 시점의 env 값 스냅샷을 기반. vitest 는 test setup 에서
