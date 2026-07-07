@@ -196,7 +196,10 @@ export function installCrashHandlers(): void {
       'uncaught_exception',
     )
     flushAll()
-    setTimeout(() => process.exit(1), 100).unref()
+    // 부팅 초입 (server.listen 이전) 크래시는 이벤트 루프 유지 없이 unref 된 timer 를
+    // 건너뛰어 process 가 exit 0 로 자연 종료 → PM2 가 실패로 인지 못 함. unref 제거하고
+    // sync flush 후에도 timer 콜백 확실히 실행되도록 유지.
+    setTimeout(() => process.exit(1), 100)
   })
   process.on('unhandledRejection', (reason) => {
     logger.fatal(
@@ -210,8 +213,9 @@ export function installCrashHandlers(): void {
     )
     flushAll()
     // Node v15+ 는 unhandled rejection 시 프로세스 자동 종료지만 --unhandled-rejections
-    // flag 로 warn 모드일 수 있어 방어적으로 flush + exit.
-    setTimeout(() => process.exit(1), 100).unref()
+    // flag 로 warn 모드일 수 있어 방어적으로 exit. unref 하면 initial crash 에서
+    // event loop 유지 없이 skip → process exit 0. unref 없이 유지.
+    setTimeout(() => process.exit(1), 100)
   })
 
   scheduleFileRotation()

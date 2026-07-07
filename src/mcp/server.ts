@@ -128,27 +128,27 @@ function logSdkBypass(ctx: ToolCallContext): void {
     | undefined
   if (!response) {
     logger.warn(
-      { tool: ctx.toolName ?? 'unknown', args: summarizeArgs(ctx.args), err: { message: 'handler not invoked (no response captured)', kind: 'sdk_error' } },
+      { tool: ctx.toolName ?? 'unknown', args: summarizeArgs(ctx.args), status: 'error', err: { message: 'handler not invoked (no response captured)', kind: 'sdk_error' } },
       'tool_call_sdk_error',
     )
     return
   }
   if (response.error) {
     logger.warn(
-      { tool: ctx.toolName ?? 'unknown', args: summarizeArgs(ctx.args), err: { code: response.error.code, message: response.error.message, kind: 'sdk_error' } },
+      { tool: ctx.toolName ?? 'unknown', args: summarizeArgs(ctx.args), status: 'error', err: { code: response.error.code, message: response.error.message, kind: 'sdk_error' } },
       'tool_call_sdk_error',
     )
     return
   }
   if (response.result) {
     logger.warn(
-      { tool: ctx.toolName ?? 'unknown', args: summarizeArgs(ctx.args), err: { message: extractErrorMessage(response.result), kind: 'sdk_error' } },
+      { tool: ctx.toolName ?? 'unknown', args: summarizeArgs(ctx.args), status: 'error', err: { message: extractErrorMessage(response.result), kind: 'sdk_error' } },
       'tool_call_sdk_error',
     )
     return
   }
   logger.warn(
-    { tool: ctx.toolName ?? 'unknown', args: summarizeArgs(ctx.args), err: { message: 'handler not invoked (empty response)', kind: 'sdk_error' } },
+    { tool: ctx.toolName ?? 'unknown', args: summarizeArgs(ctx.args), status: 'error', err: { message: 'handler not invoked (empty response)', kind: 'sdk_error' } },
     'tool_call_sdk_error',
   )
 }
