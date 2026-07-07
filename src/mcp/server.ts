@@ -51,6 +51,61 @@ const WRITE_ACCOUNT_NAMES = ['세진', '소담', '다솜'] as const  // '전체'
 const PERIODS = ['1M', '3M', '6M', '1Y', 'ALL'] as const
 
 /**
+ * tools/call SSE 응답 body 를 파싱해 SDK 가 handler 우회로 반환한 error 를 감지.
+ * SSE 포맷: `event: message\ndata: {json}\n\n`. 여러 message frame 반복 가능.
+ * error 형태: JSON-RPC error (invalid params 등) 또는 result.isError=true (SDK 가 툴 미존재
+ * 감지 등). 여기서 감지된 실패는 wrapper 가 놓치는 케이스로 sdk_error 로 별도 기록.
+ */
+function detectSdkToolCallError(
+  chunks: Buffer[],
+  toolName: string | undefined,
+  toolArgs: unknown,
+): void {
+  const raw = Buffer.concat(chunks).toString('utf8')
+  const dataMatches = raw.matchAll(/^data: (.+)$/gm)
+  for (const m of dataMatches) {
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(m[1])
+    } catch {
+      continue
+    }
+    if (!parsed || typeof parsed !== 'object') continue
+    const rpcError = (parsed as { error?: { code?: number; message?: string } }).error
+    if (rpcError) {
+      logger.warn(
+        {
+          tool: toolName ?? 'unknown',
+          args: summarizeArgs(toolArgs),
+          err: { code: rpcError.code, message: rpcError.message, kind: 'sdk_error' },
+        },
+        'tool_call_sdk_error',
+      )
+      return
+    }
+    const result = (parsed as { result?: { isError?: unknown; content?: unknown } }).result
+    if (result && (result as { isError?: unknown }).isError === true) {
+      // isError=true 는 두 경로에서 발생:
+      //   (a) handler 안에서 toolError() 반환 → wrapper 가 tool_call_reported_error 로 이미 기록
+      //   (b) SDK 가 handler 도달 전 실패 (tool 미존재, Zod 검증) → wrapper 우회 → 로그 유실
+      // 구분: SDK 는 "MCP error -XXXXX: ..." 패턴으로 응답, handler 는 자유 형식.
+      const msg = extractErrorMessage(result)
+      if (/^MCP error /.test(msg)) {
+        logger.warn(
+          {
+            tool: toolName ?? 'unknown',
+            args: summarizeArgs(toolArgs),
+            err: { message: msg, kind: 'sdk_error' },
+          },
+          'tool_call_sdk_error',
+        )
+      }
+      return
+    }
+  }
+}
+
+/**
  * MCP tool result 에서 에러 메시지 추출. toolError() 가 반환하는
  * { isError: true, content: [{ type:'text', text:'오류: ...' }] } 형태 대상.
  */
@@ -911,11 +966,45 @@ async function startHttp(): Promise<void> {
           return
         }
 
+        // tools/call 요청은 SDK 가 handler 호출 전에 Zod 스키마 검증. Invalid args 는
+        // wrapper 를 우회해 SDK 가 직접 error result 를 응답 → tool_call/tool_call_reported_error
+        // 로그 유실. 대응: response body 를 tap 해서 error/isError 감지 후 sdk_error 로 별도 기록.
+        const isToolsCall = method === 'tools/call'
+        const bodyParams = (body as { params?: { name?: string; arguments?: unknown } } | undefined)?.params
+        const tapChunks: Buffer[] = []
+        if (isToolsCall) {
+          const origWrite = res.write.bind(res)
+          const origEnd = res.end.bind(res)
+          const toBuffer = (c: unknown): Buffer | null => {
+            if (!c) return null
+            if (Buffer.isBuffer(c)) return c
+            if (c instanceof Uint8Array) return Buffer.from(c.buffer, c.byteOffset, c.byteLength)
+            if (typeof c === 'string') return Buffer.from(c, 'utf8')
+            return null
+          }
+          res.write = ((chunk: unknown, ...rest: unknown[]) => {
+            const buf = toBuffer(chunk)
+            if (buf) tapChunks.push(buf)
+            // @ts-expect-error — passthrough tuple 처리
+            return origWrite(chunk, ...rest)
+          }) as typeof res.write
+          res.end = ((chunk?: unknown, ...rest: unknown[]) => {
+            const buf = toBuffer(chunk)
+            if (buf) tapChunks.push(buf)
+            // @ts-expect-error — passthrough tuple 처리
+            return origEnd(chunk, ...rest)
+          }) as typeof res.end
+        }
+
         await transport!.handleRequest(req, res, body)
         logger.info(
           { httpMethod: req.method, rpcMethod: method, sid: sessionIdHeader ?? '(new)', latency_ms: Date.now() - t0 },
           'http_request',
         )
+
+        if (isToolsCall && tapChunks.length > 0) {
+          detectSdkToolCallError(tapChunks, bodyParams?.name, bodyParams?.arguments)
+        }
         return
       } catch (error) {
         logger.error({ err: error instanceof Error ? { message: error.message, stack: error.stack } : String(error) }, 'http_request_error')
