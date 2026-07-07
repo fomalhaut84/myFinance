@@ -61,64 +61,94 @@ interface ToolCallContext {
   handlerInvoked: boolean
   toolName?: string
   args?: unknown
+  /** SDK 가 handler 우회로 전송하는 response 를 캡처하여 후처리 시 파싱 */
+  capturedResponse?: unknown
 }
 const toolCallStorage = new AsyncLocalStorage<ToolCallContext>()
 
 /**
- * SDK 가 handler 우회로 반환한 실패 응답을 파싱해 로그로 기록.
- * 호출자가 handlerInvoked=false 인 tools/call 에서만 호출하므로, isError 여부 무관하게
- * 응답 내용을 extract 해 tool_call_sdk_error 로 남긴다.
- * SSE 포맷: `event: message\ndata: {json}\n\n`. 여러 frame 가능.
- * error 형태: JSON-RPC error (invalid params 등) 또는 result.isError=true.
+ * Transport 를 instrument — tools/call 요청마다 AsyncLocalStorage context 를 열고
+ * transport.send 를 tap 해 SDK 응답 캡처. Stdio/HTTP transport 모두 공통.
+ * server.connect(transport) 이후 호출해야 SDK 가 등록한 onmessage 를 감쌈.
  */
-function detectSdkToolCallError(
-  chunks: Buffer[],
-  toolName: string | undefined,
-  toolArgs: unknown,
-): void {
-  const raw = Buffer.concat(chunks).toString('utf8')
-  const dataMatches = raw.matchAll(/^data: (.+)$/gm)
-  for (const m of dataMatches) {
-    let parsed: unknown
-    try {
-      parsed = JSON.parse(m[1])
-    } catch {
-      continue
-    }
-    if (!parsed || typeof parsed !== 'object') continue
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function attachToolCallInstrumentation(transport: any): void {
+  const originalOnMessage = transport.onmessage as
+    | ((msg: unknown, extra?: unknown) => void | Promise<void>)
+    | undefined
+  const originalSend = transport.send.bind(transport) as (
+    msg: unknown,
+    ...rest: unknown[]
+  ) => Promise<void>
 
-    // Case 1: JSON-RPC top-level error (드묾, SDK 대부분 isError result 로 응답)
-    const rpcError = (parsed as { error?: { code?: number; message?: string } }).error
-    if (rpcError) {
-      logger.warn(
-        {
-          tool: toolName ?? 'unknown',
-          args: summarizeArgs(toolArgs),
-          err: { code: rpcError.code, message: rpcError.message, kind: 'sdk_error' },
-        },
-        'tool_call_sdk_error',
-      )
-      return
+  transport.send = async (msg: unknown, ...rest: unknown[]) => {
+    // Send 는 onmessage 반환 이후 별도 tick 에서 호출될 수 있어, onmessage 완료 시점에
+    // 응답 존재 여부를 판단하기 어려움. 그래서 send 시점에 직접 검사:
+    // ctx 존재 + handler 미실행 + error/isError 응답 → SDK 우회. 여기서 로그.
+    const ctx = toolCallStorage.getStore()
+    if (ctx && !ctx.handlerInvoked && msg && typeof msg === 'object') {
+      const asObj = msg as { result?: { isError?: unknown }; error?: unknown }
+      if (asObj.error || (asObj.result && (asObj.result as { isError?: unknown }).isError === true)) {
+        ctx.capturedResponse = msg
+        logSdkBypass(ctx)
+      }
     }
+    return originalSend(msg, ...rest)
+  }
 
-    // Case 2: result.isError=true — SDK 가 handler 도달 전 실패 (Zod, 미등록 tool 등).
-    // handlerInvoked 로 이미 확정된 상태이므로 prefix 검사 없이 그대로 로깅.
-    const result = (parsed as { result?: { isError?: unknown; content?: unknown } }).result
-    if (result && (result as { isError?: unknown }).isError === true) {
-      logger.warn(
-        {
-          tool: toolName ?? 'unknown',
-          args: summarizeArgs(toolArgs),
-          err: { message: extractErrorMessage(result), kind: 'sdk_error' },
-        },
-        'tool_call_sdk_error',
-      )
-      return
+  if (originalOnMessage) {
+    transport.onmessage = async (msg: unknown, extra?: unknown) => {
+      const req = msg as { method?: string; params?: { name?: string; arguments?: unknown } } | undefined
+      if (req?.method === 'tools/call') {
+        const ctx: ToolCallContext = {
+          handlerInvoked: false,
+          toolName: req.params?.name,
+          args: req.params?.arguments,
+        }
+        // AsyncLocalStorage 로 send/handler wrapper 가 context 공유. onmessage 완료 후에도
+        // send 가 별도 tick 에서 실행되지만 context 는 유지됨 (Node ALS 는 promise chain
+        // 을 통해 전파).
+        await toolCallStorage.run(ctx, async () => {
+          await originalOnMessage(msg, extra)
+        })
+      } else {
+        await originalOnMessage(msg, extra)
+      }
     }
   }
-  // Body 를 파싱할 수 없는 경우도 handler 우회 사실은 확실 → 최소 로그.
+}
+
+/**
+ * Handler 우회로 SDK 가 전송한 response 에서 에러 정보 추출 → tool_call_sdk_error 로 로깅.
+ * Transport 계층 (JSON message) 대상이라 HTTP SSE 파싱 불필요.
+ */
+function logSdkBypass(ctx: ToolCallContext): void {
+  const response = ctx.capturedResponse as
+    | { result?: { isError?: unknown; content?: unknown }; error?: { code?: number; message?: string } }
+    | undefined
+  if (!response) {
+    logger.warn(
+      { tool: ctx.toolName ?? 'unknown', args: summarizeArgs(ctx.args), err: { message: 'handler not invoked (no response captured)', kind: 'sdk_error' } },
+      'tool_call_sdk_error',
+    )
+    return
+  }
+  if (response.error) {
+    logger.warn(
+      { tool: ctx.toolName ?? 'unknown', args: summarizeArgs(ctx.args), err: { code: response.error.code, message: response.error.message, kind: 'sdk_error' } },
+      'tool_call_sdk_error',
+    )
+    return
+  }
+  if (response.result) {
+    logger.warn(
+      { tool: ctx.toolName ?? 'unknown', args: summarizeArgs(ctx.args), err: { message: extractErrorMessage(response.result), kind: 'sdk_error' } },
+      'tool_call_sdk_error',
+    )
+    return
+  }
   logger.warn(
-    { tool: toolName ?? 'unknown', args: summarizeArgs(toolArgs), err: { message: 'handler not invoked (unparseable response)', kind: 'sdk_error' } },
+    { tool: ctx.toolName ?? 'unknown', args: summarizeArgs(ctx.args), err: { message: 'handler not invoked (empty response)', kind: 'sdk_error' } },
     'tool_call_sdk_error',
   )
 }
@@ -881,6 +911,7 @@ async function startStdio(): Promise<void> {
   const server = createMyFinanceMcpServer()
   const transport = new StdioServerTransport()
   await server.connect(transport)
+  attachToolCallInstrumentation(transport)
   logger.info({ transport: 'stdio' }, 'transport_ready')
 }
 
@@ -966,6 +997,7 @@ async function startHttp(): Promise<void> {
           }
           const s = createMyFinanceMcpServer()
           await s.connect(transport)
+          attachToolCallInstrumentation(transport)
         } else if (resolution === 'expired') {
           // Session id 는 있지만 서버에 없음 (sweeper 정리 or 프로세스 재시작).
           // MCP 표준: 404 로 클라이언트가 stale 세션 폐기 후 재초기화하도록 시그널.
@@ -988,61 +1020,13 @@ async function startHttp(): Promise<void> {
           return
         }
 
-        // tools/call 요청은 SDK 가 handler 호출 전에 Zod 스키마 검증. Invalid args 나
-        // 미등록 tool 은 wrapper 를 우회해 SDK 가 직접 { isError:true } 응답 → 로그 유실.
-        // 대응:
-        //  (1) AsyncLocalStorage 로 handler 실행 여부 tracking → 미실행이면 SDK 우회 확정
-        //  (2) response body 를 tap 해서 정확한 에러 텍스트 추출
-        // prefix 매칭 heuristic (예: "MCP error") 은 Zod 검증 실패 ("Input validation error")
-        // 등 다른 SDK 응답을 놓치므로 execution flag 기반 판정으로 대체.
-        const isToolsCall = method === 'tools/call'
-        const bodyParams = (body as { params?: { name?: string; arguments?: unknown } } | undefined)?.params
-        const tapChunks: Buffer[] = []
-        const toolCallCtx: ToolCallContext = {
-          handlerInvoked: false,
-          toolName: bodyParams?.name,
-          args: bodyParams?.arguments,
-        }
-        if (isToolsCall) {
-          const origWrite = res.write.bind(res)
-          const origEnd = res.end.bind(res)
-          const toBuffer = (c: unknown): Buffer | null => {
-            if (!c) return null
-            if (Buffer.isBuffer(c)) return c
-            if (c instanceof Uint8Array) return Buffer.from(c.buffer, c.byteOffset, c.byteLength)
-            if (typeof c === 'string') return Buffer.from(c, 'utf8')
-            return null
-          }
-          res.write = ((chunk: unknown, ...rest: unknown[]) => {
-            const buf = toBuffer(chunk)
-            if (buf) tapChunks.push(buf)
-            // @ts-expect-error — passthrough tuple 처리
-            return origWrite(chunk, ...rest)
-          }) as typeof res.write
-          res.end = ((chunk?: unknown, ...rest: unknown[]) => {
-            const buf = toBuffer(chunk)
-            if (buf) tapChunks.push(buf)
-            // @ts-expect-error — passthrough tuple 처리
-            return origEnd(chunk, ...rest)
-          }) as typeof res.end
-        }
-
-        if (isToolsCall) {
-          await toolCallStorage.run(toolCallCtx, async () => {
-            await transport!.handleRequest(req, res, body)
-          })
-        } else {
-          await transport!.handleRequest(req, res, body)
-        }
+        // tools/call SDK 우회 (Zod 검증 실패, 미등록 tool 등) 감지는 transport 계층에서
+        // attachToolCallInstrumentation 이 담당 (stdio/HTTP 공통). 여기서는 그대로 위임.
+        await transport!.handleRequest(req, res, body)
         logger.info(
           { httpMethod: req.method, rpcMethod: method, sid: sessionIdHeader ?? '(new)', latency_ms: Date.now() - t0 },
           'http_request',
         )
-
-        if (isToolsCall && !toolCallCtx.handlerInvoked) {
-          // Handler 가 실행 안 됨 → SDK 가 직접 응답 (Zod 검증 실패, 미등록 tool 등).
-          detectSdkToolCallError(tapChunks, toolCallCtx.toolName, toolCallCtx.args)
-        }
         return
       } catch (error) {
         logger.error({ err: error instanceof Error ? { message: error.message, stack: error.stack } : String(error) }, 'http_request_error')

@@ -35,8 +35,32 @@ function kstDateString(): string {
   return kst.toISOString().slice(0, 10)
 }
 
+const LOG_RETENTION_DAYS = parseInt(process.env.MCP_LOG_RETENTION_DAYS ?? '14', 10)
+
 let currentFileStream: pino.DestinationStream | null = null
 let currentFileDate = ''
+
+/**
+ * 오래된 로그 파일 정리 — 14일 (기본) 초과 시 삭제.
+ * 매 rotation 시점과 부팅 시점에 실행. 실패는 조용히 넘김 (best effort).
+ */
+function pruneOldLogs(): void {
+  if (!LOG_ENABLE_FILE || LOG_RETENTION_DAYS <= 0) return
+  const cutoffMs = Date.now() - LOG_RETENTION_DAYS * 24 * 60 * 60 * 1000
+  try {
+    const files = fs.readdirSync(LOG_DIR)
+    for (const f of files) {
+      if (!f.startsWith('mcp-') || !f.endsWith('.log')) continue
+      const filePath = path.join(LOG_DIR, f)
+      try {
+        const stat = fs.statSync(filePath)
+        if (stat.mtimeMs < cutoffMs) {
+          fs.unlinkSync(filePath)
+        }
+      } catch { /* per-file ignore */ }
+    }
+  } catch { /* dir read ignore */ }
+}
 
 function openFileStream(): pino.DestinationStream | null {
   if (!LOG_ENABLE_FILE) return null
@@ -44,7 +68,10 @@ function openFileStream(): pino.DestinationStream | null {
     fs.mkdirSync(LOG_DIR, { recursive: true })
     currentFileDate = kstDateString()
     const filePath = path.join(LOG_DIR, `mcp-${currentFileDate}.log`)
-    return pino.destination({ dest: filePath, sync: true, mkdir: true })
+    const stream = pino.destination({ dest: filePath, sync: true, mkdir: true })
+    // 새 파일 생성 후 오래된 파일 정리 (14일 retention).
+    pruneOldLogs()
+    return stream
   } catch (error) {
     // 파일 로거 초기화 실패는 stdout/stderr only 로 fallback.
     // stdio 모드에서도 로거는 stderr 이라 프로토콜 채널과 충돌 없음.
