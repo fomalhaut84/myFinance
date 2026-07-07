@@ -9,6 +9,8 @@ import { createServer as createHttpServer, type IncomingMessage, type ServerResp
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 
+import { AsyncLocalStorage } from 'node:async_hooks'
+
 import { pickStaleSessions, resolveSessionRequest } from './session-utils'
 import { logger, newTraceId, summarizeArgs, installCrashHandlers } from './logger'
 
@@ -51,10 +53,23 @@ const WRITE_ACCOUNT_NAMES = ['세진', '소담', '다솜'] as const  // '전체'
 const PERIODS = ['1M', '3M', '6M', '1Y', 'ALL'] as const
 
 /**
- * tools/call SSE 응답 body 를 파싱해 SDK 가 handler 우회로 반환한 error 를 감지.
- * SSE 포맷: `event: message\ndata: {json}\n\n`. 여러 message frame 반복 가능.
- * error 형태: JSON-RPC error (invalid params 등) 또는 result.isError=true (SDK 가 툴 미존재
- * 감지 등). 여기서 감지된 실패는 wrapper 가 놓치는 케이스로 sdk_error 로 별도 기록.
+ * tools/call 요청 처리 스코프. Handler wrapper 가 실행됐는지 tracking 해
+ * SDK 우회 (Zod 검증 실패, 미등록 tool 등) 를 확실히 감지. prefix 매칭 heuristic
+ * 대신 AsyncLocalStorage 로 정확한 실행 여부 확인.
+ */
+interface ToolCallContext {
+  handlerInvoked: boolean
+  toolName?: string
+  args?: unknown
+}
+const toolCallStorage = new AsyncLocalStorage<ToolCallContext>()
+
+/**
+ * SDK 가 handler 우회로 반환한 실패 응답을 파싱해 로그로 기록.
+ * 호출자가 handlerInvoked=false 인 tools/call 에서만 호출하므로, isError 여부 무관하게
+ * 응답 내용을 extract 해 tool_call_sdk_error 로 남긴다.
+ * SSE 포맷: `event: message\ndata: {json}\n\n`. 여러 frame 가능.
+ * error 형태: JSON-RPC error (invalid params 등) 또는 result.isError=true.
  */
 function detectSdkToolCallError(
   chunks: Buffer[],
@@ -71,6 +86,8 @@ function detectSdkToolCallError(
       continue
     }
     if (!parsed || typeof parsed !== 'object') continue
+
+    // Case 1: JSON-RPC top-level error (드묾, SDK 대부분 isError result 로 응답)
     const rpcError = (parsed as { error?: { code?: number; message?: string } }).error
     if (rpcError) {
       logger.warn(
@@ -83,26 +100,27 @@ function detectSdkToolCallError(
       )
       return
     }
+
+    // Case 2: result.isError=true — SDK 가 handler 도달 전 실패 (Zod, 미등록 tool 등).
+    // handlerInvoked 로 이미 확정된 상태이므로 prefix 검사 없이 그대로 로깅.
     const result = (parsed as { result?: { isError?: unknown; content?: unknown } }).result
     if (result && (result as { isError?: unknown }).isError === true) {
-      // isError=true 는 두 경로에서 발생:
-      //   (a) handler 안에서 toolError() 반환 → wrapper 가 tool_call_reported_error 로 이미 기록
-      //   (b) SDK 가 handler 도달 전 실패 (tool 미존재, Zod 검증) → wrapper 우회 → 로그 유실
-      // 구분: SDK 는 "MCP error -XXXXX: ..." 패턴으로 응답, handler 는 자유 형식.
-      const msg = extractErrorMessage(result)
-      if (/^MCP error /.test(msg)) {
-        logger.warn(
-          {
-            tool: toolName ?? 'unknown',
-            args: summarizeArgs(toolArgs),
-            err: { message: msg, kind: 'sdk_error' },
-          },
-          'tool_call_sdk_error',
-        )
-      }
+      logger.warn(
+        {
+          tool: toolName ?? 'unknown',
+          args: summarizeArgs(toolArgs),
+          err: { message: extractErrorMessage(result), kind: 'sdk_error' },
+        },
+        'tool_call_sdk_error',
+      )
       return
     }
   }
+  // Body 를 파싱할 수 없는 경우도 handler 우회 사실은 확실 → 최소 로그.
+  logger.warn(
+    { tool: toolName ?? 'unknown', args: summarizeArgs(toolArgs), err: { message: 'handler not invoked (unparseable response)', kind: 'sdk_error' } },
+    'tool_call_sdk_error',
+  )
 }
 
 /**
@@ -145,6 +163,10 @@ export function createMyFinanceMcpServer(): McpServer {
     if (typeof originalHandler !== 'function') return originalTool(...args)
 
     const instrumentedHandler = async (...handlerArgs: unknown[]) => {
+      // AsyncLocalStorage 로 handler 실행 여부 시그널링 (SDK 우회 감지용).
+      const ctx = toolCallStorage.getStore()
+      if (ctx) ctx.handlerInvoked = true
+
       const traceId = newTraceId()
       const start = Date.now()
       try {
@@ -966,12 +988,21 @@ async function startHttp(): Promise<void> {
           return
         }
 
-        // tools/call 요청은 SDK 가 handler 호출 전에 Zod 스키마 검증. Invalid args 는
-        // wrapper 를 우회해 SDK 가 직접 error result 를 응답 → tool_call/tool_call_reported_error
-        // 로그 유실. 대응: response body 를 tap 해서 error/isError 감지 후 sdk_error 로 별도 기록.
+        // tools/call 요청은 SDK 가 handler 호출 전에 Zod 스키마 검증. Invalid args 나
+        // 미등록 tool 은 wrapper 를 우회해 SDK 가 직접 { isError:true } 응답 → 로그 유실.
+        // 대응:
+        //  (1) AsyncLocalStorage 로 handler 실행 여부 tracking → 미실행이면 SDK 우회 확정
+        //  (2) response body 를 tap 해서 정확한 에러 텍스트 추출
+        // prefix 매칭 heuristic (예: "MCP error") 은 Zod 검증 실패 ("Input validation error")
+        // 등 다른 SDK 응답을 놓치므로 execution flag 기반 판정으로 대체.
         const isToolsCall = method === 'tools/call'
         const bodyParams = (body as { params?: { name?: string; arguments?: unknown } } | undefined)?.params
         const tapChunks: Buffer[] = []
+        const toolCallCtx: ToolCallContext = {
+          handlerInvoked: false,
+          toolName: bodyParams?.name,
+          args: bodyParams?.arguments,
+        }
         if (isToolsCall) {
           const origWrite = res.write.bind(res)
           const origEnd = res.end.bind(res)
@@ -996,14 +1027,21 @@ async function startHttp(): Promise<void> {
           }) as typeof res.end
         }
 
-        await transport!.handleRequest(req, res, body)
+        if (isToolsCall) {
+          await toolCallStorage.run(toolCallCtx, async () => {
+            await transport!.handleRequest(req, res, body)
+          })
+        } else {
+          await transport!.handleRequest(req, res, body)
+        }
         logger.info(
           { httpMethod: req.method, rpcMethod: method, sid: sessionIdHeader ?? '(new)', latency_ms: Date.now() - t0 },
           'http_request',
         )
 
-        if (isToolsCall && tapChunks.length > 0) {
-          detectSdkToolCallError(tapChunks, bodyParams?.name, bodyParams?.arguments)
+        if (isToolsCall && !toolCallCtx.handlerInvoked) {
+          // Handler 가 실행 안 됨 → SDK 가 직접 응답 (Zod 검증 실패, 미등록 tool 등).
+          detectSdkToolCallError(tapChunks, toolCallCtx.toolName, toolCallCtx.args)
         }
         return
       } catch (error) {
