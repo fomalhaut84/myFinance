@@ -24,6 +24,11 @@ export interface PriceSnapshot {
 export interface MarketSnapshot {
   price: PriceSnapshot | null
   ta: TAReport | null
+  /**
+   * Phase 34-A (#419): 어닝 캘린더 스냅샷. `earnings_within_days` 조건 평가용.
+   * cron 이 upsert 한 EarningsCache 를 호출자가 주입.
+   */
+  earnings?: { nextEarningsDate: Date | null } | null
 }
 
 /**
@@ -74,6 +79,32 @@ function kstWeekday(now: Date): WeekdayCode {
   const dow = kst.getUTCDay() // 0=Sun, 1=Mon, ...
   const codes: WeekdayCode[] = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT']
   return codes[dow]
+}
+
+/**
+ * Pure — 다음 어닝까지 남은 KST 캘린더 일수.
+ * 양쪽을 KST 자정으로 정규화한 뒤 계산 → 사용자 인식 ("D-3") 과 정합.
+ *
+ * 예시 (KST):
+ *   - now 07-08 15:00, earnings 07-08 20:00 → 0  (오늘)
+ *   - now 07-08 15:00, earnings 07-09 00:30 → 1  (내일)
+ *   - now 07-08 00:01, earnings 07-11 23:59 → 3  (D-3)
+ *   - now 07-08 23:59, earnings 07-09 00:00 → 1  (자정 넘어감 → D-1)
+ * 이미 지난 어닝 (KST 어제 이전) → `null` → evaluator false.
+ */
+export function daysUntilEarnings(nextEarningsDate: Date | null | undefined, now: Date): number | null {
+  if (!nextEarningsDate) return null
+  // KST 자정 정규화: UTC 를 +9h shift 한 뒤 시/분/초/ms 를 0 으로 잘라 KST 자정 UTC 표현.
+  const kstMidnightUtc = (d: Date): number => {
+    const shifted = d.getTime() + 9 * 60 * 60 * 1000
+    const day = Math.floor(shifted / (24 * 60 * 60 * 1000))
+    return day * 24 * 60 * 60 * 1000
+  }
+  const nowDay = kstMidnightUtc(now)
+  const earningsDay = kstMidnightUtc(nextEarningsDate)
+  const diffDays = Math.round((earningsDay - nowDay) / (24 * 60 * 60 * 1000))
+  if (diffDays < 0) return null
+  return diffDays
 }
 
 /** "HH:MM~HH:MM" 파싱 → 분 단위 [start, end]. wraparound (end < start) 도 허용. */
@@ -162,6 +193,14 @@ export function evaluateCondition(
       if (cond.value === 'HELD') return isHeld
       if (cond.value === 'NOT_HELD') return !isHeld
       return false
+    }
+    // ── v3 (Phase 34-A #419) —
+    case 'earnings_within_days': {
+      if (typeof cond.value !== 'number') return false
+      const days = daysUntilEarnings(snapshot.earnings?.nextEarningsDate ?? null, context.now)
+      // 데이터 없음 or 과거 어닝만 있음 → false (안전측 — pre-earnings 회피 조건 사용 흐름 상)
+      if (days == null) return false
+      return compareNumeric(days, cond.operator, cond.value)
     }
     default:
       return false
