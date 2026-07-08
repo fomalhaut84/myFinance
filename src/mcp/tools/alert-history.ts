@@ -56,7 +56,10 @@ export async function listAlertHistory(args: ListAlertHistoryArgs = {}) {
       }
       where.kind = args.kind
     }
-    if (args.ticker) where.ticker = args.ticker
+    // 티커 정규화 — MCP 호출자가 자연어로 소문자/공백 포함으로 넘길 수 있음.
+    // Prisma 저장값은 대문자 정규화된 상태 (holdings/watchlist/priceCache 파이프라인).
+    // 미정규화 exact match 는 rows 있어도 "이력 없음" 오탐 (Codex #423 P2).
+    if (args.ticker) where.ticker = args.ticker.trim().toUpperCase()
 
     const from = parseISO(args.from)
     const to = parseISO(args.to)

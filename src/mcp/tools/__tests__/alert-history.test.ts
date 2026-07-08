@@ -79,6 +79,15 @@ describe('listAlertHistory', () => {
     expect(call?.orderBy).toEqual({ firedAt: 'desc' })
   })
 
+  it('ticker 소문자/공백 입력을 trim().toUpperCase() 로 정규화 (Codex #423 P2 회귀 방지)', async () => {
+    const { prisma } = await import('@/lib/prisma')
+    vi.mocked(prisma.alertHistory.findMany).mockResolvedValueOnce([])
+
+    await listAlertHistory({ ticker: '  aapl ' })
+    const call = vi.mocked(prisma.alertHistory.findMany).mock.calls[0][0]
+    expect((call?.where as { ticker?: string })?.ticker).toBe('AAPL')
+  })
+
   it('결과 rendering — 시간/kind 라벨/티커/상태/메시지 포함', async () => {
     const { prisma } = await import('@/lib/prisma')
     vi.mocked(prisma.alertHistory.findMany).mockResolvedValueOnce([
