@@ -83,7 +83,7 @@ describe('groupByCategory', () => {
 })
 
 describe('ALERT_KEY_CATEGORY 완전성', () => {
-  it('실제 사용 중인 10개 키가 모두 매핑됨', () => {
+  it('실제 사용 중인 키들이 모두 매핑됨', () => {
     const knownKeys = [
       'price_drop_pct',
       'price_surge_pct',
@@ -95,10 +95,24 @@ describe('ALERT_KEY_CATEGORY 완전성', () => {
       'ta_ai_guide',
       'active_review',
       'custom_strategy_alerts',
+      'watchlist_market_hours_only',
     ]
     for (const key of knownKeys) {
       expect(ALERT_KEY_CATEGORY[key]).toBeDefined()
     }
+  })
+})
+
+describe('watchlist_market_hours_only (Phase 33-D / #415)', () => {
+  it('price 카테고리로 분류', () => {
+    expect(categoryOf('watchlist_market_hours_only')).toBe('price')
+  })
+
+  it('toggle 입력 타입 (off 기본값과 무관하게 매핑 override 적용)', () => {
+    // value 가 아직 upsert 되지 않아 빈 문자열이더라도 override 로 toggle 반환.
+    expect(inputTypeOf('watchlist_market_hours_only', '')).toBe('toggle')
+    expect(inputTypeOf('watchlist_market_hours_only', 'off')).toBe('toggle')
+    expect(inputTypeOf('watchlist_market_hours_only', 'on')).toBe('toggle')
   })
 })
 
