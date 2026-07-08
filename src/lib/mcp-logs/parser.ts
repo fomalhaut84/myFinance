@@ -83,18 +83,22 @@ export function applyFilter(entries: LogEntry[], f: Filter): LogEntry[] {
 }
 
 /**
- * 대용량 파일 대응 — 텍스트 마지막 N 라인만 잘라서 반환. 정확한 line 번호 유지 위해
- * offset (원본 파일 총 라인 수 대비 시작 인덱스) 도 함께 반환.
+ * 대용량 파일 대응 — 텍스트 마지막 N 라인만 잘라서 반환.
+ * pino 로그는 매 record 끝에 `\n` → `split('\n')` 결과 마지막 원소가 `''` (빈 문자열).
+ * 이 empty 를 count/slice 에 포함하면 실제 반환되는 라인이 1개 부족 (Codex #425 P3).
+ * → 후행 empty 를 잘라낸 "effective" 배열로 count 와 slice 를 수행.
+ * 원본 파일 line 번호를 유지하기 위해 시작 라인 번호 (1-indexed) 도 함께 반환.
  */
 export function tailN(text: string, maxLines: number): { text: string; startLineNo: number } {
   if (maxLines <= 0) return { text: '', startLineNo: 1 }
   const lines = text.split('\n')
-  const nonEmpty = lines.filter((l) => l.trim())
-  if (nonEmpty.length <= maxLines) return { text, startLineNo: 1 }
-  // 마지막 maxLines 개 라인만
-  const start = lines.length - maxLines
+  const effective = lines.length > 0 && lines[lines.length - 1] === ''
+    ? lines.slice(0, -1)
+    : lines
+  if (effective.length <= maxLines) return { text, startLineNo: 1 }
+  const start = effective.length - maxLines
   return {
-    text: lines.slice(start).join('\n'),
+    text: effective.slice(start).join('\n'),
     startLineNo: start + 1,
   }
 }

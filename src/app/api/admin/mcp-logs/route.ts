@@ -59,6 +59,8 @@ export async function GET(req: NextRequest) {
         date: dateRaw,
         crash,
         fileExists: result.fileExists,
+        fileSize: result.fileSize,
+        truncatedHead: result.truncatedHead,
         totalLines: result.totalLines,
         scannedLines: result.scanned,
         tailStartLineNo: result.startLineNo,

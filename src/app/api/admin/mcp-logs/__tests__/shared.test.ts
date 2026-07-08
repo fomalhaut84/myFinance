@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { todayKst, isValidDateStr, logFilePath } from '../shared'
+import { todayKst, isValidDateStr, logFilePath, stripLeadingPartialLine } from '../shared'
 
 describe('todayKst', () => {
   it('UTC 00:00 → KST 09:00 → 같은 날짜', () => {
@@ -42,5 +42,23 @@ describe('logFilePath', () => {
 
   it('crash=true → mcp-crash-<date>.log', () => {
     expect(logFilePath('2026-07-08', true)).toMatch(/mcp-crash-2026-07-08\.log$/)
+  })
+})
+
+describe('stripLeadingPartialLine (Codex #425 P2 회귀 방지)', () => {
+  it('첫 `\\n` 이전 partial 을 잘라내고 이후 라인만 반환', () => {
+    expect(stripLeadingPartialLine('partial-fragment\nfull1\nfull2\n')).toBe('full1\nfull2\n')
+  })
+
+  it('newline 이 하나도 없으면 빈 문자열 (전부 partial 로 간주 → 무시)', () => {
+    expect(stripLeadingPartialLine('no newline in here')).toBe('')
+  })
+
+  it('첫 문자가 newline 이면 그 뒤 전체 반환', () => {
+    expect(stripLeadingPartialLine('\nabc')).toBe('abc')
+  })
+
+  it('빈 입력 → 빈', () => {
+    expect(stripLeadingPartialLine('')).toBe('')
   })
 })

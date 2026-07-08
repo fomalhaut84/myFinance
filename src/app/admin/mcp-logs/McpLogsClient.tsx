@@ -23,6 +23,8 @@ interface ListResponse {
   date: string
   crash: boolean
   fileExists: boolean
+  fileSize: number
+  truncatedHead: boolean
   totalLines: number
   scannedLines: number
   tailStartLineNo: number
@@ -298,9 +300,14 @@ export default function McpLogsClient() {
             {crash ? '크래시 로그' : '전체 로그'}
           </div>
           <div className="text-[11px] text-sub">
-            {total.toLocaleString()} / 파일 {meta?.totalLines?.toLocaleString() ?? '?'} 라인
+            {total.toLocaleString()} / {meta?.truncatedHead ? '창' : '파일'} {meta?.totalLines?.toLocaleString() ?? '?'} 라인
             {meta && meta.scannedLines < meta.totalLines && (
               <span className="ml-2 text-amber-400">(최근 {meta.scannedLines.toLocaleString()} 만 스캔)</span>
+            )}
+            {meta?.truncatedHead && (
+              <span className="ml-2 text-amber-400">
+                (파일 {(meta.fileSize / (1024 * 1024)).toFixed(1)}MB — EOF 8MB 창만 로드)
+              </span>
             )}
           </div>
           <div className="ml-auto text-[11px] text-sub">

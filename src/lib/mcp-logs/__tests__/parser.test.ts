@@ -78,6 +78,20 @@ describe('tailN', () => {
     expect(r.startLineNo).toBe(4)
   })
 
+  it('후행 newline 이 있어도 실제 라인 수 기준으로 tail (Codex #425 P3 회귀 방지)', () => {
+    // pino 로그는 매 record 끝에 `\n` → split 결과 마지막 원소는 ''.
+    // 이전 구현은 이 empty 원소를 슬라이스에 포함해 실제 반환 라인이 1개 부족했음.
+    const r = tailN('a\nb\nc\n', 2)
+    expect(r.text).toBe('b\nc')
+    expect(r.startLineNo).toBe(2)
+  })
+
+  it('후행 newline + 정확히 maxLines → 원본 반환', () => {
+    const r = tailN('a\nb\n', 2)
+    expect(r.text).toBe('a\nb\n')
+    expect(r.startLineNo).toBe(1)
+  })
+
   it('maxLines=0 → 빈', () => {
     expect(tailN('a\nb', 0).text).toBe('')
   })
