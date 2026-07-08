@@ -5,6 +5,7 @@ import {
   categoryOf,
   inputTypeOf,
   groupByCategory,
+  isToggleKey,
 } from '../categories'
 
 describe('categoryOf', () => {
@@ -100,6 +101,28 @@ describe('ALERT_KEY_CATEGORY 완전성', () => {
     for (const key of knownKeys) {
       expect(ALERT_KEY_CATEGORY[key]).toBeDefined()
     }
+  })
+})
+
+describe('isToggleKey (bot 커맨드 / MCP 툴 단일 진실)', () => {
+  it('토글 매핑된 키는 true (활성/비활성 알림 정책)', () => {
+    // Codex #422 P2: 이 목록이 곧 텔레그램 봇 커맨드 / MCP updateAlertConfig 에서
+    // on/off 허용 여부를 결정. 새 토글 추가 시 반드시 여기 포함되어야 회귀 방지.
+    expect(isToggleKey('active_review')).toBe(true)
+    expect(isToggleKey('ta_ai_guide')).toBe(true)
+    expect(isToggleKey('custom_strategy_alerts')).toBe(true)
+    expect(isToggleKey('watchlist_market_hours_only')).toBe(true)
+  })
+
+  it('숫자/문자 키는 false', () => {
+    expect(isToggleKey('price_drop_pct')).toBe(false)
+    expect(isToggleKey('daily_summary_hour')).toBe(false)
+    expect(isToggleKey('fx_change_krw')).toBe(false)
+  })
+
+  it('알려지지 않은 키는 false', () => {
+    expect(isToggleKey('unknown_key_xyz')).toBe(false)
+    expect(isToggleKey('')).toBe(false)
   })
 })
 
