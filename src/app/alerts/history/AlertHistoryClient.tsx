@@ -88,7 +88,14 @@ export default function AlertHistoryClient() {
         setTotal(listJson?.meta?.total ?? 0)
         setStats(statsJson?.data ?? null)
       } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : '알림 이력 조회 중 오류')
+        if (!cancelled) {
+          setError(e instanceof Error ? e.message : '알림 이력 조회 중 오류')
+          // Codex #424 P2 (2회차): 필터/페이지 refresh 실패 시 이전 rows/total/stats 를
+          // 그대로 두면 새 필터에 대해 stale 한 데이터 + 에러가 동시에 보임 → 초기화.
+          setRows([])
+          setTotal(0)
+          setStats(null)
+        }
       } finally {
         if (!cancelled) setLoading(false)
       }
