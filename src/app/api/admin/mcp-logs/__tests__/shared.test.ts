@@ -33,6 +33,16 @@ describe('isValidDateStr', () => {
   it('잘못된 날짜 값 → false', () => {
     expect(isValidDateStr('2026-13-40')).toBe(false)
   })
+
+  it('캘린더 무효 날짜는 false (Codex #425 P3 회귀 방지)', () => {
+    // JS Date 는 정규화해서 2026-03-03 으로 파싱 → isNaN 은 false. 명시적으로 거부해야 함.
+    expect(isValidDateStr('2026-02-31')).toBe(false)
+    expect(isValidDateStr('2026-04-31')).toBe(false)  // 4월은 30일까지
+    expect(isValidDateStr('2025-02-29')).toBe(false)  // 평년
+    expect(isValidDateStr('2024-02-29')).toBe(true)   // 윤년 OK
+    expect(isValidDateStr('2026-00-01')).toBe(false)  // 월 0
+    expect(isValidDateStr('2026-01-00')).toBe(false)  // 일 0
+  })
 })
 
 describe('logFilePath', () => {

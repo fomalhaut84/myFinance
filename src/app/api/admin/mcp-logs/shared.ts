@@ -37,11 +37,22 @@ export function logFilePath(date: string, crash = false): string {
   return path.join(LOG_DIR, name)
 }
 
-/** YYYY-MM-DD 형식 검증 */
+/**
+ * YYYY-MM-DD 형식 검증 (Codex #425 P3 반영).
+ * `new Date('2026-02-31...')` 은 `2026-03-03` 으로 정규화되어 `isNaN` 이 false → 통과됨.
+ * 파싱 결과 y/m/d 가 입력값과 동일한지 재확인해 캘린더 무효 날짜를 거부.
+ */
 export function isValidDateStr(s: string): boolean {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false
-  const d = new Date(`${s}T00:00:00Z`)
-  return !Number.isNaN(d.getTime())
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s)
+  if (!m) return false
+  const year = Number(m[1])
+  const month = Number(m[2])
+  const day = Number(m[3])
+  const d = new Date(Date.UTC(year, month - 1, day))
+  if (Number.isNaN(d.getTime())) return false
+  return d.getUTCFullYear() === year
+    && d.getUTCMonth() + 1 === month
+    && d.getUTCDate() === day
 }
 
 export interface LoadOptions {
