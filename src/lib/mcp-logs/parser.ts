@@ -13,7 +13,7 @@ export interface LogEntry {
   msg?: string
   tool?: string
   args?: unknown
-  duration_ms?: number
+  latency_ms?: number
   traceId?: string
   status?: string
   err?: unknown
@@ -101,7 +101,7 @@ export function tailN(text: string, maxLines: number): { text: string; startLine
 
 /**
  * 집계용 통계.
- * `latency` 는 tool_call 만 대상 (duration_ms 있는 항목).
+ * `latency` 는 tool_call 만 대상 (latency_ms 있는 항목).
  */
 export interface Stats {
   total: number
@@ -138,9 +138,9 @@ export function computeStats(entries: LogEntry[]): Stats {
       if (e.status === 'error' || ERROR_LEVELS.has(e.level)) row.errors++
       byToolMap.set(e.tool, row)
 
-      if (e.msg === 'tool_call' && typeof e.duration_ms === 'number') {
+      if (e.msg === 'tool_call' && typeof e.latency_ms === 'number') {
         const arr = latencyByToolRaw.get(e.tool) ?? []
-        arr.push(e.duration_ms)
+        arr.push(e.latency_ms)
         latencyByToolRaw.set(e.tool, arr)
       }
     }

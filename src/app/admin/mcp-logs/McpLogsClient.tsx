@@ -9,7 +9,7 @@ interface LogRow {
   msg?: string
   tool?: string
   args?: unknown
-  duration_ms?: number
+  latency_ms?: number
   traceId?: string
   status?: string
   err?: unknown
@@ -339,8 +339,8 @@ export default function McpLogsClient() {
                         {r.tool}
                       </span>
                     )}
-                    {typeof r.duration_ms === 'number' && (
-                      <span className="text-sub text-[11px] tabular-nums">{formatDuration(r.duration_ms)}</span>
+                    {typeof r.latency_ms === 'number' && (
+                      <span className="text-sub text-[11px] tabular-nums">{formatDuration(r.latency_ms)}</span>
                     )}
                     {r.traceId && (
                       <span className="text-dim text-[11px] font-mono ml-auto">t:{r.traceId}</span>

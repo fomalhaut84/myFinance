@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { parseLines, applyFilter, tailN, computeStats } from '../parser'
 
 const SAMPLE = [
-  JSON.stringify({ level: 'info', time: '2026-07-08T01:00:00Z', pid: 1, service: 'mcp', msg: 'tool_call', tool: 'get_portfolio', args: { x: 1 }, duration_ms: 42, traceId: 'abcd1234', status: 'ok' }),
-  JSON.stringify({ level: 'info', time: '2026-07-08T01:00:01Z', pid: 1, service: 'mcp', msg: 'tool_call', tool: 'get_portfolio', duration_ms: 60, traceId: 'ffff0000', status: 'ok' }),
+  JSON.stringify({ level: 'info', time: '2026-07-08T01:00:00Z', pid: 1, service: 'mcp', msg: 'tool_call', tool: 'get_portfolio', args: { x: 1 }, latency_ms: 42, traceId: 'abcd1234', status: 'ok' }),
+  JSON.stringify({ level: 'info', time: '2026-07-08T01:00:01Z', pid: 1, service: 'mcp', msg: 'tool_call', tool: 'get_portfolio', latency_ms: 60, traceId: 'ffff0000', status: 'ok' }),
   JSON.stringify({ level: 'warn', time: '2026-07-08T01:00:02Z', pid: 1, service: 'mcp', msg: 'tool_call_reported_error', tool: 'get_trades', status: 'error', err: { kind: 'reported', message: '보유수량 부족' }, traceId: 'aaaa0001' }),
   JSON.stringify({ level: 'error', time: '2026-07-08T01:00:03Z', pid: 1, service: 'mcp', msg: 'http_request_error', err: { message: 'oops' } }),
   JSON.stringify({ level: 'fatal', time: '2026-07-08T01:00:04Z', pid: 1, service: 'mcp', msg: 'http_server_error', err: { message: 'bind EADDRINUSE' } }),
@@ -114,7 +114,7 @@ describe('computeStats', () => {
     expect(trades.errors).toBe(1) // reported_error (warn + status=error)
   })
 
-  it('latencyByTool 은 tool_call + duration_ms 있는 항목만', () => {
+  it('latencyByTool 은 tool_call + latency_ms 있는 항목만', () => {
     const portfolio = stats.latencyByTool.find((b) => b.tool === 'get_portfolio')!
     expect(portfolio.count).toBe(2)
     expect(portfolio.avg_ms).toBe(51) // (42 + 60) / 2 = 51

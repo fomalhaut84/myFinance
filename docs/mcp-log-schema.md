@@ -29,7 +29,7 @@ MCP tool 호출 성공 (handler 정상 return).
 |---|---|---|
 | `tool` | string | 호출된 tool 이름 (예: `get_portfolio`) |
 | `args` | object | 인자 요약. 200자 초과 시 `{ _truncated: true, preview }` |
-| `duration_ms` | number | handler 실행 시간 (밀리초) |
+| `latency_ms` | number | handler 실행 시간 (밀리초) |
 | `traceId` | string | 8자 hex (`newTraceId`) — 요청 상관관계 |
 | `status` | string | 항상 `"ok"` |
 
@@ -39,10 +39,22 @@ Handler 가 `toolError({...})` 로 정상 반환 (biz error).
 | 필드 | 추가 |
 |---|---|
 | `status` | `"error"` |
-| `err.kind` | `"reported"` |
+| `err.kind` | `"tool_reported_error"` |
 | `err.message` | handler 가 반환한 사용자 대상 메시지 |
 
-`tool` / `args` / `duration_ms` / `traceId` 는 tool_call 과 동일.
+`tool` / `args` / `traceId` 는 tool_call 과 동일.
+
+### `tool_call_failed` (error)
+Handler 가 예외를 throw. instrumentation wrapper 가 rethrow 전에 기록.
+
+| 필드 | 값 |
+|---|---|
+| `tool` | tool 이름 |
+| `args` | summarizeArgs 결과 |
+| `latency_ms` | throw 발생 시점까지의 시간 |
+| `traceId` | 8자 hex |
+| `status` | `"error"` |
+| `err.name` / `err.message` / `err.stack` | 예외 정보 |
 
 ### `tool_call_sdk_error` / `sdk_error` (warn)
 Handler 가 실행 전/후 SDK 레벨 오류 (Zod 검증 실패, 미등록 tool, empty response 등).
@@ -72,6 +84,16 @@ HTTP 서버 자체 부팅/binding 오류 (예: `EADDRINUSE`). **crash 파일에�
 |---|---|
 | `err.message` | 예: `bind EADDRINUSE 127.0.0.1:4210` |
 | `err.stack` | 스택 |
+
+### `http_request` (info)
+HTTP 모드에서 SDK 로 위임한 요청 처리 완료.
+
+| 필드 | 값 |
+|---|---|
+| `httpMethod` | `GET` / `POST` 등 |
+| `rpcMethod` | JSON-RPC method (`tools/call`, `initialize` 등) |
+| `sid` | 세션 ID (신규는 `(new)`) |
+| `latency_ms` | 요청 처리 시간 |
 
 ### `http_request_error` (error)
 개별 HTTP 요청 처리 중 예외 (transport 이벤트 등).
@@ -125,6 +147,7 @@ SIGTERM/SIGINT 처리.
 **"MCP tool 호출이 실패하는데 원인이 뭐지?"**
 1. `grep '"msg":"tool_call_sdk_error"' logs/mcp-*.log` → SDK 우회 실패 (스키마 오류 등)
 2. `grep '"msg":"tool_call_reported_error"' logs/mcp-*.log` → 비즈니스 예외 (사용자 대상 메시지)
+3. `grep '"msg":"tool_call_failed"' logs/mcp-*.log` → handler 가 throw 한 예외 (stack 포함)
 
 **"서버가 재시작됐다."**
 1. `logs/mcp-crash-YYYY-MM-DD.log` 열기 → fatal 만 있음
