@@ -8,7 +8,7 @@ import { NextRequest } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { ok, fail } from '@/lib/api-response'
 import type { Prisma } from '@prisma/client'
-import { KNOWN_KINDS, parseISOOrNull, kstDateKey, buildKstDayBuckets } from '../shared'
+import { parseISOOrNull, parseKindsParam, buildKstDayBuckets, kstDateKey } from '../shared'
 
 const DEFAULT_LOOKBACK_DAYS = 7
 
@@ -17,13 +17,13 @@ export const dynamic = 'force-dynamic'
 export async function GET(req: NextRequest) {
   try {
     const url = req.nextUrl
-    const kind = url.searchParams.get('kind')?.trim() || undefined
+    const { kinds, invalid } = parseKindsParam(url.searchParams)
     const rawTicker = url.searchParams.get('ticker')?.trim() || undefined
     const fromStr = url.searchParams.get('from')?.trim() || undefined
     const toStr = url.searchParams.get('to')?.trim() || undefined
 
-    if (kind && !KNOWN_KINDS.has(kind)) {
-      return fail(`알 수 없는 kind: ${kind}`, 400)
+    if (invalid.length > 0) {
+      return fail(`알 수 없는 kind: ${invalid.join(', ')}`, 400)
     }
     const from = parseISOOrNull(fromStr)
     const to = parseISOOrNull(toStr)
@@ -37,7 +37,8 @@ export async function GET(req: NextRequest) {
     const where: Prisma.AlertHistoryWhereInput = {
       firedAt: { gte: effectiveFrom, lte: effectiveTo },
     }
-    if (kind) where.kind = kind
+    if (kinds.length === 1) where.kind = kinds[0]
+    else if (kinds.length > 1) where.kind = { in: kinds }
     if (rawTicker) where.ticker = rawTicker.toUpperCase()
 
     const rows = await prisma.alertHistory.findMany({

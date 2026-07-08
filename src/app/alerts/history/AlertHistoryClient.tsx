@@ -49,12 +49,9 @@ export default function AlertHistoryClient() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  // 단일 kind 필터: 여러 선택 시 클라이언트 사이드 필터링 (API 는 단일 kind 만 지원)
-  // 이력 수집 초기라 서버 데이터는 소량 → 클라 필터가 실사용에 충분. 대용량 축적 후 재검토.
-  const kindQueryParam = useMemo(() => {
-    if (selectedKinds.size === 1) return Array.from(selectedKinds)[0]
-    return undefined
-  }, [selectedKinds])
+  // Codex P2 (#417 PR #424): 다중 kind 를 서버 쿼리로 전달 (`?kind=a&kind=b`) →
+  // API 가 `in` 절로 필터 + 페이지네이션·집계가 정합. 클라 사이드 후처리 제거.
+  const kindsKey = useMemo(() => Array.from(selectedKinds).sort().join(','), [selectedKinds])
 
   useEffect(() => {
     let cancelled = false
@@ -63,16 +60,18 @@ export default function AlertHistoryClient() {
       setError(null)
       try {
         const from = periodFromISO(days)
+        const kinds = kindsKey ? kindsKey.split(',') : []
+
         const listParams = new URLSearchParams()
         listParams.set('from', from)
         listParams.set('limit', String(PAGE_SIZE))
         listParams.set('offset', String(offset))
-        if (kindQueryParam) listParams.set('kind', kindQueryParam)
+        for (const k of kinds) listParams.append('kind', k)
         if (tickerFilter) listParams.set('ticker', tickerFilter)
 
         const statsParams = new URLSearchParams()
         statsParams.set('from', from)
-        if (kindQueryParam) statsParams.set('kind', kindQueryParam)
+        for (const k of kinds) statsParams.append('kind', k)
         if (tickerFilter) statsParams.set('ticker', tickerFilter)
 
         const [listRes, statsRes] = await Promise.all([
@@ -85,16 +84,8 @@ export default function AlertHistoryClient() {
         if (!listRes.ok) throw new Error(listJson?.error ?? '이력 조회 실패')
         if (!statsRes.ok) throw new Error(statsJson?.error ?? '통계 조회 실패')
 
-        let fetchedRows: HistoryRow[] = listJson?.data ?? []
-        const fetchedTotal: number = listJson?.meta?.total ?? 0
-
-        // 클라 사이드 다중 kind 필터 (선택 2개 이상일 때만)
-        if (selectedKinds.size >= 2) {
-          fetchedRows = fetchedRows.filter((r) => selectedKinds.has(r.kind as AlertKind))
-        }
-
-        setRows(fetchedRows)
-        setTotal(fetchedTotal)
+        setRows(listJson?.data ?? [])
+        setTotal(listJson?.meta?.total ?? 0)
         setStats(statsJson?.data ?? null)
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : '알림 이력 조회 중 오류')
@@ -106,7 +97,7 @@ export default function AlertHistoryClient() {
     return () => {
       cancelled = true
     }
-  }, [days, kindQueryParam, tickerFilter, offset, selectedKinds])
+  }, [days, kindsKey, tickerFilter, offset])
 
   const toggleKind = (k: AlertKind) => {
     setOffset(0)

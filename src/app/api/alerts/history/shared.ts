@@ -15,6 +15,25 @@ export function parseISOOrNull(s: string | undefined | null): Date | null {
   return Number.isNaN(d.getTime()) ? null : d
 }
 
+/**
+ * `kind` 쿼리 파라미터 정규화 — repeated (`?kind=a&kind=b`) 와 CSV (`?kind=a,b`) 모두 허용.
+ * Codex P2 (#417 PR #424): 다중 kind 를 서버에서 지원해야 페이지네이션/집계가
+ * 정합. 이전 구현은 클라 다중 선택 시 서버 필터를 skip 하고 페이지 후 클라 필터 →
+ * 페이지 넘어간 rows 누락, 총계/stats 는 전체 kind 반영 (부정확).
+ *
+ * 반환: `{ kinds, invalid }` — invalid 는 whitelist 에 없는 kind 리스트 (400 응답용).
+ */
+export function parseKindsParam(params: URLSearchParams): {
+  kinds: string[]
+  invalid: string[]
+} {
+  const raw = params.getAll('kind').flatMap((v) => v.split(',')).map((s) => s.trim()).filter(Boolean)
+  const unique = Array.from(new Set(raw))
+  const kinds = unique.filter((k) => KNOWN_KINDS.has(k))
+  const invalid = unique.filter((k) => !KNOWN_KINDS.has(k))
+  return { kinds, invalid }
+}
+
 /** UTC Date → KST YYYY-MM-DD (버킷 키) */
 export function kstDateKey(d: Date): string {
   const kst = new Date(d.getTime() + 9 * 60 * 60 * 1000)

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { KNOWN_KINDS, parseISOOrNull, kstDateKey, buildKstDayBuckets } from '../shared'
+import { KNOWN_KINDS, parseISOOrNull, kstDateKey, buildKstDayBuckets, parseKindsParam } from '../shared'
 
 describe('KNOWN_KINDS', () => {
   it('9종 kind 를 모두 포함 (33-A AlertHistory 매핑과 동기화)', () => {
@@ -35,6 +35,46 @@ describe('parseISOOrNull', () => {
     expect(parseISOOrNull(undefined)).toBeNull()
     expect(parseISOOrNull(null)).toBeNull()
     expect(parseISOOrNull('')).toBeNull()
+  })
+})
+
+describe('parseKindsParam (Codex #424 P2 회귀 방지)', () => {
+  it('반복 파라미터 (`?kind=a&kind=b`) → kinds 배열', () => {
+    const p = new URLSearchParams('kind=drop&kind=surge')
+    const r = parseKindsParam(p)
+    expect(new Set(r.kinds)).toEqual(new Set(['drop', 'surge']))
+    expect(r.invalid).toEqual([])
+  })
+
+  it('CSV (`?kind=a,b`) 도 지원', () => {
+    const p = new URLSearchParams('kind=drop,surge')
+    const r = parseKindsParam(p)
+    expect(new Set(r.kinds)).toEqual(new Set(['drop', 'surge']))
+  })
+
+  it('반복 + CSV 혼합, 중복 제거', () => {
+    const p = new URLSearchParams('kind=drop,surge&kind=drop&kind=fx')
+    const r = parseKindsParam(p)
+    expect(new Set(r.kinds)).toEqual(new Set(['drop', 'surge', 'fx']))
+  })
+
+  it('알려지지 않은 kind → invalid 로 분리', () => {
+    const p = new URLSearchParams('kind=drop&kind=nope&kind=xyz')
+    const r = parseKindsParam(p)
+    expect(r.kinds).toEqual(['drop'])
+    expect(new Set(r.invalid)).toEqual(new Set(['nope', 'xyz']))
+  })
+
+  it('kind 파라미터 없음 → 빈 배열', () => {
+    const r = parseKindsParam(new URLSearchParams(''))
+    expect(r.kinds).toEqual([])
+    expect(r.invalid).toEqual([])
+  })
+
+  it('공백/빈 문자열 제거', () => {
+    const p = new URLSearchParams('kind=  ,,drop, ')
+    const r = parseKindsParam(p)
+    expect(r.kinds).toEqual(['drop'])
   })
 })
 
