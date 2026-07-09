@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { mergeCrossTickersIntoMeta } from '../price-fetcher'
+// price-fetcher 본체 (Prisma / yahoo top-level 로드) 대신 순수 유틸 모듈에서 직접 import →
+// Prisma generate / DATABASE_URL 없이도 테스트 가능 (Codex #429 P2).
+import { mergeCrossTickersIntoMeta } from '../price-fetcher-utils'
 
 describe('mergeCrossTickersIntoMeta (Codex #428 P2 회귀 방지)', () => {
   it('신규 크로스 티커를 placeholder 로 삽입', () => {

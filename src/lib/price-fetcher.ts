@@ -2,6 +2,8 @@ import YahooFinance from 'yahoo-finance2'
 import { prisma } from './prisma'
 import { normalizeMarket } from './market-hours'
 import { collectCrossTickers } from './custom-strategy/evaluator'
+import { mergeCrossTickersIntoMeta } from './price-fetcher-utils'
+export { mergeCrossTickersIntoMeta } from './price-fetcher-utils'
 
 const yahooFinance = new YahooFinance()
 
@@ -14,32 +16,6 @@ interface RefreshResult {
   updatedAt: Date
 }
 
-interface TickerMetaValue {
-  displayName: string
-  market: string
-  currency: string
-}
-
-/**
- * Pure — 활성 전략의 크로스 티커를 tickerMeta 에 병합 (Phase 34-B follow-up / Codex #428 P2).
- * 이미 등록된 티커 (홀딩·관심종목) 는 그대로. 신규 항목만 placeholder 로 삽입:
- *   - displayName: ticker 자체 (사용자가 관심종목에 추가하면 그 이름 우선 사용됨)
- *   - market: '?' (normalizeMarket 이 ticker suffix `.KS`/`.KQ` 로 fallback)
- *   - currency: KRX suffix 면 KRW, 아니면 USD (SPY/VIX 등 대부분)
- */
-export function mergeCrossTickersIntoMeta(
-  tickerMeta: Map<string, TickerMetaValue>,
-  crossTickers: Iterable<string>,
-): void {
-  for (const t of crossTickers) {
-    if (tickerMeta.has(t)) continue
-    tickerMeta.set(t, {
-      displayName: t,
-      market: '?',
-      currency: t.endsWith('.KS') || t.endsWith('.KQ') ? 'KRW' : 'USD',
-    })
-  }
-}
 
 /** 유효한 시세를 가져올 수 없을 때 발생하는 에러 */
 export class InvalidTickerError extends Error {
