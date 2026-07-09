@@ -15,6 +15,7 @@
 import type { Condition, WeekdayCode } from './types'
 import { TIME_WINDOW_RE } from './types'
 import type { TAReport } from '@/lib/ta/types'
+import { kstDayDiff } from '@/lib/kst-date'
 
 export interface PriceSnapshot {
   price: number
@@ -94,15 +95,7 @@ function kstWeekday(now: Date): WeekdayCode {
  */
 export function daysUntilEarnings(nextEarningsDate: Date | null | undefined, now: Date): number | null {
   if (!nextEarningsDate) return null
-  // KST 자정 정규화: UTC 를 +9h shift 한 뒤 시/분/초/ms 를 0 으로 잘라 KST 자정 UTC 표현.
-  const kstMidnightUtc = (d: Date): number => {
-    const shifted = d.getTime() + 9 * 60 * 60 * 1000
-    const day = Math.floor(shifted / (24 * 60 * 60 * 1000))
-    return day * 24 * 60 * 60 * 1000
-  }
-  const nowDay = kstMidnightUtc(now)
-  const earningsDay = kstMidnightUtc(nextEarningsDate)
-  const diffDays = Math.round((earningsDay - nowDay) / (24 * 60 * 60 * 1000))
+  const diffDays = kstDayDiff(nextEarningsDate, now)
   if (diffDays < 0) return null
   return diffDays
 }

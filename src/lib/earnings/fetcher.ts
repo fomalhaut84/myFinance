@@ -5,6 +5,7 @@
  */
 
 import YahooFinance from 'yahoo-finance2'
+import { isSameOrFutureKstDay } from '@/lib/kst-date'
 
 const yahooFinance = new YahooFinance()
 
@@ -30,9 +31,13 @@ export async function fetchEarnings(ticker: string): Promise<EarningsFetchResult
       .filter((d) => !Number.isNaN(d.getTime()))
       .sort((a, b) => a.getTime() - b.getTime())
 
-    // 다음 어닝 = 미래 중 가장 이른 것 (yahoo 는 과거를 넘겨줄 수도 있음)
-    const now = Date.now()
-    const nextEarningsDate = parsed.find((d) => d.getTime() >= now) ?? null
+    // 다음 어닝 = KST 캘린더 기준 오늘 이후 중 가장 이른 것.
+    // Codex #426 P2: 원 코드가 raw timestamp (`>= Date.now()`) 로 비교 →
+    // "2026-07-30T00:00Z" (=KST 07-30 09:00) 어닝이 KST 07-30 오후 스캔에서 이미 지난 것으로
+    // 판정 → cache null → evaluator (KST 자정 정규화) 는 D-0 로 취급하려 하지만 nextEarningsDate 가
+    // 이미 null 이라 조건 false. KST 자정 기준으로 두면 evaluator 와 정합.
+    const nowDate = new Date()
+    const nextEarningsDate = parsed.find((d) => isSameOrFutureKstDay(d, nowDate)) ?? null
 
     return { ticker, nextEarningsDate }
   } catch (error) {

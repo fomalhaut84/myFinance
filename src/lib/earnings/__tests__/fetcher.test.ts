@@ -67,6 +67,31 @@ describe('fetchEarnings', () => {
     expect(r.error).toBeUndefined()
   })
 
+  it('어닝 UTC 자정 (=KST 09:00) 이고 스캔이 같은 KST 날 오후 → 놓치지 않음 (Codex #426 P2)', async () => {
+    // FIXED_NOW = 2026-07-08T00:00:00Z (KST 07-08 09:00) — 오전. 어닝을 이후 시간대로.
+    // KST 07-08 스캔이 KST 07-08 오후에 실행되고, 어닝 timestamp 가 그 스캔 시각보다 이전이지만
+    // 같은 KST 날짜 이면 유지되어야 함.
+    vi.setSystemTime(new Date('2026-07-08T05:00:00Z')) // KST 14:00
+    quoteSummaryMock.mockResolvedValueOnce({
+      calendarEvents: {
+        earnings: { earningsDate: ['2026-07-08T00:00:00Z'] }, // KST 09:00 (5h 이전 raw)
+      },
+    })
+    const r = await fetchEarnings('AAPL')
+    expect(r.nextEarningsDate?.toISOString()).toBe('2026-07-08T00:00:00.000Z')
+  })
+
+  it('KST 어제로 넘어간 어닝은 제외', async () => {
+    vi.setSystemTime(new Date('2026-07-09T05:00:00Z')) // KST 07-09 14:00
+    quoteSummaryMock.mockResolvedValueOnce({
+      calendarEvents: {
+        earnings: { earningsDate: ['2026-07-07T15:00:00Z'] }, // KST 07-08 00:00 (어제)
+      },
+    })
+    const r = await fetchEarnings('AAPL')
+    expect(r.nextEarningsDate).toBeNull()
+  })
+
   it('과거 + 미래 혼합 → 미래 중 가장 이른 것', async () => {
     quoteSummaryMock.mockResolvedValueOnce({
       calendarEvents: {
