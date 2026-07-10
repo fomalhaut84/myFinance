@@ -80,15 +80,18 @@
     headline     String
     publishedAt  DateTime
     source       String
-    url          String   @unique  // upsert dedupe 키. 동일 URL 재수집 시 갱신
+    url          String
     sentiment    Float?
     insertedAt   DateTime @default(now())
 
+    @@unique([ticker, url])       // 티커 스코프 dedupe (Codex #438 P2 재리뷰)
     @@index([ticker, publishedAt])
   }
   ```
-  - **`url` unique** (Codex #438 P2): Prisma `upsert` 안전 실행 + 시간별 cron 이 동일
-    URL 을 여러 티커·주기에 걸쳐 다시 수집해도 중복 row 방지
+  - **`@@unique([ticker, url])`**: 하나의 기사 URL 이 여러 티커에 언급될 수 있음 (예:
+    "Big Tech 어닝" 기사 → AAPL/MSFT/GOOG). 글로벌 `url @unique` 는 후속 티커의 upsert
+    를 막거나 이전 row 를 덮어써 ticker 별 조회에서 헤드라인 누락. composite key 로
+    같은 기사 = 티커별 1 row 유지.
   - `(ticker, publishedAt)` composite index (조회 성능)
   - Retention: 30일 (cron 정리)
 - [ ] `src/lib/news/fetcher.ts` — 단일 티커 조회, 실패 → error 필드
