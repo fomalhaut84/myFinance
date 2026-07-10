@@ -107,13 +107,19 @@ export default function StrategyEditModal({ item, onClose, onSaved }: StrategyEd
       const effName = eff?.name ?? trimmedName
       const effFreq = eff?.frequency ?? frequency
       const effLogic = eff?.logic ?? logic
-      const effConds = eff?.conditions
 
       if (effName !== item.name) body.name = effName
       if (effFreq !== item.frequency) body.frequency = effFreq
       if (effLogic !== item.logic) body.logic = effLogic
       if (isActive !== item.isActive) body.isActive = isActive
-      if (effConds) body.conditions = effConds
+      // Codex #440 재리뷰 P2: conditions 는 실제 조건 변경이 있을 때만 포함.
+      // preview 가 이름만 바꿔도 항상 conditions 를 넘기면 서버가 lastTriggeredAt
+      // 을 리셋할 수 있어 `once` 가 재무장. diff 에서 실제 add/remove 있을 때만.
+      const conditionsChanged = nlPreview
+        && (nlPreview.diff.conditionsAdded.length > 0 || nlPreview.diff.conditionsRemoved.length > 0)
+      if (conditionsChanged && eff?.conditions) {
+        body.conditions = eff.conditions
+      }
 
       const res = await fetch(`/api/custom-strategies/${item.id}`, {
         method: 'PUT',

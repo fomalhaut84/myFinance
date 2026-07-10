@@ -71,11 +71,17 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       if (!body.conditions.every(validateCondition)) {
         return fail('conditions 에 유효하지 않은 항목이 있습니다.', 400)
       }
-      data.conditions = body.conditions as unknown as Prisma.InputJsonValue
-      // Codex #440 P2: 조건 변경 = 새 전략 정의 → 이전 발동 이력 리셋해야 shouldFire
-      // 가 fresh signal 로 평가. 그렇지 않으면 `once` 는 영구 비활성, `daily` 는
-      // 같은 KST 날짜 재발동 skip → 편집한 새 조건이 알림 안 나오는 사일런트 버그.
-      data.lastTriggeredAt = null
+      // Codex #440 재리뷰 P2: 실제로 변경됐을 때만 conditions/lastTriggeredAt 갱신.
+      // 클라이언트가 nlPreview 있으면 항상 conditions 를 넘길 수 있어, 무변경 시에도
+      // 서버가 리셋하면 `once` 가 재무장되거나 `daily` 가 같은 날 중복 알림 발동.
+      const existingConditionsStr = JSON.stringify(existing.conditions)
+      const newConditionsStr = JSON.stringify(body.conditions)
+      if (existingConditionsStr !== newConditionsStr) {
+        data.conditions = body.conditions as unknown as Prisma.InputJsonValue
+        // 조건이 실제 바뀔 때만 발동 이력 리셋 → fresh signal 로 평가.
+        data.lastTriggeredAt = null
+      }
+      // 같으면 아무것도 안 함 → PUT 이 name/logic 등 다른 필드만 수정.
     }
 
     if (Object.keys(data).length === 0) {
