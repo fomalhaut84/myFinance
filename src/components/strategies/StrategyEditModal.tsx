@@ -245,7 +245,13 @@ export default function StrategyEditModal({ item, onClose, onSaved }: StrategyEd
             </div>
             <textarea
               value={nlInput}
-              onChange={(e) => setNlInput(e.target.value)}
+              onChange={(e) => {
+                setNlInput(e.target.value)
+                // Codex #440 P2: 지시 텍스트가 편집되면 이전 preview 는 stale.
+                // 사용자가 preview 재실행 없이 save 하면 이전 지시의 after 로 저장돼
+                // 화면 텍스트와 실제 저장이 어긋남. 텍스트 변경 시 preview 무효화.
+                if (nlPreview) setNlPreview(null)
+              }}
               placeholder="편집 지시를 자연어로 입력..."
               rows={2}
               maxLength={500}
