@@ -3,6 +3,8 @@ import type { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { ok, fail, noContent } from '@/lib/api-response'
 import { validateCondition } from '@/lib/custom-strategy/types'
+import { conditionsEqual } from '@/lib/custom-strategy/diff'
+import type { Condition } from '@/lib/custom-strategy/types'
 
 export const dynamic = 'force-dynamic'
 
@@ -72,11 +74,15 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         return fail('conditions 에 유효하지 않은 항목이 있습니다.', 400)
       }
       // Codex #440 재리뷰 P2: 실제로 변경됐을 때만 conditions/lastTriggeredAt 갱신.
-      // 클라이언트가 nlPreview 있으면 항상 conditions 를 넘길 수 있어, 무변경 시에도
-      // 서버가 리셋하면 `once` 가 재무장되거나 `daily` 가 같은 날 중복 알림 발동.
-      const existingConditionsStr = JSON.stringify(existing.conditions)
-      const newConditionsStr = JSON.stringify(body.conditions)
-      if (existingConditionsStr !== newConditionsStr) {
+      // 순서 무관 비교 (`conditionsEqual`): `JSON.stringify` 는 필드 순서에 민감해서
+      // `{type, operator, value}` vs `{value, operator, type}` 를 다르다고 오판 →
+      // 무변경인데 lastTriggeredAt 리셋 → `once` 재무장 / `daily` 중복 발동.
+      const existingConds = (Array.isArray(existing.conditions)
+        ? (existing.conditions as unknown[])
+        : []
+      ).filter(validateCondition) as Condition[]
+      const newConds = body.conditions as unknown as Condition[]
+      if (!conditionsEqual(existingConds, newConds)) {
         data.conditions = body.conditions as unknown as Prisma.InputJsonValue
         // 조건이 실제 바뀔 때만 발동 이력 리셋 → fresh signal 로 평가.
         data.lastTriggeredAt = null

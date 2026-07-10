@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { computeStrategyDiff, hasDiff } from '../diff'
-import type { ParsedStrategy } from '../types'
+import { computeStrategyDiff, hasDiff, conditionsEqual } from '../diff'
+import type { Condition, ParsedStrategy } from '../types'
 
 const base: ParsedStrategy = {
   name: 'AAPL 저점',
@@ -84,6 +84,41 @@ describe('computeStrategyDiff (Phase 35-B / #434)', () => {
     expect(d.conditionsAdded).toEqual([])
     expect(d.conditionsRemoved).toEqual([])
     expect(hasDiff(d)).toBe(false)
+  })
+
+  it('conditionsEqual — 순서 무관 (Codex #440 재리뷰 P2 회귀 방지)', () => {
+    const a: Condition[] = [
+      { type: 'price', operator: '<=', value: 150 },
+      { type: 'rsi', operator: '<=', value: 30 },
+    ]
+    // 조건 순서 뒤바꾼 배열
+    const b: Condition[] = [
+      { type: 'rsi', operator: '<=', value: 30 },
+      { type: 'price', operator: '<=', value: 150 },
+    ]
+    expect(conditionsEqual(a, b)).toBe(true)
+  })
+
+  it('conditionsEqual — 조건 오브젝트 필드 순서가 달라도 true', () => {
+    const a: Condition[] = [{ type: 'price', operator: '<=', value: 150 }]
+    // JSON.stringify 는 field-order 민감하지만 conditionToString 은 무관
+    const b: Condition[] = [{ value: 150, operator: '<=', type: 'price' } as Condition]
+    expect(conditionsEqual(a, b)).toBe(true)
+  })
+
+  it('conditionsEqual — 길이 다르면 false', () => {
+    const a: Condition[] = [{ type: 'price', operator: '<=', value: 150 }]
+    const b: Condition[] = [
+      { type: 'price', operator: '<=', value: 150 },
+      { type: 'rsi', operator: '<=', value: 30 },
+    ]
+    expect(conditionsEqual(a, b)).toBe(false)
+  })
+
+  it('conditionsEqual — 값 다르면 false', () => {
+    const a: Condition[] = [{ type: 'price', operator: '<=', value: 150 }]
+    const b: Condition[] = [{ type: 'price', operator: '<=', value: 140 }]
+    expect(conditionsEqual(a, b)).toBe(false)
   })
 
   it('복합 변경 (logic + 조건 추가 + 조건 제거)', () => {
