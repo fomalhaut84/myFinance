@@ -18,7 +18,7 @@
 
 | 항목 | newsapi.org | Alpha Vantage News | Benzinga Basic |
 |---|---|---|---|
-| **무료 tier req** | 100/day | 5/min · 500/day (뉴스 sentiment) | Basic (구체 불명) |
+| **무료 tier req** | 100/day | **25/day** (공식 support 페이지 명시, 2026-07 확인) | Basic (구체 불명) |
 | **무료 라이선스** | ❌ dev 전용 (localhost CORS, 24h 지연, 상용 금지) | ✓ 상용 허용 | ✓ Basic 상용 허용 |
 | **유료 최저** | $449/월 (250k req/월) | **$49.99/월** (75 req/min, no daily) | 문의 (전용 상담) |
 | **sentiment 내장** | ❌ | ✓ (핵심 강점) | ✓ (higher tier) |
@@ -35,7 +35,8 @@
 - 유료 $449/월 은 스코프 대비 과잉
 
 **Alpha Vantage — ⭐ 후보 1**
-- 무료 tier: 5 req/min · 500 req/day → 관심종목 소규모 (~20 티커) + 티커당 하루 1회 스캔이면 free 로 가능성 있음
+- 무료 tier: **25 req/day** (공식 support 페이지 2026-07 확인). 30~50 티커 × 하루 1회
+  스캔이면 이미 초과 → **free 검증 경로는 실질 불가**
 - 유료 $49.99/월: 75 req/min, no daily → 시간별 갱신 여유
 - **sentiment 필드 내장** → 별도 NLP 불필요
 - 커버리지 미국 위주 (KRX 없음 — 스펙과 일치)
@@ -52,10 +53,12 @@
 - 이유: 스코프 완벽 매치. sentiment 내장으로 개발 단순화. 예산 여유.
 - 30~50 티커 × 24h = 1,200 req/day → 75 req/min 여유 (분당 실제 1건 이하)
 
-### 2순위: Alpha Vantage 무료 tier 로 시작 (스코프 축소)
-- 이유: 우선 free 로 검증 → 500 req/day 넘으면 유료 승격
-- 스코프: 활성 전략 등록한 티커만 대상 (관심종목 제외), 티커당 하루 1~2회
-- 리스크: rate limit 이 실제 사용 실태에 부족할 가능성
+### 2순위: Alpha Vantage 무료 tier 로 시작 (스코프 축소) — **재검토 필요**
+- 조사 결과 free tier 가 25 req/day 로 확인됨 (Codex #441 P2 반영) → 30~50 티커 스캔에는
+  실질 불가. 남는 옵션:
+  - 뉴스 조건 등록한 티커만 하루 1회 fetch → 티커 20개 이하로 제한 (약간 여유)
+  - 티커 그루핑 조회 지원 여부 확인 (Alpha Vantage news 는 티커 필터 다중 지원 확인 필요)
+- 유료 승격 없이 실사용 어려움 → 이 경로는 사실상 유료가 최소 조건
 
 ### 3순위: Benzinga Basic
 - 이유: 사용자 문의 필요. 즉시 구현 어려움. 재검토 시점 미정
