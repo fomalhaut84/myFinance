@@ -17,12 +17,16 @@ export interface StrategyDiff {
 
 /**
  * Condition 등가 판정용 canonical key.
- * 대부분은 `conditionToString` 그대로 사용. 예외 (evaluator 가 실행 시 정규화하는
- * 필드는 canonical key 도 동일하게 정규화 → 무변경 편집이 false-positive 되지 않게):
- *   - `weekday` value: evaluator 가 `includes` 로 unordered set 취급 → 정렬
- *     (Codex #440 재재리뷰 P2)
- *   - `cross_ticker.crossTicker`: evaluator 가 `trim().toUpperCase()` 정규화 →
- *     canonical 도 대문자 (Codex #440 재재재리뷰 P2)
+ * `conditionToString` 을 기본으로 사용하되, evaluator 가 실행 시 무시하거나 정규화하는
+ * 필드는 canonical key 도 동일하게 처리해 무변경 편집 false-positive 를 방지.
+ *
+ * 정규화 대상 (evaluator semantics 대비):
+ *   - `weekday.value`: `includes` 로 unordered set 취급 → 정렬 (#440 재재리뷰 P2)
+ *   - `cross_ticker.crossTicker`: `trim().toUpperCase()` (#440 재재재리뷰 P2)
+ *   - **비-change_pct 조건의 `timeframe`**: change_pct 전용 필드. price/rsi/문자열
+ *     타입에 timeframe 이 붙어 와도 evaluator 는 무시 → canonical 에서도 배제
+ *     (#440 재재재재리뷰 P2). conditionToString 이 timeframe 을 어느 타입에나 렌더
+ *     하는 것이 문제 원인.
  */
 function condKey(c: Condition): string {
   if (c.type === 'weekday' && Array.isArray(c.value)) {
@@ -32,6 +36,10 @@ function condKey(c: Condition): string {
   if (c.type === 'cross_ticker') {
     const t = (c.crossTicker ?? '').trim().toUpperCase()
     return `${t}.${c.metric ?? '?'} ${c.operator} ${c.value}`
+  }
+  // change_pct 만 timeframe 관여. 그 외 타입은 timeframe 무시.
+  if (c.type !== 'change_pct') {
+    return `${c.type} ${c.operator} ${c.value}`
   }
   return conditionToString(c)
 }

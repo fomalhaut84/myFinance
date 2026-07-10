@@ -137,6 +137,24 @@ describe('computeStrategyDiff (Phase 35-B / #434)', () => {
     expect(conditionsEqual(a, b)).toBe(true)
   })
 
+  it('conditionsEqual — 비-change_pct 조건의 timeframe 은 무시 (Codex #440 재재재재리뷰 P2)', () => {
+    // evaluator 는 price/rsi/문자열 조건에서 timeframe 을 사용 안 함.
+    // conditionToString 이 렌더링 하는 게 문제 → canonical key 에서 timeframe 배제.
+    const a: Condition[] = [{ type: 'price', operator: '<=', value: 40 }]
+    const b: Condition[] = [{ type: 'price', operator: '<=', value: 40, timeframe: '1d' }]
+    expect(conditionsEqual(a, b)).toBe(true)
+
+    const c: Condition[] = [{ type: 'rsi', operator: '<=', value: 30 }]
+    const d: Condition[] = [{ type: 'rsi', operator: '<=', value: 30, timeframe: '5d' }]
+    expect(conditionsEqual(c, d)).toBe(true)
+  })
+
+  it('conditionsEqual — change_pct 는 timeframe 다르면 not equal', () => {
+    const a: Condition[] = [{ type: 'change_pct', operator: '<=', value: -5, timeframe: '1d' }]
+    const b: Condition[] = [{ type: 'change_pct', operator: '<=', value: -5, timeframe: '5d' }]
+    expect(conditionsEqual(a, b)).toBe(false)
+  })
+
   it('conditionsEqual — cross_ticker 다른 crossTicker 는 여전히 not equal', () => {
     const a: Condition[] = [{
       type: 'cross_ticker', operator: '>', value: 25,
