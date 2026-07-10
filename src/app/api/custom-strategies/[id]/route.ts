@@ -72,6 +72,10 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         return fail('conditions 에 유효하지 않은 항목이 있습니다.', 400)
       }
       data.conditions = body.conditions as unknown as Prisma.InputJsonValue
+      // Codex #440 P2: 조건 변경 = 새 전략 정의 → 이전 발동 이력 리셋해야 shouldFire
+      // 가 fresh signal 로 평가. 그렇지 않으면 `once` 는 영구 비활성, `daily` 는
+      // 같은 KST 날짜 재발동 skip → 편집한 새 조건이 알림 안 나오는 사일런트 버그.
+      data.lastTriggeredAt = null
     }
 
     if (Object.keys(data).length === 0) {

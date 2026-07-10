@@ -55,6 +55,16 @@ export default function StrategyEditModal({ item, onClose, onSaved }: StrategyEd
 
   const handlePreview = async () => {
     if (!nlInput.trim() || nlLoading) return
+    // Codex #440 P2: preview 요청은 DB 상태 (before) 만 참조 → 로컬에서 name/logic/
+    // frequency 수동 편집 상태 후 preview 하면 `after` 가 DB 값 기준이라 save 시
+    // 사용자의 수동 변경이 사일런트 드롭됨. dirty 시 preview 차단해 순서 강제.
+    if (dirtyBasics) {
+      show({
+        variant: 'error',
+        title: '기본 필드 변경 사항이 있습니다. 먼저 저장하거나 되돌린 뒤 미리보기 해주세요.',
+      })
+      return
+    }
     setNlLoading(true)
     setNlPreview(null)
     try {
@@ -240,7 +250,8 @@ export default function StrategyEditModal({ item, onClose, onSaved }: StrategyEd
               <div className="text-[11px] text-dim">{nlInput.length}/500</div>
               <button
                 onClick={handlePreview}
-                disabled={!nlInput.trim() || nlLoading}
+                disabled={!nlInput.trim() || nlLoading || dirtyBasics}
+                title={dirtyBasics ? '기본 필드 변경 사항이 있어 미리보기 차단 (먼저 저장/되돌리기)' : ''}
                 className="px-3 py-1.5 text-[12px] font-semibold rounded-md border border-sejin/40 bg-sejin/15 text-sejin hover:bg-sejin/25 disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 {nlLoading ? '분석 중…' : '미리보기'}
