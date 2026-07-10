@@ -74,9 +74,22 @@
 
 - [ ] Prisma 신규 모델:
   ```
-  NewsCache { id, ticker, headline, publishedAt, source, url, sentiment?, insertedAt }
+  NewsCache {
+    id           String   @id @default(cuid())
+    ticker       String
+    headline     String
+    publishedAt  DateTime
+    source       String
+    url          String   @unique  // upsert dedupe 키. 동일 URL 재수집 시 갱신
+    sentiment    Float?
+    insertedAt   DateTime @default(now())
+
+    @@index([ticker, publishedAt])
+  }
   ```
-  - `(ticker, publishedAt)` index
+  - **`url` unique** (Codex #438 P2): Prisma `upsert` 안전 실행 + 시간별 cron 이 동일
+    URL 을 여러 티커·주기에 걸쳐 다시 수집해도 중복 row 방지
+  - `(ticker, publishedAt)` composite index (조회 성능)
   - Retention: 30일 (cron 정리)
 - [ ] `src/lib/news/fetcher.ts` — 단일 티커 조회, 실패 → error 필드
 - [ ] `src/lib/news/cache.ts` — upsert / getByTickerRange / 오래된 삭제
