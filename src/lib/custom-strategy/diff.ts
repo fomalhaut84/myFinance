@@ -3,7 +3,7 @@
  * 미리보기 UI 가 변경 사항을 하이라이트하기 위한 순수 함수.
  */
 
-import type { Condition, LogicOp, Frequency, ParsedStrategy } from './types'
+import type { Condition, LogicOp, Frequency, ParsedStrategy, WeekdayCode } from './types'
 import { conditionToString } from './types'
 
 export interface StrategyDiff {
@@ -15,8 +15,18 @@ export interface StrategyDiff {
   conditionsRemoved: Condition[]
 }
 
-/** Condition 등가 판정 — conditionToString 문자열 표현으로 비교 (조건 순서 무관). */
+/**
+ * Condition 등가 판정용 canonical key (Codex #440 재재리뷰 P2 반영).
+ * 대부분은 `conditionToString` 그대로 사용. 예외:
+ *   - `weekday` value 는 evaluator 가 `includes` 로 unordered set 취급 →
+ *     ['MON','TUE'] 와 ['TUE','MON'] 는 의미 동일. 순서 유지 시 오검출.
+ *     정렬한 배열로 별도 canonical key 생성.
+ */
 function condKey(c: Condition): string {
+  if (c.type === 'weekday' && Array.isArray(c.value)) {
+    const sorted = [...(c.value as WeekdayCode[])].sort()
+    return `weekday ${c.operator} [${sorted.join(',')}]`
+  }
   return conditionToString(c)
 }
 
@@ -68,7 +78,7 @@ export function hasDiff(d: StrategyDiff): boolean {
  */
 export function conditionsEqual(a: Condition[], b: Condition[]): boolean {
   if (a.length !== b.length) return false
-  const sa = a.map(conditionToString).sort()
-  const sb = b.map(conditionToString).sort()
+  const sa = a.map(condKey).sort()
+  const sb = b.map(condKey).sort()
   return sa.every((s, i) => s === sb[i])
 }

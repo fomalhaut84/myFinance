@@ -115,6 +115,21 @@ describe('computeStrategyDiff (Phase 35-B / #434)', () => {
     expect(conditionsEqual(a, b)).toBe(false)
   })
 
+  it('conditionsEqual — weekday value 순서 무관 (Codex #440 재재리뷰 P2 회귀 방지)', () => {
+    // evaluator 는 weekday value 를 `includes` 로 처리 → 배열 순서 무관.
+    // conditionToString 은 순서 유지 → JSON.stringify 비교였다면 오검출.
+    // canonical key (정렬) 로 정정 확인.
+    const a: Condition[] = [{ type: 'weekday', operator: 'is', value: ['MON', 'TUE', 'WED'] }]
+    const b: Condition[] = [{ type: 'weekday', operator: 'is', value: ['WED', 'MON', 'TUE'] }]
+    expect(conditionsEqual(a, b)).toBe(true)
+  })
+
+  it('conditionsEqual — 다른 weekday 조합은 여전히 다르다고 판정', () => {
+    const a: Condition[] = [{ type: 'weekday', operator: 'is', value: ['MON', 'TUE'] }]
+    const b: Condition[] = [{ type: 'weekday', operator: 'is', value: ['MON', 'FRI'] }]
+    expect(conditionsEqual(a, b)).toBe(false)
+  })
+
   it('conditionsEqual — 값 다르면 false', () => {
     const a: Condition[] = [{ type: 'price', operator: '<=', value: 150 }]
     const b: Condition[] = [{ type: 'price', operator: '<=', value: 140 }]
