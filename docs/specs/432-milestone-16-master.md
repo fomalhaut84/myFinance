@@ -18,7 +18,7 @@
 - ✅ `/ai` (텔레그램 + 웹) 이 sonnet 로 동작. 파서·짧은 가이드는 haiku 유지 (비용·응답속도 균형)
 - ✅ `AdvisorOptions.intent` 로 의도 명시 → 향후 모델 정책 조정 시 한 곳에서만 관리
 - ✅ `/strategies` 편집 모달에서 자연어로 조건 수정 (상대 편집 지원)
-- ✅ 뉴스 조건 (`news_keyword_count`) 도입 → 벤치마크/어닝에 이어 v3 완결
+- ✅ 뉴스 조건 (`news_keyword`) 도입 → 벤치마크/어닝에 이어 v3 완결
 
 ## 3. Sub-Phase 분할
 
