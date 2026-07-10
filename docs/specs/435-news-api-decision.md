@@ -19,7 +19,7 @@
 | 항목 | newsapi.org | Alpha Vantage News | Benzinga Basic |
 |---|---|---|---|
 | **무료 tier req** | 100/day | **25/day** (공식 support 페이지 명시, 2026-07 확인) | Basic (구체 불명) |
-| **무료 라이선스** | ❌ dev 전용 (localhost CORS, 24h 지연, 상용 금지) | ✓ 상용 허용 | ✓ Basic 상용 허용 |
+| **무료 라이선스** | ❌ dev 전용 (localhost CORS, 24h 지연, 상용 금지) | 개인/비상용만 (ToS §2 — 상용은 별도 협의) | 확인 필요 (Basic 상용 여부 문의) |
 | **유료 최저** | $449/월 (250k req/월) | **$49.99/월** (75 req/min, no daily) | 문의 (전용 상담) |
 | **sentiment 내장** | ❌ | ✓ (핵심 강점) | ✓ (higher tier) |
 | **historical** | 1개월 (유료 5년) | 광범위 | 광범위 (financial 특화) |
@@ -41,6 +41,8 @@
 - **sentiment 필드 내장** → 별도 NLP 불필요
 - 커버리지 미국 위주 (KRX 없음 — 스펙과 일치)
 - 문서 명확
+- **라이선스 (ToS §2)**: 개인/비상용만 무료. myFinance 는 세진 개인 서비스 (가족 자산관리)
+  → 이 프로젝트 스코프에는 적합. 다른 프로젝트에서 이 문서를 참조 시 유료 협의 필요.
 
 **Benzinga — 조건부 후보 2**
 - Basic tier 무료 실제 스펙 불명 (AWS marketplace 리스팅 있으나 세부 미공개)
@@ -80,6 +82,8 @@
 - Sources:
   - [News API Pricing](https://newsapi.org/pricing)
   - [Alpha Vantage Premium](https://www.alphavantage.co/premium/)
+  - [Alpha Vantage Support (2026-07 rate limits)](https://www.alphavantage.co/support/)
+  - [Alpha Vantage Terms of Service (§2 개인/비상용)](https://www.alphavantage.co/terms_of_service/)
   - [Alpha Vantage Rate Limits Guide](https://www.macroption.com/alpha-vantage-api-limits/)
   - [Benzinga API Docs](https://docs.benzinga.com/home)
   - [Best News APIs Compared (Thunderbit)](https://thunderbit.com/blog/best-news-apis-compared)
