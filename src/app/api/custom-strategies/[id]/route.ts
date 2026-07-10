@@ -1,6 +1,8 @@
 import { NextRequest } from 'next/server'
+import type { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { ok, fail, noContent } from '@/lib/api-response'
+import { validateCondition } from '@/lib/custom-strategy/types'
 
 export const dynamic = 'force-dynamic'
 
@@ -14,8 +16,10 @@ const VALID_LOGIC = new Set(['AND', 'OR'])
 /**
  * PUT /api/custom-strategies/[id] — 부분 수정.
  *
- * 편집 가능 필드: name / isActive / frequency / logic.
- * 조건 자체 (conditions, ticker) 편집은 v1 지원 X — 삭제 후 재등록.
+ * 편집 가능 필드: name / isActive / frequency / logic / conditions.
+ * conditions 편집은 Phase 35-B (#434) 부터 지원 — 자연어 편집 (POST .../nl-edit)
+ * 미리보기 결과를 사용자가 승인한 뒤 이 필드로 저장.
+ * ticker 편집은 여전히 지원 X (다른 종목으로 바꾸려면 삭제 후 재등록).
  */
 export async function PUT(request: NextRequest, { params }: RouteParams) {
   try {
@@ -32,12 +36,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     const existing = await prisma.customStrategy.findUnique({ where: { id } })
     if (!existing) return fail('전략을 찾을 수 없습니다.', 404)
 
-    const data: {
-      name?: string
-      isActive?: boolean
-      frequency?: string
-      logic?: string
-    } = {}
+    const data: Prisma.CustomStrategyUpdateInput = {}
 
     if (body.name !== undefined) {
       const name = typeof body.name === 'string' ? body.name.trim() : ''
@@ -63,6 +62,16 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         return fail('logic 은 AND / OR 중 하나여야 합니다.', 400)
       }
       data.logic = body.logic
+    }
+
+    if (body.conditions !== undefined) {
+      if (!Array.isArray(body.conditions) || body.conditions.length === 0) {
+        return fail('conditions 는 최소 1개 이상의 조건 배열이어야 합니다.', 400)
+      }
+      if (!body.conditions.every(validateCondition)) {
+        return fail('conditions 에 유효하지 않은 항목이 있습니다.', 400)
+      }
+      data.conditions = body.conditions as unknown as Prisma.InputJsonValue
     }
 
     if (Object.keys(data).length === 0) {
