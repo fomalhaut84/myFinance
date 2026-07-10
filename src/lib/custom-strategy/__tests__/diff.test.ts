@@ -124,6 +124,31 @@ describe('computeStrategyDiff (Phase 35-B / #434)', () => {
     expect(conditionsEqual(a, b)).toBe(true)
   })
 
+  it('conditionsEqual — cross_ticker crossTicker 대소문자/공백 무관 (Codex #440 재재재리뷰 P2)', () => {
+    // evaluator 는 `trim().toUpperCase()` 정규화 → 'vix' 와 'VIX' 의미 동일.
+    const a: Condition[] = [{
+      type: 'cross_ticker', operator: '>', value: 25,
+      crossTicker: 'VIX', metric: 'price',
+    }]
+    const b: Condition[] = [{
+      type: 'cross_ticker', operator: '>', value: 25,
+      crossTicker: '  vix ', metric: 'price',
+    }]
+    expect(conditionsEqual(a, b)).toBe(true)
+  })
+
+  it('conditionsEqual — cross_ticker 다른 crossTicker 는 여전히 not equal', () => {
+    const a: Condition[] = [{
+      type: 'cross_ticker', operator: '>', value: 25,
+      crossTicker: 'VIX', metric: 'price',
+    }]
+    const b: Condition[] = [{
+      type: 'cross_ticker', operator: '>', value: 25,
+      crossTicker: 'SPY', metric: 'price',
+    }]
+    expect(conditionsEqual(a, b)).toBe(false)
+  })
+
   it('conditionsEqual — 다른 weekday 조합은 여전히 다르다고 판정', () => {
     const a: Condition[] = [{ type: 'weekday', operator: 'is', value: ['MON', 'TUE'] }]
     const b: Condition[] = [{ type: 'weekday', operator: 'is', value: ['MON', 'FRI'] }]

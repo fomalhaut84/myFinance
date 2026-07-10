@@ -16,16 +16,22 @@ export interface StrategyDiff {
 }
 
 /**
- * Condition 등가 판정용 canonical key (Codex #440 재재리뷰 P2 반영).
- * 대부분은 `conditionToString` 그대로 사용. 예외:
- *   - `weekday` value 는 evaluator 가 `includes` 로 unordered set 취급 →
- *     ['MON','TUE'] 와 ['TUE','MON'] 는 의미 동일. 순서 유지 시 오검출.
- *     정렬한 배열로 별도 canonical key 생성.
+ * Condition 등가 판정용 canonical key.
+ * 대부분은 `conditionToString` 그대로 사용. 예외 (evaluator 가 실행 시 정규화하는
+ * 필드는 canonical key 도 동일하게 정규화 → 무변경 편집이 false-positive 되지 않게):
+ *   - `weekday` value: evaluator 가 `includes` 로 unordered set 취급 → 정렬
+ *     (Codex #440 재재리뷰 P2)
+ *   - `cross_ticker.crossTicker`: evaluator 가 `trim().toUpperCase()` 정규화 →
+ *     canonical 도 대문자 (Codex #440 재재재리뷰 P2)
  */
 function condKey(c: Condition): string {
   if (c.type === 'weekday' && Array.isArray(c.value)) {
     const sorted = [...(c.value as WeekdayCode[])].sort()
     return `weekday ${c.operator} [${sorted.join(',')}]`
+  }
+  if (c.type === 'cross_ticker') {
+    const t = (c.crossTicker ?? '').trim().toUpperCase()
+    return `${t}.${c.metric ?? '?'} ${c.operator} ${c.value}`
   }
   return conditionToString(c)
 }
