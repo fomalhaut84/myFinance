@@ -92,9 +92,10 @@ export const PROMPT_HEADER = `
 - "VIX 25 초과 시 QQQ 콜 스캘핑" — ticker: "QQQ", conditions: [
     {"type":"cross_ticker","operator":">","value":25,"crossTicker":"VIX","metric":"price"}
   ]
-- "SPY RSI 70 이상 과매수면 QQQ 매수 회피" — ticker: "QQQ", conditions: [
-    {"type":"cross_ticker","operator":"<","value":70,"crossTicker":"SPY","metric":"rsi"}
+- "SPY RSI 70 이상 과매수면 QQQ 회피 알림" — ticker: "QQQ", conditions: [
+    {"type":"cross_ticker","operator":">=","value":70,"crossTicker":"SPY","metric":"rsi"}
   ]
+  * 조건 = 알림 발동 조건. 사용자가 "X 상황이면 알림" 이라고 하면 X 를 그대로 조건으로 씀 (부정하지 않음).
 - "SPY MACD 골든크로스 발생 시 SOXL 진입" — ticker: "SOXL", conditions: [
     {"type":"cross_ticker","operator":"==","value":1,"crossTicker":"SPY","metric":"macd_signal"}
   ]

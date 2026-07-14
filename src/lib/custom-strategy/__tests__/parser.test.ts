@@ -43,4 +43,19 @@ describe('PROMPT_HEADER — cross_ticker 신규 metric 문서화 (Phase 38-A #44
     expect(PROMPT_HEADER).toMatch(/"metric":"sma_cross"/)
     expect(PROMPT_HEADER).toMatch(/"metric":"bb_position"/)
   })
+
+  // Codex #457 P2 회귀 방지 — RSI 예시가 사용자 자연어와 방향 일치해야 함.
+  // 조건 = 알림 발동 조건. "SPY RSI 70 이상 과매수면 회피 알림" → operator=`>=`, value=70.
+  // 이전에는 `<` 로 잘못 적혀 저장 시 반대 상황 (RSI 70 미만) 에서 알림 발동됐음.
+  it('RSI 크로스 티커 예시가 "이상 과매수" 자연어와 일치하는 operator 사용 (>= 아닌 <)', () => {
+    // RSI 예시 JSON 전체를 추출 — "metric":"rsi" 를 포함하는 최소 { ... } 블록.
+    // v1 예시의 `{"type":"rsi","operator":"<=","value":30}` 는 metric 필드가 없으므로
+    // 매칭되지 않음 → cross_ticker 예시만 선택됨.
+    const rsiExampleMatch = PROMPT_HEADER.match(/\{[^{}]*"metric":"rsi"[^{}]*\}/)
+    expect(rsiExampleMatch).not.toBeNull()
+    const rsiExample = rsiExampleMatch![0]
+    // ">=" 여야 함 (사용자 "이상" 표현과 일치). "<" 이면 방향 반전 회귀.
+    expect(rsiExample).toContain('"operator":">="')
+    expect(rsiExample).not.toContain('"operator":"<"')
+  })
 })
