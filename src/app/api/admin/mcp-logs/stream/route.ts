@@ -63,15 +63,28 @@ export async function GET(req: NextRequest) {
       // MAX_CHUNK_BYTES 컷이 멀티바이트 문자 중간에 걸려도 `write()` 가 미완결
       // 바이트를 내부에 남겨두고 다음 write 와 재조립한다.
       let decoder = new StringDecoder('utf8')
+      // Codex #455 P2 — 최초 open 이 아직 안 끝났는지 (position 시딩 대기 중).
+      // true 이면 다음 성공적 open 시점에 position 을 (subscribe 시점 EOF | head 0)
+      // 로 잠근다. false 이면 fs error 재열기 등 subsequent open 이라 position 을
+      // 유지 (중복 방지).
+      let awaitingFirstOpen = true
 
-      const openIfNeeded = () => {
+      /**
+       * @param isSubscribeCall true 이면 start() 의 동기 호출 (파일 존재 시 EOF 캡처
+       *   → 과거 라인 스킵). false 이면 poll 의 후속 호출 (파일이 subscribe 이후
+       *   나타난 케이스는 head(0) 부터 → 로거의 첫 burst 캡처).
+       */
+      const openIfNeeded = (isSubscribeCall = false) => {
         if (fd !== null) return
         if (!fs.existsSync(filePath)) return
         try {
           const st = fs.statSync(filePath)
           fd = fs.openSync(filePath, 'r')
-          // 최초 접속 시점 EOF 부터 시작 — 과거 라인 재전송 방지.
-          position = st.size
+          if (awaitingFirstOpen) {
+            position = isSubscribeCall ? st.size : 0
+            awaitingFirstOpen = false
+          }
+          // else: subsequent open (fs error 재열기 등) → 이전 position 유지.
         } catch {
           fd = null
         }
@@ -196,9 +209,9 @@ export async function GET(req: NextRequest) {
 
       // Codex #455 P2: 초기 EOF 위치를 연결 시점에 동기 캡처 — 이전에는 첫 poll
       // (1.5s 후) 에 openIfNeeded 가 position 을 설정해 그 사이 append 된 라인이
-      // 새 라인이 아닌 것으로 판정되어 스킵됐다. 파일이 아직 없으면 그대로 두고
-      // (openIfNeeded 가 poll 마다 재시도) 다음 라인부터 push.
-      openIfNeeded()
+      // 새 라인이 아닌 것으로 판정되어 스킵됐다. 파일이 아직 없으면 awaitingFirstOpen
+      // 을 true 로 유지 → 다음 poll 에서 openIfNeeded(false) 가 head(0) 부터 open.
+      openIfNeeded(true)
 
       // 초기 comment — Nginx 등 프록시가 응답 헤더를 즉시 flush 하도록 유도.
       safeEnqueue(`: connected ${currentDate}\n\n`)
