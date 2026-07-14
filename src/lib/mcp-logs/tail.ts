@@ -46,19 +46,27 @@ export function splitLinesWithCarryover(
 
 /**
  * 파일 descriptor 에서 `[from, to)` 구간을 UTF-8 로 읽는다.
- * `to - from` 이 0 이하이면 빈 문자열.
- * 실제 읽은 바이트 수가 요청보다 작을 수 있으므로 `bytesRead` 만큼만 반환.
+ * `to - from` 이 0 이하이면 빈 결과.
  *
- * ⚠️ UTF-8 멀티바이트 문자가 chunk 경계에 걸리면 마지막 문자가 깨질 수 있으나
- * pino 로그는 대부분 ASCII 이고, 다음 poll 에서 나머지 바이트를 읽어 이어진다.
- * splitLinesWithCarryover 가 `\n` 기준으로만 라인을 확정하므로 파싱 실패 시
- * `parseLines` 가 raw 로 표시해 UX 상 큰 문제는 없다 (완결된 라인은 정상).
+ * 반환 `bytesRead` 는 실제 fs.readSync 가 채운 바이트 수 (요청보다 작을 수 있음).
+ * caller 는 `position += bytesRead` 로 소비한 만큼만 전진해야 데이터 유실이 없다
+ * (Codex #454 P1 — 이전엔 요청 size 만큼 무조건 전진하다 short-read 시 스킵).
+ *
+ * ⚠️ UTF-8 멀티바이트 문자가 chunk 경계에 걸리면 마지막 문자가 깨질 수 있다.
+ * pino 로그는 대부분 ASCII 이나, 한국어 err 메시지 등이 tail 될 때 마지막 문자가
+ * `\n` 앞이 아니면 `splitLinesWithCarryover` 가 carry 로 보내 다음 poll 에서
+ * 이어붙는다. 즉 라인 경계 (`\n`) 가 chunk 안에 있으면 완결된 라인은 정상, 마지막
+ * 잘린 부분만 다음 poll 로 넘어가 UTF-8 재조립이 자연스레 이루어진다.
  */
-export function readNewBytes(fd: number, from: number, to: number): string {
+export function readNewBytes(
+  fd: number,
+  from: number,
+  to: number,
+): { text: string; bytesRead: number } {
   const size = to - from
-  if (size <= 0) return ''
+  if (size <= 0) return { text: '', bytesRead: 0 }
   const buf = Buffer.alloc(size)
   const bytesRead = fs.readSync(fd, buf, 0, size, from)
-  if (bytesRead <= 0) return ''
-  return buf.subarray(0, bytesRead).toString('utf-8')
+  if (bytesRead <= 0) return { text: '', bytesRead: 0 }
+  return { text: buf.subarray(0, bytesRead).toString('utf-8'), bytesRead }
 }

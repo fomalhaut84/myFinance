@@ -203,7 +203,8 @@ export default function LiveTailPanel({
                 return (
                   <li key={`${r.lineNo ?? ''}-${idx}`} className="px-4 py-2 hover:bg-surface transition-colors">
                     <div className="flex flex-wrap items-center gap-2 text-[11px]">
-                      {r.lineNo != null && <span className="text-dim font-mono">L{r.lineNo}</span>}
+                      {/* lineNo 는 poll batch 마다 1 부터 재시작해 스냅샷의 파일 라인
+                          번호 (L{n}) 와 오해 유발 (Codex #454 P1). live tail 은 표시 안함. */}
                       <span className="text-sub tabular-nums">{r.time?.slice(11, 19)}</span>
                       <span className={`px-2 py-0.5 rounded border font-semibold ${levelCls}`}>{r.level}</span>
                       {r.msg && (

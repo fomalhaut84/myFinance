@@ -46,13 +46,14 @@ export async function GET(req: NextRequest) {
   }
 
   const filter: Filter = { level, msg, tool, traceId }
-  const date = todayKst()
-  const filePath = logFilePath(date, false)
+  const initialDate = todayKst()
 
   const encoder = new TextEncoder()
 
   const stream = new ReadableStream({
     start(controller) {
+      let currentDate = initialDate
+      let filePath = logFilePath(currentDate, false)
       let position = 0
       let fd: number | null = null
       let carry = ''
@@ -91,12 +92,25 @@ export async function GET(req: NextRequest) {
       const poll = () => {
         if (closed) return
         try {
+          // KST 자정 회전 대응 (Codex #454 P1) — pino 로거는 자정에 새 파일로
+          // 회전하지만 파일명 자체가 다르므로 size 감지로는 잡을 수 없다.
+          // poll 마다 today 를 재계산해 date 가 바뀌면 fd 를 닫고 새 파일을 open.
+          const today = todayKst()
+          if (today !== currentDate) {
+            closeFd()
+            currentDate = today
+            filePath = logFilePath(currentDate, false)
+            position = 0
+            carry = ''
+            safeEnqueue(`: rotated ${currentDate}\n\n`)
+          }
+
           openIfNeeded()
           if (fd === null) return  // 파일이 아직 없음 → 다음 poll 대기
 
           const st = fs.fstatSync(fd)
 
-          // 로테이션 등으로 파일 크기가 줄었으면 처음부터.
+          // truncate / 재초기화로 파일 크기가 줄었으면 처음부터.
           if (st.size < position) {
             position = 0
             carry = ''
@@ -105,8 +119,11 @@ export async function GET(req: NextRequest) {
           if (st.size === position) return  // 신규 데이터 없음
 
           const toRead = Math.min(st.size - position, MAX_CHUNK_BYTES)
-          const chunk = readNewBytes(fd, position, position + toRead)
-          position += toRead
+          // Codex #454 P1: 요청 size 만큼 무조건 전진하면 short-read 시 데이터 유실.
+          // bytesRead 만큼만 position 을 전진해 다음 poll 에서 이어 읽는다.
+          const { text: chunk, bytesRead } = readNewBytes(fd, position, position + toRead)
+          if (bytesRead <= 0) return
+          position += bytesRead
 
           const { lines, carry: nextCarry } = splitLinesWithCarryover(chunk, carry)
           carry = nextCarry
@@ -137,7 +154,7 @@ export async function GET(req: NextRequest) {
       }
 
       // 초기 comment — Nginx 등 프록시가 응답 헤더를 즉시 flush 하도록 유도.
-      safeEnqueue(`: connected ${date}\n\n`)
+      safeEnqueue(`: connected ${currentDate}\n\n`)
 
       req.signal.addEventListener('abort', cleanup)
     },
