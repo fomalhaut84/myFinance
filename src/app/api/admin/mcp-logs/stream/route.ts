@@ -94,68 +94,87 @@ export async function GET(req: NextRequest) {
         }
       }
 
+      /**
+       * 현재 fd 에서 한 chunk 만 읽어 lines emit. 반환은 소비한 byte 수 (0 이면 no-op).
+       * 정상 poll + rotation drain 양쪽에서 재사용.
+       */
+      const emitFromCurrentFd = (): number => {
+        if (fd === null) return 0
+        const st = fs.fstatSync(fd)
+        // truncate / 재초기화로 파일 크기가 줄었으면 처음부터.
+        if (st.size < position) {
+          position = 0
+          carry = ''
+          decoder = new StringDecoder('utf8')
+        }
+        if (st.size === position) return 0
+        const toRead = Math.min(st.size - position, MAX_CHUNK_BYTES)
+        // Codex #454 P1: bytesRead 만큼만 position 을 전진 (short-read 방어).
+        const { buf, bytesRead } = readNewBytes(fd, position, position + toRead)
+        if (bytesRead <= 0) return 0
+        position += bytesRead
+        // Codex #455 P2: decoder.write() 로 UTF-8 partial byte 를 내부 버퍼링.
+        const chunk = decoder.write(buf)
+        const { lines, carry: nextCarry } = splitLinesWithCarryover(chunk, carry)
+        carry = nextCarry
+        if (lines.length === 0) return bytesRead
+        const parsed = parseLines(lines.join('\n'))
+        const filtered = applyFilter(parsed, filter)
+        for (const entry of filtered) {
+          safeEnqueue(encodeEvent(entry))
+        }
+        return bytesRead
+      }
+
+      /** Codex #455 P2 — rotation 직전 어제 파일의 미방출 tail 을 drain. */
+      const DRAIN_MAX_ITERS = 20  // 최대 20 * 512KB = 10MB 안전 cap
+      const drainCurrentFd = () => {
+        try {
+          for (let i = 0; i < DRAIN_MAX_ITERS; i++) {
+            if (emitFromCurrentFd() === 0) break
+          }
+        } catch { /* best effort — 회전 후 새 파일 tail 은 계속 진행 */ }
+      }
+
       const poll = () => {
         if (closed) return
         try {
-          // KST 자정 회전 대응 (Codex #454 P1 + #455 P2) — pino 로거는 자정 감지를
+          // KST 자정 회전 대응 (Codex #454 P1 + #455 P2×2) — pino 로거는 자정 감지를
           // 5분 주기 setInterval 로 하기 때문에 (`src/mcp/logger.ts:113`) 00:00~00:05
-          // 사이의 write 는 여전히 어제 파일로 흘러간다. 따라서 date 가 바뀌었다고
-          // 즉시 오늘 파일로 전환하면 그 grace window 의 로그를 놓친다.
+          // 사이의 write 는 여전히 어제 파일로 흘러간다. 실제 회전 신호는 "오늘
+          // 파일이 존재하는가" 로 판단 — 그 전까지는 어제 파일을 계속 tail.
           //
-          // 실제 회전 신호는 "오늘 파일이 존재하는가" 로 판단 — 로거가 회전 시
-          // openFileStream 이 새 파일을 생성하므로 존재 = 실제 회전 발생.
-          // 그 전까지는 어제 파일을 계속 tail.
+          // 회전 시점에는 어제 파일의 미방출 tail 을 먼저 drain (Codex #455 P2 —
+          // 이전에는 즉시 close 로 폐기됐음). 오늘 파일은 EOF 가 아니라 offset 0
+          // 부터 시작 (Codex #455 P2 — 로거 회전 후 이미 write 된 초기 라인 캡처).
           const today = todayKst()
           if (today !== currentDate) {
             const todayFilePath = logFilePath(today, false)
             if (fs.existsSync(todayFilePath)) {
+              drainCurrentFd()
               closeFd()
               currentDate = today
               filePath = todayFilePath
-              position = 0
               carry = ''
               // 새 파일 → decoder 도 리셋 (기존 partial byte 는 이전 파일 것이라 폐기).
               decoder = new StringDecoder('utf8')
               safeEnqueue(`: rotated ${currentDate}\n\n`)
+              // 회전 파일은 head 부터 (openIfNeeded 의 EOF 스타트를 우회).
+              try {
+                fd = fs.openSync(filePath, 'r')
+                position = 0
+              } catch {
+                fd = null
+                position = 0
+              }
             }
             // else: 로거가 아직 회전 안 함 → 어제 파일을 계속 tail (누락 방지).
           }
 
-          openIfNeeded()
+          openIfNeeded()  // 최초 subscribe / fs 오류 재시도. 회전 직후엔 fd 존재 → no-op.
           if (fd === null) return  // 파일이 아직 없음 → 다음 poll 대기
 
-          const st = fs.fstatSync(fd)
-
-          // truncate / 재초기화로 파일 크기가 줄었으면 처음부터.
-          if (st.size < position) {
-            position = 0
-            carry = ''
-            decoder = new StringDecoder('utf8')
-          }
-
-          if (st.size === position) return  // 신규 데이터 없음
-
-          const toRead = Math.min(st.size - position, MAX_CHUNK_BYTES)
-          // Codex #454 P1: 요청 size 만큼 무조건 전진하면 short-read 시 데이터 유실.
-          // bytesRead 만큼만 position 을 전진해 다음 poll 에서 이어 읽는다.
-          const { buf, bytesRead } = readNewBytes(fd, position, position + toRead)
-          if (bytesRead <= 0) return
-          position += bytesRead
-
-          // Codex #455 P2: decoder.write() 로 partial UTF-8 byte 를 내부 버퍼에
-          // 유지 → 다음 chunk 와 재조립. 미완결 byte 는 이번 turn 에서 output 되지
-          // 않고 그대로 남는다 (U+FFFD 치환 방지).
-          const chunk = decoder.write(buf)
-
-          const { lines, carry: nextCarry } = splitLinesWithCarryover(chunk, carry)
-          carry = nextCarry
-          if (lines.length === 0) return
-
-          const parsed = parseLines(lines.join('\n'))
-          const filtered = applyFilter(parsed, filter)
-          for (const entry of filtered) {
-            safeEnqueue(encodeEvent(entry))
-          }
+          emitFromCurrentFd()
         } catch {
           // fs 오류는 다음 poll 에서 재시도. 파일이 rotate/삭제된 경우 openIfNeeded 가
           // 재시도한다. fd 를 닫아 stale descriptor 를 정리.
