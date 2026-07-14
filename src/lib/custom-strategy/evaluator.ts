@@ -42,7 +42,11 @@ export interface MarketSnapshot {
  * - `macdCrossover`: TA 의 optional `crossover` 를 `NONE` 으로 정규화해 "이벤트 없음" 도 표현.
  * - `bbPosition`  : TA 의 5-값 (NEAR_UPPER, MIDDLE, NEAR_LOWER 포함) 을 3-값
  *   (ABOVE_UPPER / WITHIN / BELOW_LOWER) 로 축약 — 사용자 조건 어휘 (극단/중간) 와 정합.
- * - `smaCross`    : TA 의 goldenCross/deathCross boolean 을 단일 enum 으로 표준화.
+ * - `smaGoldenCross` / `smaDeathCross`: TA 엔진의 5거래일 창 안에서는 whipsaw
+ *   케이스로 두 flag 가 동시에 true 가 될 수 있음 (`src/lib/ta/engine.ts:134-138`).
+ *   단일 enum 으로 축약하면 GOLDEN 우선 판정 → `sma_cross == -1` 조건이 실제 death
+ *   가 있어도 방출 못함 (Codex #457 P2). self-ticker evaluator 처럼 두 flag 를
+ *   독립 저장 → 조건별로 정확한 flag 검사.
  */
 export interface CrossTickerSnapshot {
   price: number
@@ -50,7 +54,8 @@ export interface CrossTickerSnapshot {
   rsi?: number
   macdCrossover?: 'GOLDEN' | 'DEAD' | 'NONE'
   bbPosition?: 'ABOVE_UPPER' | 'WITHIN' | 'BELOW_LOWER'
-  smaCross?: 'GOLDEN' | 'DEAD' | 'NONE'
+  smaGoldenCross?: boolean
+  smaDeathCross?: boolean
 }
 
 /**
@@ -256,9 +261,10 @@ export function evaluateCondition(
         }
         case 'sma_cross': {
           if (cond.operator !== '==') return false
-          if (cross.smaCross === undefined) return false
-          if (cond.value === 1) return cross.smaCross === 'GOLDEN'
-          if (cond.value === -1) return cross.smaCross === 'DEAD'
+          // Codex #457 P2: whipsaw 상황에서 golden/death 두 flag 가 동시에 true 일 수
+          // 있음. 조건별로 정확한 flag 를 검사 (self-ticker case 167-172 와 동일 규칙).
+          if (cond.value === 1) return cross.smaGoldenCross === true
+          if (cond.value === -1) return cross.smaDeathCross === true
           return false
         }
         case 'bb_position': {
@@ -355,16 +361,16 @@ export function buildCrossTickerSnapshot(
     return { price: price.price, changePercent: price.changePercent }
   }
   const { rsi14, macd, bollingerBands, sma } = ta.indicators
-  const smaCross: 'GOLDEN' | 'DEAD' | 'NONE' =
-    sma.goldenCross === true ? 'GOLDEN' :
-    sma.deathCross === true ? 'DEAD' : 'NONE'
+  // Codex #457 P2: golden/death 두 flag 를 독립 저장 (whipsaw 시 동시 true 케이스
+  // 방어). 이전에는 GOLDEN 우선 축약 → DEAD 조건 방출 실패.
   return {
     price: price.price,
     changePercent: price.changePercent,
     rsi: Number.isFinite(rsi14.value) ? rsi14.value : undefined,
     macdCrossover: macd.crossover ?? 'NONE',
     bbPosition: mapCrossTickerBBPosition(bollingerBands.position),
-    smaCross,
+    smaGoldenCross: sma.goldenCross === true,
+    smaDeathCross: sma.deathCross === true,
   }
 }
 
