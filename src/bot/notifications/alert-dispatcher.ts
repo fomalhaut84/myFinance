@@ -98,6 +98,11 @@ export async function redispatchAlert(
  * 원본이 없거나 shape 불명이면 최소 shape (`{ type: kind, retriedFrom }`) 만 생성 —
  * `isValidContext` 통과 위해 `type` 을 kind 로 세팅 (kind 는 이미 whitelist 통과 상태).
  *
+ * **Root id 전파 (Codex #454 P2)**: 원본이 이미 retry row 인 경우 (contextJson.retriedFrom
+ * 존재), `retriedFrom` 은 chain 을 따라가지 않고 **가장 처음 원본** 을 가리킨다. retry-of-retry
+ * chain 이 있어도 모든 후속 retry 는 동일 root id 를 참조 → rate limiter 가 chain 을
+ * 하나의 cooldown 그룹으로 처리 가능.
+ *
  * shape 확장은 각 interface 에 `retriedFrom?` 를 추가한 것과 정합 (`context.ts`).
  */
 export function buildRetryContext(
@@ -105,9 +110,16 @@ export function buildRetryContext(
   originalId: string,
   kind: AlertKind,
 ): AlertHistoryContext | null {
-  const marker = { retriedFrom: originalId }
+  // Root id 계산 — 원본 context 에 이미 retriedFrom 이 있으면 그 값 (chain root) 을 사용.
+  const existingRoot =
+    originalContext && typeof originalContext === 'object'
+      ? (originalContext as { retriedFrom?: unknown }).retriedFrom
+      : undefined
+  const rootId = typeof existingRoot === 'string' ? existingRoot : originalId
+  const marker = { retriedFrom: rootId }
+
   if (originalContext && typeof originalContext === 'object') {
-    // 원본 shape 유지 + retriedFrom 추가 (spread — 원본 mutate 방지).
+    // 원본 shape 유지 + retriedFrom 덮어쓰기 (spread — 원본 mutate 방지, marker 가 chain root 로 override).
     return { ...(originalContext as object), ...marker } as unknown as AlertHistoryContext
   }
   // v1 (context 없는) row 재발송 시 최소 컨텍스트 — kind 를 그대로 type 으로 사용.

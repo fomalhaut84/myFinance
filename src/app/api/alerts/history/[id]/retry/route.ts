@@ -48,7 +48,13 @@ export async function POST(_req: NextRequest, { params }: RouteParams) {
     }
 
     // Rate limit — 스팸 방지. Retry-After 헤더는 응답 body 로 대체 (envelope 유지).
-    const check = globalRetryLimiter.check(id)
+    // Codex #454 P2: cooldown 키는 **원본 alert 기준**. retry 실패 시 새 row (fresh id) 가
+    // 생성되어 UI 가 그것을 다시 retry 하면 원본 cooldown 우회. `retriedFrom` 이 있으면
+    // 원본 id 를 키로 사용해 모든 retry 시도를 동일 cooldown 그룹으로 묶는다.
+    const contextJson = row.contextJson as { retriedFrom?: unknown } | null
+    const rootId = typeof contextJson?.retriedFrom === 'string' ? contextJson.retriedFrom : id
+
+    const check = globalRetryLimiter.check(rootId)
     if (!check.allowed) {
       const remainSec = Math.ceil(check.retryAfterMs / 1000)
       return fail(`재발송은 5분에 한 번만 가능합니다. ${remainSec}초 후에 다시 시도하세요.`, 429)
@@ -61,8 +67,8 @@ export async function POST(_req: NextRequest, { params }: RouteParams) {
       return fail('발송 대상 chat 이 설정되지 않았습니다.', 500)
     }
 
-    // 실제 시도 직전에 mark — 성공/실패 무관하게 cooldown 시작.
-    globalRetryLimiter.markAttempt(id)
+    // 실제 시도 직전에 mark — 성공/실패 무관하게 cooldown 시작. 원본 id 로 mark.
+    globalRetryLimiter.markAttempt(rootId)
 
     const result = await redispatchAlert(row, chatIds)
     await persistRetryHistory(row, result)

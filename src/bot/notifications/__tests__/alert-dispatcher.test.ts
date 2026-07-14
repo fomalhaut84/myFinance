@@ -128,11 +128,22 @@ describe('buildRetryContext', () => {
     expect(ctx).toEqual({ type: 'fx', retriedFrom: 'orig-id' })
   })
 
-  it('원본에 이미 retriedFrom 있으면 최신 id 로 덮어씀 (재-재발송)', () => {
+  it('원본이 이미 retry row 면 root id 를 유지 (chain 을 따라가지 않음, Codex #454 P2)', () => {
+    // R0 (original id=first-orig) → R1 (retry, contextJson.retriedFrom=first-orig)
+    // 이제 R1 을 다시 retry (parent id=second-orig) → R2 는 chain root 를 참조해야 함.
+    // 그렇지 않으면 rate limiter 가 각 retry row 를 별도 그룹으로 취급 → cooldown 우회.
     const original = { type: 'drop', retriedFrom: 'first-orig' }
     const ctx = buildRetryContext(original, 'second-orig', 'drop')
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect((ctx as any).retriedFrom).toBe('second-orig')
+    expect((ctx as any).retriedFrom).toBe('first-orig')
+  })
+
+  it('원본에 retriedFrom 이 string 이 아닌 값이면 fallback 으로 parent id 사용', () => {
+    // 손상된 contextJson (retriedFrom 이 숫자·null 등) 에 대한 defense.
+    const original = { type: 'drop', retriedFrom: 12345 }
+    const ctx = buildRetryContext(original, 'parent-id', 'drop')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((ctx as any).retriedFrom).toBe('parent-id')
   })
 })
 
