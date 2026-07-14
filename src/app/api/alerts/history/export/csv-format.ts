@@ -116,3 +116,18 @@ export function buildExportFilename(from: Date, to: Date): string {
   const toKey = formatKstDateTime(to).slice(0, 10)
   return `alert-history_${fromKey}_${toKey}.csv`
 }
+
+/**
+ * Truncation 관련 상수/헬퍼 (self-review P1).
+ *
+ * Next.js route 모듈은 handler·`dynamic` 등 정해진 export 만 허용하므로 헬퍼는 별도
+ * 모듈에 둔다. `route.ts` 와 테스트에서 재사용.
+ */
+export const MAX_EXPORT_ROWS = 10_000
+export const TRUNCATED_HEADER = 'X-Truncated'
+export const TOTAL_COUNT_HEADER = 'X-Total-Count'
+
+/** CSV 마지막에 append 하는 truncation 안내 (셀 앞자 `#` — 수식 주입 안전). */
+export function buildTruncatedNotice(shownRows: number, totalRows: number): string {
+  return `# TRUNCATED: showing first ${shownRows} of ${totalRows} rows. Narrow the filter to get the full dataset.`
+}

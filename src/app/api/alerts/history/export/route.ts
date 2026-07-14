@@ -14,15 +14,10 @@ import type { Prisma } from '@prisma/client'
 import { parseISOOrNull, parseKindsParam, resolveTimeWindow } from '../shared'
 import {
   HISTORY_CSV_HEADERS, toCsvRow, buildExportFilename,
+  MAX_EXPORT_ROWS, TRUNCATED_HEADER, TOTAL_COUNT_HEADER, buildTruncatedNotice,
 } from './csv-format'
 
 const DEFAULT_LOOKBACK_DAYS = 7
-/**
- * export 는 페이지네이션 없이 조건 매칭 전부 스트리밍하지만, 실사용 필터가 90일
- * 이내 * 하루 수십건 규모라 상한을 넉넉히 잡고 넘치면 최근순으로 잘라낸다.
- * (10만건 넘어가면 브라우저 다운로드 자체가 부담이고, 그럴 정도면 필터 좁혀 재시도가 정상 UX.)
- */
-const MAX_ROWS = 10_000
 
 export const dynamic = 'force-dynamic'
 
@@ -51,19 +46,41 @@ export async function GET(req: NextRequest) {
     else if (kinds.length > 1) where.kind = { in: kinds }
     if (rawTicker) where.ticker = rawTicker.toUpperCase()
 
-    const rows = await prisma.alertHistory.findMany({
-      where,
-      // 리스트와 동일 정렬 (같은 firedAt 안에서 id desc — tiebreak, #424 P2 회귀 방지).
-      orderBy: [{ firedAt: 'desc' }, { id: 'desc' }],
-      take: MAX_ROWS,
-    })
+    // Truncation 감지를 위해 count 를 먼저 확인. 필터가 좁은 경우 count 는 저렴하고,
+    // 넓은 경우엔 어차피 findMany 도 비싸므로 추가 비용은 무시할 수준.
+    // Truncation 감지 (self-review P1): 상한 초과 시 조용히 자르면 사용자가 부분 결과를
+    // 전체로 오해할 수 있으므로 (감사·신고 용도), `count` 로 실제 총량을 얻어 헤더 +
+    // 안내 라인으로 노출한다. 필터가 좁으면 count 는 저렴하고, 넓으면 어차피 findMany
+    // 도 비싸므로 추가 비용은 무시할 수준.
+    const [rows, total] = await Promise.all([
+      prisma.alertHistory.findMany({
+        where,
+        // 리스트와 동일 정렬 (같은 firedAt 안에서 id desc — tiebreak, #424 P2 회귀 방지).
+        orderBy: [{ firedAt: 'desc' }, { id: 'desc' }],
+        take: MAX_EXPORT_ROWS,
+      }),
+      prisma.alertHistory.count({ where }),
+    ])
 
-    const csv = toCSV(
-      [...HISTORY_CSV_HEADERS],
-      rows.map(toCsvRow),
+    const truncated = total > rows.length
+    const csvRows = rows.map(toCsvRow)
+    let csv = toCSV([...HISTORY_CSV_HEADERS], csvRows)
+    if (truncated) {
+      // CSV 스펙상 comment 는 없지만, `#` 시작 셀 하나짜리 라인은 대부분의 뷰어에서 눈에
+      // 띄는 안내로 표시된다. 수식 주입 escape 규칙 (`=+-@`) 에도 걸리지 않는다.
+      csv += '\n' + buildTruncatedNotice(rows.length, total)
+    }
+
+    const extraHeaders: Record<string, string> = {
+      [TOTAL_COUNT_HEADER]: String(total),
+    }
+    if (truncated) extraHeaders[TRUNCATED_HEADER] = 'true'
+
+    return csvResponse(
+      csv,
+      buildExportFilename(effectiveFrom, effectiveTo),
+      extraHeaders,
     )
-
-    return csvResponse(csv, buildExportFilename(effectiveFrom, effectiveTo))
   } catch (error) {
     console.error('GET /api/alerts/history/export error:', error)
     return fail('알림 이력 CSV 생성에 실패했습니다.', 500)

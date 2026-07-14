@@ -129,6 +129,47 @@ export default function AlertHistoryClient() {
     return `/api/alerts/history/export?${params.toString()}`
   }
 
+  // Phase 37-B self-review (#445, P0): `<a download>` 방식은 API 가 500 을 뱉으면
+  // envelope JSON 이 `.csv` 확장자로 저장돼 사용자가 Excel 로 열기 전까지 실패를
+  // 알아차리지 못한다. fetch → blob 으로 바꾸고 응답 헤더로 truncation 도 안내.
+  const [csvDownloading, setCsvDownloading] = useState(false)
+  const handleCsvDownload = async () => {
+    if (csvDownloading) return
+    setCsvDownloading(true)
+    try {
+      const res = await fetch(buildExportUrl())
+      if (!res.ok) {
+        const json = await res.json().catch(() => null)
+        setToast({ type: 'error', text: json?.error ?? 'CSV 다운로드 실패' })
+        return
+      }
+      const blob = await res.blob()
+      const objectUrl = URL.createObjectURL(blob)
+      try {
+        const a = document.createElement('a')
+        a.href = objectUrl
+        const dateKey = new Date().toISOString().slice(0, 10)
+        a.download = `alerts-history-${dateKey}.csv`
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+      } finally {
+        URL.revokeObjectURL(objectUrl)
+      }
+      if (res.headers.get('X-Truncated') === 'true') {
+        const total = res.headers.get('X-Total-Count') ?? '?'
+        setToast({
+          type: 'error',
+          text: `CSV 가 상한(10,000행)으로 잘렸습니다. 전체 ${total}행 — 필터를 좁혀 다시 받으세요.`,
+        })
+      }
+    } catch (e) {
+      setToast({ type: 'error', text: e instanceof Error ? e.message : 'CSV 다운로드 중 오류' })
+    } finally {
+      setCsvDownloading(false)
+    }
+  }
+
   const handleRetry = async (row: HistoryRow) => {
     if (retryingId) return
     if (row.deliveryStatus !== 'failed') {
@@ -239,14 +280,17 @@ export default function AlertHistoryClient() {
                 초기화
               </button>
             )}
-            {/* Phase 37-B (#445): 현재 필터 그대로 CSV 다운로드. <a download> 로 브라우저 기본 처리. */}
-            <a
-              href={buildExportUrl()}
-              download
-              className="px-3 py-1.5 text-[12px] font-semibold rounded-md border border-sejin/40 bg-sejin/15 text-sejin hover:bg-sejin/25"
+            {/* Phase 37-B (#445): 현재 필터 그대로 CSV 다운로드.
+                self-review P0: `<a download>` → fetch+blob 로 교체해 실패시 toast 표시,
+                truncation 헤더도 사용자에게 통지. */}
+            <button
+              type="button"
+              onClick={handleCsvDownload}
+              disabled={csvDownloading}
+              className="px-3 py-1.5 text-[12px] font-semibold rounded-md border border-sejin/40 bg-sejin/15 text-sejin hover:bg-sejin/25 disabled:opacity-50 disabled:cursor-wait"
             >
-              CSV 다운로드
-            </a>
+              {csvDownloading ? '다운로드 중…' : 'CSV 다운로드'}
+            </button>
           </div>
         </div>
 
