@@ -13,6 +13,7 @@
 
 import { NextRequest } from 'next/server'
 import fs from 'node:fs'
+import { StringDecoder } from 'node:string_decoder'
 import { fail } from '@/lib/api-response'
 import {
   KNOWN_LEVELS, KNOWN_MSG_SET, logFilePath, todayKst,
@@ -58,6 +59,10 @@ export async function GET(req: NextRequest) {
       let fd: number | null = null
       let carry = ''
       let closed = false
+      // Codex #455 P2 — StringDecoder 로 UTF-8 partial byte 를 poll 간에 버퍼링.
+      // MAX_CHUNK_BYTES 컷이 멀티바이트 문자 중간에 걸려도 `write()` 가 미완결
+      // 바이트를 내부에 남겨두고 다음 write 와 재조립한다.
+      let decoder = new StringDecoder('utf8')
 
       const openIfNeeded = () => {
         if (fd !== null) return
@@ -102,6 +107,8 @@ export async function GET(req: NextRequest) {
             filePath = logFilePath(currentDate, false)
             position = 0
             carry = ''
+            // 새 파일 → decoder 도 리셋 (기존 partial byte 는 이전 파일 것이라 폐기).
+            decoder = new StringDecoder('utf8')
             safeEnqueue(`: rotated ${currentDate}\n\n`)
           }
 
@@ -114,6 +121,7 @@ export async function GET(req: NextRequest) {
           if (st.size < position) {
             position = 0
             carry = ''
+            decoder = new StringDecoder('utf8')
           }
 
           if (st.size === position) return  // 신규 데이터 없음
@@ -121,9 +129,14 @@ export async function GET(req: NextRequest) {
           const toRead = Math.min(st.size - position, MAX_CHUNK_BYTES)
           // Codex #454 P1: 요청 size 만큼 무조건 전진하면 short-read 시 데이터 유실.
           // bytesRead 만큼만 position 을 전진해 다음 poll 에서 이어 읽는다.
-          const { text: chunk, bytesRead } = readNewBytes(fd, position, position + toRead)
+          const { buf, bytesRead } = readNewBytes(fd, position, position + toRead)
           if (bytesRead <= 0) return
           position += bytesRead
+
+          // Codex #455 P2: decoder.write() 로 partial UTF-8 byte 를 내부 버퍼에
+          // 유지 → 다음 chunk 와 재조립. 미완결 byte 는 이번 turn 에서 output 되지
+          // 않고 그대로 남는다 (U+FFFD 치환 방지).
+          const chunk = decoder.write(buf)
 
           const { lines, carry: nextCarry } = splitLinesWithCarryover(chunk, carry)
           carry = nextCarry
@@ -152,6 +165,12 @@ export async function GET(req: NextRequest) {
         closeFd()
         try { controller.close() } catch { /* already closed */ }
       }
+
+      // Codex #455 P2: 초기 EOF 위치를 연결 시점에 동기 캡처 — 이전에는 첫 poll
+      // (1.5s 후) 에 openIfNeeded 가 position 을 설정해 그 사이 append 된 라인이
+      // 새 라인이 아닌 것으로 판정되어 스킵됐다. 파일이 아직 없으면 그대로 두고
+      // (openIfNeeded 가 poll 마다 재시도) 다음 라인부터 push.
+      openIfNeeded()
 
       // 초기 comment — Nginx 등 프록시가 응답 헤더를 즉시 flush 하도록 유도.
       safeEnqueue(`: connected ${currentDate}\n\n`)
