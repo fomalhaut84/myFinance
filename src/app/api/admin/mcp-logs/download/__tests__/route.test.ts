@@ -122,35 +122,35 @@ describe('GET /api/admin/mcp-logs/download', () => {
     expect(res.headers.get('content-disposition')).toContain('mcp-2026-07-10.log')
   })
 
-  // Codex 사전 리뷰 P1 회귀 방지 — Content-Length 는 body 실제 크기와 일치.
-  // 이전에는 read 이전 `stat.size` 를 사용해, 오늘 로그처럼 read 중에 append 되는
-  // 파일에서 stat.size < body.length → 클라이언트가 tail 을 잘라버렸다.
-  it('Content-Length 는 응답 body 실제 바이트 수와 일치', async () => {
+  // Codex #456 P2 회귀 방지 — 스트리밍 방식이라 Content-Length 헤더는 생략
+  // (chunked transfer encoding). 대신 body 실제 크기와 파일 크기가 일치하는지
+  // 검증. 이전에는 fs.readFileSync + Content-Length 조합에서 stat/read race 로
+  // tail 이 잘렸었다.
+  it('body 는 파일 전체 내용과 일치 (스트리밍)', async () => {
     const { GET } = await import('../route')
     const res = await GET(buildReq({ date: '2026-07-10' }))
     expect(res.status).toBe(200)
     const bodyBuf = new Uint8Array(await res.arrayBuffer())
-    const declared = Number(res.headers.get('content-length'))
-    expect(declared).toBe(bodyBuf.length)
+    const fileSize = fs.statSync(path.join(TMP_LOG_DIR, 'mcp-2026-07-10.log')).size
+    expect(bodyBuf.length).toBe(fileSize)
+    // Content-Length 는 스트리밍이라 생략 (Node 가 chunked encoding 자동)
   })
 
-  it('read 이후 append 된 bytes 는 body 에 포함되고 Content-Length 로 정확히 노출', async () => {
-    // 실제 pino sync append race 를 완벽하게 재현하려면 fs.readFileSync 를 hook 해야
-    // 하지만 vitest 로 그건 부담이 큼. 대신 `route` 가 stat.size (구 방식) 대신
-    // buf.length (신 방식) 를 사용하는지 계약 수준에서 검증 — 파일을 미리 늘려두고
-    // read 결과 크기와 헤더가 일치하는지 확인.
+  it('read 도중 append 된 bytes 도 body 에 포함 (createReadStream 은 EOF 까지 소비)', async () => {
+    // createReadStream 은 open 시점에 파일을 open 하고 데이터 이벤트를 통해 EOF
+    // 까지 소비하므로 실제 로그에 대해 fs.readFileSync 와 동등한 스냅샷을 얻는다.
     const target = path.join(TMP_LOG_DIR, 'mcp-2026-07-09.log')
     fs.writeFileSync(target, '{"level":"info","msg":"a"}\n')
-    // 파일이 이미 존재하는 상태 → GET 이 부르는 fs.readFileSync 는 write 후 크기까지 읽음.
     fs.appendFileSync(target, '{"level":"info","msg":"b"}\n{"level":"info","msg":"c"}\n')
 
     const { GET } = await import('../route')
     const res = await GET(buildReq({ date: '2026-07-09' }))
     expect(res.status).toBe(200)
     const bodyBuf = new Uint8Array(await res.arrayBuffer())
-    const declared = Number(res.headers.get('content-length'))
-    expect(declared).toBe(bodyBuf.length)
-    // 3 라인 모두 포함 (append 후 크기까지)
-    expect(new TextDecoder().decode(bodyBuf)).toContain('"msg":"c"')
+    const text = new TextDecoder().decode(bodyBuf)
+    expect(text).toContain('"msg":"a"')
+    expect(text).toContain('"msg":"b"')
+    expect(text).toContain('"msg":"c"')
+    expect(bodyBuf.length).toBe(fs.statSync(target).size)
   })
 })

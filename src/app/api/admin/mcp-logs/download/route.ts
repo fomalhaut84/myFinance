@@ -12,6 +12,7 @@
 
 import { NextRequest } from 'next/server'
 import fs from 'node:fs'
+import { Readable } from 'node:stream'
 import { fail } from '@/lib/api-response'
 import { isValidDateStr, logFilePath } from '../shared'
 
@@ -40,22 +41,19 @@ export async function GET(req: NextRequest) {
       return fail('해당 일자 로그 파일이 없습니다.', 404)
     }
 
-    // 파일 크기 확인 — 스트림 대신 buffer 반환 (일반 로그 사이즈 감안: 최대 수십 MB).
-    // 대용량 스트림은 Next.js Edge/Node 환경에서 ReadableStream 구성이 필요하지만
-    // MCP 로그는 하루 최대 수백 MB 상한 → 실무상 buffer 로 충분.
-    const buf = fs.readFileSync(filePath)
+    // Codex #456 P2: fs.readFileSync 는 이벤트 루프를 블록 + `new Uint8Array(buf)`
+    // 로 메모리 복사 2회 → 대용량 로그 (수백 MB) 시 프로세스 stall / 메모리 폭주.
+    // fs.createReadStream 을 Web ReadableStream 으로 변환해 백프레셔 + zero-copy
+    // 로 스트리밍. HTTP 는 chunked transfer encoding 사용 (Content-Length 생략) —
+    // 오늘자 로그처럼 실시간 append 되는 파일도 read 시점 EOF 까지 자연 소비.
+    const nodeStream = fs.createReadStream(filePath)
+    const webStream = Readable.toWeb(nodeStream) as unknown as ReadableStream<Uint8Array>
 
     const basename = crash ? `mcp-crash-${date}.log` : `mcp-${date}.log`
-    // Codex 사전 리뷰 P1: Content-Length 는 반드시 실제 body 바이트 (buf.length) 여야
-    // 한다. 이전에는 read 이전에 캡처한 `stat.size` 를 사용해 오늘자 로그처럼
-    // 파일이 pino sync append 로 계속 늘어나는 경우 `readFileSync` 는 read 시점
-    // EOF 까지 반환 → `stat.size < buf.length` → 클라이언트가 헤더 값만큼만 소비
-    // 하고 tail 을 잘라버렸음 (관리자가 주로 찾던 최신 라인).
-    return new Response(new Uint8Array(buf), {
+    return new Response(webStream, {
       status: 200,
       headers: {
         'Content-Type': 'text/plain; charset=utf-8',
-        'Content-Length': String(buf.length),
         'Content-Disposition': `attachment; filename="${basename}"`,
         'Cache-Control': 'no-store',
       },

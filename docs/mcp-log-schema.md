@@ -11,9 +11,12 @@
 ## Rotation · Retention 정책
 
 - **Rotation**: 매일 KST 00:00 (자정) 에 새 파일. `scheduleFileRotation` 이 5분 주기 setInterval 로 KST 날짜 변화를 감지 → 새 stream open + old flush+end (`src/mcp/logger.ts:111-135`). 실제 rotation timing 은 00:00~00:05 사이.
-- **Retention**: 14일 (기본 `LOG_RETENTION_DAYS=14`). `mtime` 기준으로 cutoff 초과된 `mcp-*.log` / `mcp-crash-*.log` 를 삭제.
+- **Retention**: 기본 14일. `mtime` 기준으로 cutoff 초과된 `mcp-*.log` / `mcp-crash-*.log` 를 삭제.
 - **Prune 트리거**: (a) 매 rotation 직후 (`openFileStream` 안에서 `pruneOldLogs` 호출), (b) 프로세스 부팅 시 (첫 stream open). 별도 cron 없음 — best effort.
-- **환경변수**: `LOG_ENABLE_FILE` (파일 로거 on/off), `LOG_RETENTION_DAYS` (0 이하면 정리 비활성), `MCP_LOG_DIR` (기본 `logs/`).
+- **환경변수** (`src/mcp/logger.ts:11-38`):
+  - `MCP_LOG_TEE_FILE=1` — 파일 로거 활성 (기본 off). `ecosystem.config.js` 에 설정됨
+  - `MCP_LOG_RETENTION_DAYS` — retention 일수 (기본 `14`, 0 이하면 정리 비활성)
+  - `MCP_LOG_DIR` — 로그 디렉토리 (기본 `logs/`)
 
 ## 관리 UI · API
 
