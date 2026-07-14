@@ -85,6 +85,13 @@ export default function LiveTailPanel({
       return
     }
 
+    // Codex #455 P2: 필터 변경 (또는 fresh 시작) 시 이전 rows 를 초기화.
+    // 이전 필터의 라인이 새 필터 결과와 섞여 보이면 사용자에게 오해 유발
+    // (예: level=error → level=info 로 바꿔도 옛 error 라인이 남음).
+    // Toggle OFF 시에는 early return 하므로 클리어되지 않음 — 사용자가 방금
+    // 본 라인을 유지하고 싶어할 수 있음.
+    setRows([])
+
     const params = new URLSearchParams()
     if (level) params.set('level', level)
     if (msg) params.set('msg', msg)

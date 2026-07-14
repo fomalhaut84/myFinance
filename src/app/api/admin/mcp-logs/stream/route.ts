@@ -97,19 +97,28 @@ export async function GET(req: NextRequest) {
       const poll = () => {
         if (closed) return
         try {
-          // KST 자정 회전 대응 (Codex #454 P1) — pino 로거는 자정에 새 파일로
-          // 회전하지만 파일명 자체가 다르므로 size 감지로는 잡을 수 없다.
-          // poll 마다 today 를 재계산해 date 가 바뀌면 fd 를 닫고 새 파일을 open.
+          // KST 자정 회전 대응 (Codex #454 P1 + #455 P2) — pino 로거는 자정 감지를
+          // 5분 주기 setInterval 로 하기 때문에 (`src/mcp/logger.ts:113`) 00:00~00:05
+          // 사이의 write 는 여전히 어제 파일로 흘러간다. 따라서 date 가 바뀌었다고
+          // 즉시 오늘 파일로 전환하면 그 grace window 의 로그를 놓친다.
+          //
+          // 실제 회전 신호는 "오늘 파일이 존재하는가" 로 판단 — 로거가 회전 시
+          // openFileStream 이 새 파일을 생성하므로 존재 = 실제 회전 발생.
+          // 그 전까지는 어제 파일을 계속 tail.
           const today = todayKst()
           if (today !== currentDate) {
-            closeFd()
-            currentDate = today
-            filePath = logFilePath(currentDate, false)
-            position = 0
-            carry = ''
-            // 새 파일 → decoder 도 리셋 (기존 partial byte 는 이전 파일 것이라 폐기).
-            decoder = new StringDecoder('utf8')
-            safeEnqueue(`: rotated ${currentDate}\n\n`)
+            const todayFilePath = logFilePath(today, false)
+            if (fs.existsSync(todayFilePath)) {
+              closeFd()
+              currentDate = today
+              filePath = todayFilePath
+              position = 0
+              carry = ''
+              // 새 파일 → decoder 도 리셋 (기존 partial byte 는 이전 파일 것이라 폐기).
+              decoder = new StringDecoder('utf8')
+              safeEnqueue(`: rotated ${currentDate}\n\n`)
+            }
+            // else: 로거가 아직 회전 안 함 → 어제 파일을 계속 tail (누락 방지).
           }
 
           openIfNeeded()
