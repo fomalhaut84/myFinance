@@ -62,24 +62,47 @@
 
 ## M (Medium) — 39-B/C 병행 가능
 
-### M1. 아이콘-only 닫기 버튼이 44px 미만
+### M1. 아이콘-only 액션 버튼이 44px 미만 (코드베이스 sweep)
 
-**증상**: `p-1.5` (12px total) + 실 아이콘 크기 **16px** (form 닫기) 또는 **13~14px** (CategoryTable edit/delete) → 실효 터치 영역 **28~30px**. Apple HIG 권장 44×44 미달. 손가락 큰 사용자 mis-tap.
+**증상**: 두 패턴 모두 sub-44 hitbox → 손가락 큰 사용자 mis-tap.
+- 패턴 A (form 헤더 닫기): `p-1.5` + 16px svg = **28px**
+- 패턴 B (테이블 액션): `inline-flex ... w-[26px] h-[26px]` = **26px** explicit
+- 패턴 C (CategoryTable): `p-1.5` + 13~14px svg = **26~28px**
 
-**대상** (10+ 파일):
-- `src/components/expense/TransactionForm.tsx:218` (16px svg)
-- `src/components/expense/RecurringForm.tsx:114` (16px svg)
-- `src/components/asset/AssetForm.tsx:120` (16px svg)
-- `src/components/rsu/RSUForm.tsx:105` (16px svg)
-- `src/components/deposit/DepositEditPanel.tsx:100` (16px svg)
-- `src/components/category/CategoryForm.tsx:86` / `CategoryEditPanel.tsx:102` (16px svg)
-- `src/components/category/CategoryTable.tsx:100,103` (13~14px edit/delete 아이콘)
-- `src/components/settings/IncomeProfileManager.tsx:162` (16px svg)
+**대상 (코드베이스 sweep — Codex #459 P2×2 반영):**
 
-**Fix 방향** (Codex #459 P2 반영): 아이콘 크기가 소형 (13~16px) 이라 padding 만으로는 44px 달성 안 됨 — 초기 audit 은 `p-2.5` (36px) 로 계산 실수했다. **hitbox 를 padding 이 아닌 explicit 치수로 설정**:
-- 공통 `IconButton` 컴포넌트: `w-11 h-11 flex items-center justify-center` (44×44 확정) + 아이콘은 그대로 (시각 크기 유지)
-- 또는 개별 사용처에 `min-w-11 min-h-11` 유틸리티 추가
-- 데스크톱은 그대로 두고 mobile 만 확장하려면 `min-w-11 min-h-11 sm:min-w-0 sm:min-h-0` (권장하지 않음 — accessibility 는 모든 뷰포트 원칙)
+_form 헤더 닫기 (`p-1.5` + 16px svg):_
+- `src/components/expense/TransactionForm.tsx:218` · `RecurringForm.tsx:114`
+- `src/components/asset/AssetForm.tsx:120`
+- `src/components/rsu/RSUForm.tsx:105`
+- `src/components/deposit/DepositEditPanel.tsx:100`
+- `src/components/category/CategoryForm.tsx:86` · `CategoryEditPanel.tsx:102`
+- `src/components/settings/IncomeProfileManager.tsx:162`
+- `src/components/stock-option/StockOptionForm.tsx:107`
+- `src/components/watchlist/WatchlistForm.tsx:97`
+- `src/components/dividend/DividendEditPanel.tsx:129`
+
+_테이블 액션 (`w-[26px] h-[26px]` explicit):_
+- `src/components/expense/BudgetManager.tsx` (edit / delete)
+- `src/components/expense/RecurringTable.tsx` (edit / delete)
+- `src/components/watchlist/WatchlistTable.tsx` (edit / delete)
+- `src/components/deposit/DepositTable.tsx` (edit / delete)
+- `src/components/dividend/DividendTable.tsx` (edit / delete)
+- `src/components/trade/TradeTable.tsx` (edit / delete)
+- `src/components/expense/TransactionTable.tsx` (edit / delete / recurring)
+- `src/components/asset/AssetTable.tsx` (edit / delete)
+- `src/components/rsu/RSUDashboard.tsx` (편집/삭제 아이콘 있으면)
+- `src/components/stock-option/StockOptionCRUD*.tsx`
+
+_CategoryTable (`p-1.5` + 13~14px svg):_
+- `src/components/category/CategoryTable.tsx:100,103`
+
+**Fix 방향** (Codex #459 P2×2 반영):
+아이콘 크기가 소형 (13~16px) 이라 padding 만으로는 44px 달성 안 됨 — 초기 audit 은 `p-2.5` (36px) 로 계산 실수. **hitbox 를 padding 이 아닌 explicit 치수로 잠금**:
+- 공통 `IconButton` 컴포넌트: `w-11 h-11 flex items-center justify-center` (44×44 확정) + 아이콘 시각 크기 유지
+- 개별 사용처에 `min-w-11 min-h-11` 유틸리티
+- accessibility 는 모든 뷰포트 원칙 (sm 분기 지양)
+- 39-B 는 **테이블 액션 버튼 (`w-[26px] h-[26px]`) 전체를 IconButton 로 일괄 교체** — 파일 수 많음 (10+)
 
 ---
 
@@ -97,10 +120,37 @@
 - `src/components/expense/BudgetManager.tsx:257` — 추가 form w-[140px]
 - `src/components/expense/RecurringForm.tsx:160` (w-[120px]), `:186` (w-[100px])
 
-**Fix 방향:**
-- BudgetManager row: `grid-cols-[140px_1fr_100px_100px_40px]` → `grid-cols-[100px_1fr_auto_40px] sm:grid-cols-[140px_1fr_100px_100px_40px]` (mobile 은 예산/사용/잔액을 한 컬럼으로 합쳐 축소)
-- 또는 mobile 전용 `<lg` 카드 뷰 스택 (한 row = 카테고리명 + progress bar + 우측 액션)
-- fixed input 폭은 `w-[120px] sm:w-[140px]` 또는 `flex-1 min-w-0`
+**Fix 방향** (Codex #459 P2 반영 — grid template 만 바꾸면 자식 수 불일치로 새 layout break):
+
+BudgetManager row 는 5개의 direct grid children (카테고리명 · progress bar · 예산 · 사용 · 액션) 을 렌더. **grid template 변경 시 반드시 마크업 변경도 동반**:
+
+- **옵션 (a) — Numeric 컬럼 두 개 (예산·사용) 를 mobile 에서 progress bar 셀 안으로 흡수:**
+  ```
+  // 마크업 변경 예:
+  <div className="grid grid-cols-[100px_1fr_40px] sm:grid-cols-[140px_1fr_100px_100px_40px] ...">
+    <span>{카테고리명}</span>
+    <div>
+      <ProgressBar />
+      <div className="flex justify-between text-[11px] sm:hidden">
+        <span>예산 {formatKRW}</span><span>사용 {formatKRW}</span>
+      </div>
+    </div>
+    <span className="hidden sm:inline">{예산}</span>
+    <span className="hidden sm:inline">{사용}</span>
+    <span>{액션}</span>
+  </div>
+  ```
+  → mobile 3col (100+1fr+40), 데스크톱 5col. 자식 수는 여전히 5개 (하나만 mobile-hidden).
+
+- **옵션 (b) — mobile 전용 카드 뷰 스택 (`<lg` block):** 완전한 mobile-only 렌더 트리 분리. 유지보수 부담 증가 대신 layout 자유도 최대.
+
+- **옵션 (c) — 잔액/사용 중 하나만 노출:** 예산/사용/잔액 중 mobile 에서 사용률(%) 로 이미 표현되므로 하나 제거 가능.
+
+**39-B 권장:** (a). 마크업 최소 변경 + 자식 수 유지 + `hidden sm:inline` 으로 안전.
+
+**추가 fixed input 폭 fix (input branch):**
+- `w-[120px] sm:w-[140px]` 또는 `flex-1 min-w-0`
+- RecurringForm 도 동일
 
 ---
 
@@ -173,13 +223,16 @@
 ## 39-B / 39-C 스코프 제안
 
 ### 39-B (모바일 상위 페이지 개선 — #451)
-**포함:**
-- H1 HoldingsTable, WatchlistTable 카드 뷰 or 컬럼 우선순위화 (2 파일)
-- M1 아이콘 버튼 공용 컴포넌트 → 일괄 교체 (10+ 파일)
-- M2 BudgetManager / RecurringForm fixed width fix (2 파일)
-- M3 form 3-col grids (7 파일) — 시간 남으면
+**포함 (Codex #459 P2 반영 — H1/M1/M2 파일 완전 목록):**
+- **H1**: HoldingsTable, WatchlistTable, **TransactionTable** 카드 뷰 or 컬럼 우선순위화 (3 파일 — TransactionTable 은 6컬럼이지만 카테고리·설명 긴 문자열로 실 pain 큼)
+- **M1**: 공용 `IconButton` (`w-11 h-11`) 도입 + 아래 세 카테고리 sweep:
+  - form 헤더 닫기 (10 파일)
+  - 테이블 액션 (`w-[26px] h-[26px]` explicit — BudgetManager · RecurringTable · WatchlistTable · DepositTable · DividendTable · TradeTable · TransactionTable · AssetTable · RSU · StockOption 10+ 파일)
+  - CategoryTable edit/delete (1 파일)
+- **M2**: BudgetManager row (line 190) grid + 마크업 조정 + 편집/추가 branch fixed width, RecurringForm fixed input (총 2 파일)
+- **M3**: form 3-col grids (7 파일) — 시간 남으면
 
-**노력**: M (1.5~2일 — 이전 H1 철회로 소폭 단축)
+**노력**: M (2~2.5일 — TransactionTable + IconButton sweep 반영으로 소폭 증가)
 
 ### 39-C (모바일 v2 신규 페이지 재감사 — #452)
 **포함:**
