@@ -64,31 +64,43 @@
 
 ### M1. 아이콘-only 닫기 버튼이 44px 미만
 
-**증상**: `p-1.5` (총 padding 12px) + 아이콘 24px ≈ **36px** 실효 터치 영역. Apple HIG 권장 44×44 미달. 손가락 큰 사용자 mis-tap.
+**증상**: `p-1.5` (12px total) + 실 아이콘 크기 **16px** (form 닫기) 또는 **13~14px** (CategoryTable edit/delete) → 실효 터치 영역 **28~30px**. Apple HIG 권장 44×44 미달. 손가락 큰 사용자 mis-tap.
 
 **대상** (10+ 파일):
-- `src/components/expense/TransactionForm.tsx:218`
-- `src/components/expense/RecurringForm.tsx:114`
-- `src/components/asset/AssetForm.tsx:120`
-- `src/components/rsu/RSUForm.tsx:105`
-- `src/components/deposit/DepositEditPanel.tsx:100`
-- `src/components/category/CategoryForm.tsx:86` / `CategoryEditPanel.tsx:102`
-- `src/components/category/CategoryTable.tsx:100,103` (edit/delete 아이콘)
-- `src/components/settings/IncomeProfileManager.tsx:162`
+- `src/components/expense/TransactionForm.tsx:218` (16px svg)
+- `src/components/expense/RecurringForm.tsx:114` (16px svg)
+- `src/components/asset/AssetForm.tsx:120` (16px svg)
+- `src/components/rsu/RSUForm.tsx:105` (16px svg)
+- `src/components/deposit/DepositEditPanel.tsx:100` (16px svg)
+- `src/components/category/CategoryForm.tsx:86` / `CategoryEditPanel.tsx:102` (16px svg)
+- `src/components/category/CategoryTable.tsx:100,103` (13~14px edit/delete 아이콘)
+- `src/components/settings/IncomeProfileManager.tsx:162` (16px svg)
 
-**Fix 방향**: 공통 `IconButton` 컴포넌트 도입 → `p-2.5` (총 20px) 로 통일, 총 실효 영역 ~44px. 또는 개별 `p-1.5` → `p-2 sm:p-1.5` 로 mobile 만 확장.
+**Fix 방향** (Codex #459 P2 반영): 아이콘 크기가 소형 (13~16px) 이라 padding 만으로는 44px 달성 안 됨 — 초기 audit 은 `p-2.5` (36px) 로 계산 실수했다. **hitbox 를 padding 이 아닌 explicit 치수로 설정**:
+- 공통 `IconButton` 컴포넌트: `w-11 h-11 flex items-center justify-center` (44×44 확정) + 아이콘은 그대로 (시각 크기 유지)
+- 또는 개별 사용처에 `min-w-11 min-h-11` 유틸리티 추가
+- 데스크톱은 그대로 두고 mobile 만 확장하려면 `min-w-11 min-h-11 sm:min-w-0 sm:min-h-0` (권장하지 않음 — accessibility 는 모든 뷰포트 원칙)
 
 ---
 
-### M2. `BudgetManager` / `RecurringForm` 하드코드 fixed width
+### M2. `BudgetManager` / `RecurringForm` 하드코드 fixed width + **grid track 폭 초과 (Codex #459 P2)**
 
-**증상**: 320px viewport 안에서 `w-[120px]` + `w-[140px]` 조합이 layout 을 강제 → 나머지 필드 압축.
+**증상 (기본 조회 row — 가장 자주 노출):** `src/components/expense/BudgetManager.tsx:190` 이 `grid-cols-[140px_1fr_100px_100px_40px]` 로 fixed track 합 **380px** + `gap-3` (4 gap × 12 = 48px) + `px-5` (좌우 20 = 40px) = **최소 468px** 필요. 375 viewport 에서 상위 카드 `overflow-hidden` (line 147) 이 오른쪽 컬럼 (40px 액션 버튼) 을 잘라냄.
 
-**대상**:
-- `src/components/expense/BudgetManager.tsx:160` (w-[120px]), `:257` (w-[140px])
+**증상 (미설정 카테고리 row):** line 168 `grid-cols-[140px_1fr_40px]` → 최소 ~ 240 + gaps + padding ≈ 320px. 375 viewport 여유 있음.
+
+**증상 (편집/추가 branch):** `w-[120px]` + `w-[140px]` fixed input 이 여유 공간 압축 — 초기 audit 이 언급한 케이스.
+
+**대상 (완전 목록):**
+- `src/components/expense/BudgetManager.tsx:190` — 기본 row grid track (**High priority**, 조회 상시 노출)
+- `src/components/expense/BudgetManager.tsx:160` — 편집 branch w-[120px]
+- `src/components/expense/BudgetManager.tsx:257` — 추가 form w-[140px]
 - `src/components/expense/RecurringForm.tsx:160` (w-[120px]), `:186` (w-[100px])
 
-**Fix 방향**: `w-[120px] sm:w-[140px]` 같은 responsive, 또는 flex 기반 (`flex-1` + `min-w-0`).
+**Fix 방향:**
+- BudgetManager row: `grid-cols-[140px_1fr_100px_100px_40px]` → `grid-cols-[100px_1fr_auto_40px] sm:grid-cols-[140px_1fr_100px_100px_40px]` (mobile 은 예산/사용/잔액을 한 컬럼으로 합쳐 축소)
+- 또는 mobile 전용 `<lg` 카드 뷰 스택 (한 row = 카테고리명 + progress bar + 우측 액션)
+- fixed input 폭은 `w-[120px] sm:w-[140px]` 또는 `flex-1 min-w-0`
 
 ---
 
