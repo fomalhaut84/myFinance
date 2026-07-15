@@ -107,8 +107,10 @@ _CategoryTable (`p-1.5` + 13~14px svg — 26~28px):_
 **39-B sweep 명령 (Codex #459 P2 반영 — multiline 안전):**
 ```bash
 # 4개 패턴 union. `| grep -E 'button|Button'` 필터는 className 이 <button 과 별개 줄에
-# 있으면 놓치므로 사용 금지 — 대신 rg -B2 로 상단 <button 확인:
-rg -n --type tsx -B2 'p-1\.5|p-0\.5|w-\[26px\] h-\[26px\]|w-7 h-7' src/components/
+# 있으면 놓치므로 사용 금지 — 대신 rg -B2 로 상단 <button 확인.
+# ripgrep 은 `tsx` 를 별도 type 으로 안 잡음 (`rg --type-list` → ts: *.cts,*.mts,*.ts,*.tsx).
+# `--type ts` (tsx 포함) 또는 `-g '*.tsx'` glob 사용:
+rg -n --type ts -B2 'p-1\.5|p-0\.5|w-\[26px\] h-\[26px\]|w-7 h-7' src/components/
 
 # 또는 grep 만 사용해 raw 리스팅 (수동 필터):
 grep -rn 'p-1\.5\|p-0\.5\|w-\[26px\] h-\[26px\]\|w-7 h-7' src/components/
@@ -161,10 +163,14 @@ BudgetManager row 는 5개의 direct grid children (카테고리명 · progress 
         <span>예산 {formatKRW(amount)}</span>
         <span>{pct}%{pct >= 100 ? ' 초과' : ''}</span>
       </div>
-      {/* Mobile 전용 요약 — 사용·잔액 (Codex #459 P2: 실 컬럼명 정정) */}
+      {/* Mobile 전용 요약 — 사용·잔액 (Codex #459 P2: 실 컬럼명 정정).
+          잔액 색상은 원본 (line 208) 의 3-state 를 그대로 (Codex #459 P2 재검):
+          remaining >= 0 ? (pct >= 70 ? yellow : emerald) : red */}
       <div className="flex justify-between text-[11px] sm:hidden">
         <span className="text-red-400">사용 {formatKRW(spent)}</span>
-        <span className={remaining >= 0 ? 'text-emerald-400' : 'text-red-400'}>잔액 {formatKRW(remaining)}</span>
+        <span className={remaining >= 0 ? (pct >= 70 ? 'text-yellow-400' : 'text-emerald-400') : 'text-red-400'}>
+          잔액 {formatKRW(remaining)}
+        </span>
       </div>
     </div>
     <span className="hidden sm:inline">{formatKRW(spent)}</span>       {/* 사용 */}
