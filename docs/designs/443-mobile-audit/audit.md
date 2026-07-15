@@ -9,9 +9,11 @@
 
 ## Executive Summary
 
-**총평:** 모바일 기반 인프라는 대체로 잘 갖춰짐. 골격 (responsive padding, 테이블 overflow wrapper, Sidebar↔BottomTab 분기, `ResponsiveContainer` 차트) 은 모두 정상 동작. 실제 UX pain 은 **밀집한 데이터 테이블의 수평 스크롤 pain** + **모달 폭 초과 (max-w-lg = 512px > 375px viewport)** 두 축에서 집중.
+**총평:** 모바일 기반 인프라는 대체로 잘 갖춰짐. 골격 (responsive padding, 테이블 overflow wrapper, Sidebar↔BottomTab 분기, `ResponsiveContainer` 차트, **모든 모달 overlay `px-4`**) 은 모두 정상 동작. 실제 UX pain 은 **밀집한 데이터 테이블의 수평 스크롤 pain** 이 유일한 상위 이슈.
 
-**H(High) 2개 / M(Medium) 4개 / L(Low) 3개** 로 분류. H 는 39-B 필수, M 은 39-B/C 병행, L 은 follow-up 이슈 후보.
+**H(High) 1개 / M(Medium) 4개 / L(Low) 3개** 로 분류. H 는 39-B 필수, M 은 39-B/C 병행, L 은 follow-up 이슈 후보.
+
+**[Codex #459 P2 반영]** 초기 audit 은 `w-full max-w-lg` 모달 두 개 (Strategy Edit, Alert Detail) 를 H1 로 flag 했으나 오탐이었다. 두 모달 모두 overlay 에 `px-4` (`fixed ... justify-center px-4`) 가 있어 375 viewport 에서 `w-full` 이 padded content (343px) 로 resolve → `max-w-lg` (512px) 는 wider screen 만 cap. 실제 clipping 없음. 전체 모달 overlay 12개 조사 결과 모두 `px-4` 있음.
 
 ---
 
@@ -26,26 +28,19 @@
 | Toast: `w-[calc(100vw-2rem)] max-w-[360px]` | ✓ viewport 좁을 때 auto-fit |
 | Side panel form modals: `max-w-[420px]` | ✓ 430 viewport 까지 여유, 375 도 clipping 없음 (`h-full` + slide-in) |
 | Delete confirm modals: `max-w-[380px]` | ✓ 375 viewport 여유 |
+| **Center-align modals (Strategy Edit, Alert Detail, 그 외 12개)**: overlay `px-4` 안에 `w-full max-w-lg` | ✓ 375 viewport 에서 `w-full` → 343px (padded), `max-w-lg` (512px) 는 wider screen 만 cap → clipping 없음 |
 
 ---
 
 ## H (High) — 39-B 반드시 수정
 
-### H1. 대형 모달이 375px 뷰포트 초과 → clipping
+### ~~H1. 대형 모달이 375px 뷰포트 초과 → clipping~~ (오탐, Codex #459 P2)
 
-**증상**: `w-full max-w-lg` (Tailwind `lg` = 32rem = **512px**). 375/430 viewport 에서 오른쪽 절단 or 좌우 여백 없이 화면 꽉 참.
-
-**대상**:
-- `src/components/alerts/AlertHistoryDetailModal.tsx:55` — 알림 이력 상세 모달
-- `src/components/strategies/StrategyEditModal.tsx:148` — 전략 편집 모달 (nlPreview + diff 표시)
-
-**Fix 방향**: `max-w-lg` → `max-w-lg mx-4` 또는 `max-w-[calc(100vw-2rem)] sm:max-w-lg` 로 뷰포트-안전.
-
-**심각도 근거**: 모달 자체는 자주 열리는 상호작용 (알림 클릭·전략 편집). 잘리면 저장/닫기 버튼 접근 불가 가능.
+**철회 사유**: overlay 가 `fixed ... justify-center px-4` 로 padding → `w-full` 이 padded content (343px @ 375 viewport) 로 resolve. `max-w-lg` (512px) 는 wider screen 만 cap → 실제 clipping 없음. 전체 12개 center-align modal 조사 결과 모두 동일 패턴. **39-B 스코프에서 제거.**
 
 ---
 
-### H2. 데이터 테이블 8+ 컬럼 → 수평 스크롤 pain
+### H1. 데이터 테이블 8+ 컬럼 → 수평 스크롤 pain (기존 H2)
 
 **증상**: `overflow-x-auto` 는 있어서 body horizontal overflow 는 방지되지만, 사용자가 좌우 반복 스크롤 필요. 375 viewport 에서 8컬럼 = 셀당 ~50px → 종목명·수치가 잘려서 보임 (`truncate` 도 어색).
 
@@ -151,8 +146,8 @@
 
 | 항목 | 빈도 | 심각도 | 액션 |
 |---|---|---|---|
-| H1 대형 모달 clipping (Strategy Edit, Alert Detail) | 중 | H | **39-B 필수** |
-| H2 HoldingsTable / WatchlistTable 수평 스크롤 | **최상** | H | **39-B 필수** |
+| ~~H1 모달 clipping~~ | — | — | **철회 (Codex #459 P2 오탐)** |
+| H1 HoldingsTable / WatchlistTable 수평 스크롤 | **최상** | H | **39-B 필수** |
 | M1 아이콘 닫기 버튼 <44px | 상 | M | 39-B (공용 IconButton 도입) |
 | M2 BudgetManager fixed w-[120/140] | 중 | M | 39-B |
 | M3 3-col form grids | 중 | M | 39-B 또는 39-C |
@@ -167,13 +162,12 @@
 
 ### 39-B (모바일 상위 페이지 개선 — #451)
 **포함:**
-- H1 모달 폭 fix (2 파일)
-- H2 HoldingsTable, WatchlistTable 카드 뷰 or 컬럼 우선순위화 (2 파일)
+- H1 HoldingsTable, WatchlistTable 카드 뷰 or 컬럼 우선순위화 (2 파일)
 - M1 아이콘 버튼 공용 컴포넌트 → 일괄 교체 (10+ 파일)
 - M2 BudgetManager / RecurringForm fixed width fix (2 파일)
 - M3 form 3-col grids (7 파일) — 시간 남으면
 
-**노력**: M (2~3일)
+**노력**: M (1.5~2일 — 이전 H1 철회로 소폭 단축)
 
 ### 39-C (모바일 v2 신규 페이지 재감사 — #452)
 **포함:**
