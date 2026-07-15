@@ -49,6 +49,25 @@ export function createRetryRateLimiter(cooldownMs: number = RETRY_COOLDOWN_MS): 
 export const globalRetryLimiter = createRetryRateLimiter()
 
 /**
+ * HTML entity → literal char (재발송 preprocessing 전용, Codex #463 P2).
+ * `escapeHtml` 의 역함수 (5개 entity: `&amp;` `&lt;` `&gt;` `&quot;` `&#39;`).
+ * `&amp;` 를 먼저 처리하면 `&amp;lt;` 같은 nested 는 `&lt;` → `<` 두 스텝이 되지만,
+ * 저장 시엔 nested 가 발생하지 않으므로 순서 무관. 정규식 하나로 처리:
+ */
+export function decodeHtmlEntities(s: string): string {
+  return s.replace(/&(amp|lt|gt|quot|#39);/g, (_, e) => {
+    switch (e) {
+      case 'amp': return '&'
+      case 'lt': return '<'
+      case 'gt': return '>'
+      case 'quot': return '"'
+      case '#39': return "'"
+      default: return _
+    }
+  })
+}
+
+/**
  * 원본 AlertHistory row 를 재발송 대상 subset 으로 좁힌 인터페이스.
  * Prisma AlertHistory 모델과 호환 (Date → firedAt 필드는 미사용이라 생략).
  */
@@ -78,13 +97,18 @@ export async function redispatchAlert(
   chatIds: number[],
   bot: Bot = getBot(),
 ): Promise<RedispatchResult> {
-  // Codex #462 P2: `AlertHistory.message` 는 raw plain-text 요약 (예: custom_strategy
-  // 는 `${s.name} (${s.ticker}) — ...` 그대로). 원본 발송 경로는 사용자 입력
-  // (s.name, holding.name 등) 을 escapeHtml 후 HTML 템플릿에 삽입하지만 이력용
-  // message 는 escape 없이 저장. 그 상태로 sendHtml (parse_mode=HTML) 에 넘기면
-  // `<`, `>`, `&` 를 포함한 이름 (예: `SOXL < 40`) 이 Telegram HTML parser 에서
-  // 거부되거나 예상 못한 마크업 렌더. escape 후 재발송해 plaintext 안전 보장.
-  const safeMessage = escapeHtml(row.message)
+  // Codex #462 · #463 P2: `AlertHistory.message` 저장 상태가 kind 별로 mixed —
+  //   - price-alert target_hit/stop_loss/watch_buy/watch_zone: 이미 escapeHtml
+  //     된 값이 stored 됨 (`A &amp; B`)
+  //   - custom_strategy · drop · surge: raw 로 stored (`SOXL < 40`)
+  // sendHtml (parse_mode=HTML) 로 그대로 넘기면 전자는 정상, 후자는 parser 오류.
+  // 단순 escape 는 전자에 double-encode 유발 (`&amp;amp;`).
+  //
+  // **Fix**: 저장된 message 를 먼저 entity decode 하고 (round-trip), 다시 escape
+  // 해 uniform plaintext 로 전달. pre-escaped: decode→escape = 원본 복원. raw:
+  // decode(no-op)→escape = 안전 escape. 저장 정규화는 별도 이슈로 미룸.
+  const decoded = decodeHtmlEntities(row.message)
+  const safeMessage = escapeHtml(decoded)
   let successCount = 0
   let lastError: string | undefined
   for (const chatId of chatIds) {

@@ -176,7 +176,7 @@ describe('redispatchAlert', () => {
 
   // Codex #462 P2 회귀 방지 — 사용자 입력 (custom strategy name 등) 에 HTML
   // metacharacter 가 들어와도 Telegram HTML parser 를 부수지 않고 plaintext 로 안전 전달.
-  it('HTML metacharacter 를 포함한 message → 전부 escape 후 sendHtml 호출', async () => {
+  it('raw HTML metacharacter 를 포함한 message → 전부 escape 후 sendHtml 호출', async () => {
     vi.mocked(sendHtml).mockResolvedValue(undefined as never)
     const dangerous = { message: 'SOXL < 40 & QQQ > 500 (사용자 & 이름)' }
     await redispatchAlert(dangerous, [42], fakeBot)
@@ -184,6 +184,21 @@ describe('redispatchAlert', () => {
       fakeBot,
       42,
       'SOXL &lt; 40 &amp; QQQ &gt; 500 (사용자 &amp; 이름)',
+    )
+  })
+
+  // Codex #463 P2 회귀 방지 — price-alert 계열 (target/stop/watch_buy/watch_zone) 은
+  // storage 시점에 이미 escapeHtml 된 message 를 저장. decode→escape round-trip 으로
+  // double-encode (`&amp;` → `&amp;amp;`) 방지.
+  it('pre-escaped message (A &amp; B) → decode 후 재escape 로 round-trip 보존', async () => {
+    vi.mocked(sendHtml).mockResolvedValue(undefined as never)
+    const preEscaped = { message: '🎯 A &amp; B (AAPL) 목표가 도달: 100 (목표 &lt;100&gt;)' }
+    await redispatchAlert(preEscaped, [42], fakeBot)
+    // 원본 그대로 (round-trip). `&amp;` 를 `&amp;amp;` 로 double-encode 하지 않음.
+    expect(sendHtml).toHaveBeenCalledWith(
+      fakeBot,
+      42,
+      '🎯 A &amp; B (AAPL) 목표가 도달: 100 (목표 &lt;100&gt;)',
     )
   })
 
