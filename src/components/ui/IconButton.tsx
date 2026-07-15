@@ -22,8 +22,12 @@ const VARIANT_CLASSES: Record<IconButtonVariant, string> = {
   sodam: 'text-dim hover:text-sodam hover:bg-sodam/10',
 }
 
+// Codex #460 P2: `w-11 h-11` 만으로는 flex 컨테이너 안에서 축소 가능
+// (다른 flex item 이 공간을 요구하면 브라우저가 44 이하로 shrink).
+// `shrink-0` + `min-w-11 min-h-11` 로 실제 44×44 hitbox 계약 잠금.
+// 예: CategoryTable mobile 은 4 IconButton + label 이 좁은 viewport 에서 경쟁.
 const BASE_CLASSES =
-  'inline-flex items-center justify-center w-11 h-11 rounded-md transition-all disabled:opacity-20 disabled:cursor-not-allowed'
+  'inline-flex items-center justify-center shrink-0 w-11 h-11 min-w-11 min-h-11 rounded-md transition-all disabled:opacity-20 disabled:cursor-not-allowed'
 
 /**
  * Phase 39-B (#451) — 44×44 hitbox 보장 아이콘 버튼.
