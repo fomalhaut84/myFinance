@@ -72,6 +72,13 @@ export default function HoldingsTable({ holdings, priceMap, currentFxRate, hasPr
                   <div className="text-[11px] text-dim tabular-nums">
                     {h.shares}주 · 평단 {h.currency === 'USD' ? formatUSD(h.avgPriceFx ?? h.avgPrice) : formatKRW(h.avgPrice)}
                   </div>
+                  {/* Phase 39-B self-review P1: USD 종목은 평가금(KRW) 만으론 현재가(USD) 를
+                      역산 불가 → 평단 vs 현재가 비교 불가능. USD 원가 통화로 현재가 노출. */}
+                  {price && (
+                    <div className="text-[11px] text-sub tabular-nums">
+                      현재가 {h.currency === 'USD' ? formatUSD(price.price) : formatKRW(price.price)}
+                    </div>
+                  )}
                 </div>
                 <div className="text-right shrink-0">
                   <div className="text-[13px] font-semibold text-muted tabular-nums whitespace-nowrap">
