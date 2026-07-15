@@ -25,6 +25,10 @@ vi.mock('../../index', () => ({
 }))
 vi.mock('@/bot/utils/telegram', () => ({
   sendHtml: vi.fn(),
+  // Codex #462 P2: redispatchAlert 이 escapeHtml 을 호출하므로 mock 도 노출 필요.
+  // 실제 로직 (`&` → `&amp;` 등) 을 그대로 replay 해 회귀 테스트가 정확한 escape
+  // 결과를 assert 할 수 있게 함.
+  escapeHtml: (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'),
 }))
 
 import {
@@ -153,9 +157,12 @@ describe('redispatchAlert', () => {
   })
 
   const fakeBot = {} as Bot
+  // Codex #462 P2: 저장된 message 는 plain-text 요약. sendHtml 에 그대로 넘기면
+  // HTML metacharacter (`<`, `>`, `&`) 가 있는 이름 (예: `SOXL < 40`) 이 Telegram
+  // HTML parser 에서 거부되거나 예상 못한 마크업 렌더. redispatchAlert 는 escape 후 전송.
   const row = { message: '<b>hi</b>' }
 
-  it('모든 chat 성공 → status=sent, successCount=totalChats', async () => {
+  it('모든 chat 성공 → status=sent, successCount=totalChats. escape 후 전송', async () => {
     vi.mocked(sendHtml).mockResolvedValue(undefined as never)
     const res = await redispatchAlert(row, [1, 2, 3], fakeBot)
     expect(res.status).toBe('sent')
@@ -163,7 +170,21 @@ describe('redispatchAlert', () => {
     expect(res.totalChats).toBe(3)
     expect(res.lastError).toBeUndefined()
     expect(sendHtml).toHaveBeenCalledTimes(3)
-    expect(sendHtml).toHaveBeenNthCalledWith(1, fakeBot, 1, '<b>hi</b>')
+    // Raw `<b>hi</b>` 가 아니라 escape 된 `&lt;b&gt;hi&lt;/b&gt;` 로 전송돼야 (Codex #462 P2)
+    expect(sendHtml).toHaveBeenNthCalledWith(1, fakeBot, 1, '&lt;b&gt;hi&lt;/b&gt;')
+  })
+
+  // Codex #462 P2 회귀 방지 — 사용자 입력 (custom strategy name 등) 에 HTML
+  // metacharacter 가 들어와도 Telegram HTML parser 를 부수지 않고 plaintext 로 안전 전달.
+  it('HTML metacharacter 를 포함한 message → 전부 escape 후 sendHtml 호출', async () => {
+    vi.mocked(sendHtml).mockResolvedValue(undefined as never)
+    const dangerous = { message: 'SOXL < 40 & QQQ > 500 (사용자 & 이름)' }
+    await redispatchAlert(dangerous, [42], fakeBot)
+    expect(sendHtml).toHaveBeenCalledWith(
+      fakeBot,
+      42,
+      'SOXL &lt; 40 &amp; QQQ &gt; 500 (사용자 &amp; 이름)',
+    )
   })
 
   it('모든 chat 실패 → status=failed, lastError 세팅', async () => {

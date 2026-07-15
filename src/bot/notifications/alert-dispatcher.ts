@@ -8,7 +8,7 @@
  */
 
 import type { Bot } from 'grammy'
-import { sendHtml } from '@/bot/utils/telegram'
+import { sendHtml, escapeHtml } from '@/bot/utils/telegram'
 import { computeDeliveryStatus, recordAlertHistory, type AlertKind } from './alert-history'
 import { getBot } from '../index'
 import type { AlertHistoryContext } from '@/lib/alert-history/context'
@@ -78,11 +78,18 @@ export async function redispatchAlert(
   chatIds: number[],
   bot: Bot = getBot(),
 ): Promise<RedispatchResult> {
+  // Codex #462 P2: `AlertHistory.message` 는 raw plain-text 요약 (예: custom_strategy
+  // 는 `${s.name} (${s.ticker}) — ...` 그대로). 원본 발송 경로는 사용자 입력
+  // (s.name, holding.name 등) 을 escapeHtml 후 HTML 템플릿에 삽입하지만 이력용
+  // message 는 escape 없이 저장. 그 상태로 sendHtml (parse_mode=HTML) 에 넘기면
+  // `<`, `>`, `&` 를 포함한 이름 (예: `SOXL < 40`) 이 Telegram HTML parser 에서
+  // 거부되거나 예상 못한 마크업 렌더. escape 후 재발송해 plaintext 안전 보장.
+  const safeMessage = escapeHtml(row.message)
   let successCount = 0
   let lastError: string | undefined
   for (const chatId of chatIds) {
     try {
-      await sendHtml(bot, chatId, row.message)
+      await sendHtml(bot, chatId, safeMessage)
       successCount++
     } catch (error) {
       lastError = error instanceof Error ? error.message : String(error)
