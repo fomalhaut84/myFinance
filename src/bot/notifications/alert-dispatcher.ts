@@ -92,23 +92,31 @@ export interface RedispatchResult {
  * 순수 재발송 — 지정 chatIds 로 sendHtml 호출 후 성공 카운트/에러 반환.
  * DB 기록은 caller (route handler) 가 수행 — pure/impure 분리로 테스트 용이.
  */
+/**
+ * Codex #463 P2 (2차): 저장 시점에 escapeHtml 을 이미 적용하는 kind 화이트리스트.
+ * price-alert.ts 에서 `${escapeHtml(name)}` 로 build 후 그대로 store 되는 kind 들.
+ * 나머지 (custom_strategy · drop · surge · fx · ta_signal 등) 는 raw 로 store.
+ */
+const PRE_ESCAPED_KINDS = new Set<string>(['target_hit', 'stop_loss', 'watch_buy', 'watch_zone'])
+
 export async function redispatchAlert(
-  row: Pick<RedispatchTargetRow, 'message'>,
+  row: Pick<RedispatchTargetRow, 'message' | 'kind'>,
   chatIds: number[],
   bot: Bot = getBot(),
 ): Promise<RedispatchResult> {
-  // Codex #462 · #463 P2: `AlertHistory.message` 저장 상태가 kind 별로 mixed —
-  //   - price-alert target_hit/stop_loss/watch_buy/watch_zone: 이미 escapeHtml
-  //     된 값이 stored 됨 (`A &amp; B`)
-  //   - custom_strategy · drop · surge: raw 로 stored (`SOXL < 40`)
-  // sendHtml (parse_mode=HTML) 로 그대로 넘기면 전자는 정상, 후자는 parser 오류.
-  // 단순 escape 는 전자에 double-encode 유발 (`&amp;amp;`).
+  // Codex #462 · #463 P2 (2차): 저장 상태가 kind 별로 mixed —
+  //   - PRE_ESCAPED_KINDS: `A &amp; B` (이미 escape 된 상태로 store)
+  //   - 그 외: `SOXL < 40` (raw)
   //
-  // **Fix**: 저장된 message 를 먼저 entity decode 하고 (round-trip), 다시 escape
-  // 해 uniform plaintext 로 전달. pre-escaped: decode→escape = 원본 복원. raw:
-  // decode(no-op)→escape = 안전 escape. 저장 정규화는 별도 이슈로 미룸.
-  const decoded = decodeHtmlEntities(row.message)
-  const safeMessage = escapeHtml(decoded)
+  // sendHtml (parse_mode=HTML) 로 raw 를 그대로 넘기면 parser 오류. 하지만 모든
+  // kind 를 decode→escape round-trip 하면 raw 케이스에서 사용자가 literal `&amp;`
+  // 를 이름으로 넣었을 때 decoder 가 `&` 로 오해석 → 원본과 다른 문자 렌더.
+  //
+  // **Fix (kind gating):** pre-escaped kind 만 decode 후 재escape (원본 복원).
+  // raw kind 는 그대로 escape (안전 처리 + 사용자 literal entity 존중).
+  const isPreEscaped = PRE_ESCAPED_KINDS.has(row.kind)
+  const normalized = isPreEscaped ? decodeHtmlEntities(row.message) : row.message
+  const safeMessage = escapeHtml(normalized)
   let successCount = 0
   let lastError: string | undefined
   for (const chatId of chatIds) {
