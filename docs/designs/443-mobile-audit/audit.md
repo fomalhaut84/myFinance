@@ -97,16 +97,23 @@ _테이블 액션 (`p-1.5` + 소형 svg — 28px, w-[26px] 패턴이 아니라 g
 _테이블 액션 (`w-7 h-7` explicit — 28px):_
 - `src/components/asset/AssetTable.tsx:110,119` (edit / delete)
 - `src/components/rsu/RSUDashboard.tsx:188` (편집)
-- `src/components/stock-option/StockOptionForm.tsx` 이하 편집 진입점 확인 필요 (`setEditingItem` 콜백들)
+
+_초소형 (`p-0.5` — Codex #459 P2 추가 확인, 실효 ~20px):_
+- `src/components/stock-option/StockOptionCRUD.tsx` (edit / delete)
 
 _CategoryTable (`p-1.5` + 13~14px svg — 26~28px):_
 - `src/components/category/CategoryTable.tsx:100,103`
 
-**39-B sweep 명령 (실제 활용):**
+**39-B sweep 명령 (Codex #459 P2 반영 — multiline 안전):**
+```bash
+# 4개 패턴 union. `| grep -E 'button|Button'` 필터는 className 이 <button 과 별개 줄에
+# 있으면 놓치므로 사용 금지 — 대신 rg -B2 로 상단 <button 확인:
+rg -n --type tsx -B2 'p-1\.5|p-0\.5|w-\[26px\] h-\[26px\]|w-7 h-7' src/components/
+
+# 또는 grep 만 사용해 raw 리스팅 (수동 필터):
+grep -rn 'p-1\.5\|p-0\.5\|w-\[26px\] h-\[26px\]\|w-7 h-7' src/components/
 ```
-grep -rn 'p-1\.5\|w-\[26px\] h-\[26px\]\|w-7 h-7' src/components/ | grep -E 'button|Button'
-```
-위 3개 패턴 union 이 코드베이스 실체. 단일 패턴만 grep 하면 누락 (Codex 검증).
+4개 패턴 union 이 코드베이스 실체. `p-0.5` 는 StockOptionCRUD 만 사용 (최소 hitbox ~20px).
 
 **Fix 방향** (Codex #459 P2×2 반영):
 아이콘 크기가 소형 (13~16px) 이라 padding 만으로는 44px 달성 안 됨 — 초기 audit 은 `p-2.5` (36px) 로 계산 실수. **hitbox 를 padding 이 아닌 explicit 치수로 잠금**:
@@ -135,26 +142,37 @@ grep -rn 'p-1\.5\|w-\[26px\] h-\[26px\]\|w-7 h-7' src/components/ | grep -E 'but
 
 BudgetManager row 는 5개의 direct grid children (카테고리명 · progress bar · 예산 · 사용 · 액션) 을 렌더. **grid template 변경 시 반드시 마크업 변경도 동반**:
 
-- **옵션 (a) — Numeric 컬럼 두 개 (예산·사용) 를 mobile 에서 progress bar 셀 안으로 흡수:**
+- **옵션 (a) — Numeric 컬럼 두 개 (사용·잔액) 를 mobile 에서 progress bar 셀 안으로 흡수:**
 
-  **주의 (Codex #459 P2 반영):** 액션 셀 (`w-[26px] × 2 + gap ≈ 60px`) 은 M1 fix 로 `w-11 × 2 + gap ≈ 96px` 가 됨. 40px 트랙은 두 44px 버튼을 담을 수 없으니 mobile 트랙 폭을 **최소 96px (`auto` 로 자연 fit) 또는 명시 100px** 로 확대 필수.
+  **컬럼 정정 (Codex #459 P2 반영):** 실제 5개 셀은 순서대로 **[카테고리명 · progress+예산라벨+% · spent (사용) · remaining (잔액) · 액션]**. 초기 audit 은 컬럼 3/4 를 "예산·사용" 으로 잘못 라벨. 실제는:
+  - 컬럼 2 (progress cell) 안에 이미 "예산 {formatKRW}" + "N% 초과" 라벨 존재
+  - 컬럼 3 = **spent (사용)** — 빨강 강조, mobile 에서 놓치면 사용자가 소비 크기 인지 불가
+  - 컬럼 4 = **remaining (잔액)** — 색상 코드 (초록/노랑/빨강) 로 상태 표현. 가장 actionable 한 값
 
+  **주의 (Codex #459 P2):** 액션 셀 (`w-[26px] × 2 + gap ≈ 60px`) 은 M1 fix 로 `w-11 × 2 + gap ≈ 96px` 가 됨. 40px 트랙은 두 44px 버튼을 담을 수 없으니 mobile 트랙 폭을 **`auto` 로 자연 fit** 필수.
+
+  **Mobile 통합안:** 예산은 progress cell 안 라벨로 유지, 사용·잔액을 mobile 전용 요약 라인 (`sm:hidden`) 으로 progress cell 안에 append. numeric 컬럼 두 개는 `hidden sm:inline` 처리.
   ```
-  // 마크업 변경 예:
   <div className="grid grid-cols-[minmax(80px,1fr)_1.5fr_auto] sm:grid-cols-[140px_1fr_100px_100px_auto] gap-2 sm:gap-3 ...">
     <span>{카테고리명}</span>
     <div>
       <ProgressBar />
+      <div className="flex justify-between text-[11px] text-sub">
+        <span>예산 {formatKRW(amount)}</span>
+        <span>{pct}%{pct >= 100 ? ' 초과' : ''}</span>
+      </div>
+      {/* Mobile 전용 요약 — 사용·잔액 (Codex #459 P2: 실 컬럼명 정정) */}
       <div className="flex justify-between text-[11px] sm:hidden">
-        <span>예산 {formatKRW}</span><span>사용 {formatKRW}</span>
+        <span className="text-red-400">사용 {formatKRW(spent)}</span>
+        <span className={remaining >= 0 ? 'text-emerald-400' : 'text-red-400'}>잔액 {formatKRW(remaining)}</span>
       </div>
     </div>
-    <span className="hidden sm:inline">{예산}</span>
-    <span className="hidden sm:inline">{사용}</span>
+    <span className="hidden sm:inline">{formatKRW(spent)}</span>       {/* 사용 */}
+    <span className="hidden sm:inline">{formatKRW(remaining)}</span>   {/* 잔액 */}
     <span>{액션 (44×2 + gap ≈ 96px)}</span>
   </div>
   ```
-  → mobile 3col (`minmax(80,1fr) + 1.5fr + auto`), 데스크톱 5col. 자식 수는 여전히 5개 (numeric 두 개만 mobile-hidden). 액션 트랙은 `auto` 로 두어 44px×2 자동 수용.
+  → mobile 3col (`minmax(80,1fr) + 1.5fr + auto`), 데스크톱 5col. 자식 수 5 유지. 사용·잔액 정보가 mobile 에서도 progress cell 안에서 보존 (색상 코드 유지) — Codex #459 P2 지적한 "잔액 실종" 방지.
 
 - **옵션 (b) — mobile 전용 카드 뷰 스택 (`<lg` block):** 완전한 mobile-only 렌더 트리 분리. 유지보수 부담 증가 대신 layout 자유도 최대.
 
