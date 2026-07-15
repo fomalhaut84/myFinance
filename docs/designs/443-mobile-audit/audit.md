@@ -69,9 +69,9 @@
 - 패턴 B (테이블 액션): `inline-flex ... w-[26px] h-[26px]` = **26px** explicit
 - 패턴 C (CategoryTable): `p-1.5` + 13~14px svg = **26~28px**
 
-**대상 (코드베이스 sweep — Codex #459 P2×2 반영):**
+**대상 (코드베이스 sweep — Codex #459 P2×3 반영, 실제 className 별 분류):**
 
-_form 헤더 닫기 (`p-1.5` + 16px svg):_
+_form 헤더 닫기 (`p-1.5` + 16px svg — 28px 실효):_
 - `src/components/expense/TransactionForm.tsx:218` · `RecurringForm.tsx:114`
 - `src/components/asset/AssetForm.tsx:120`
 - `src/components/rsu/RSUForm.tsx:105`
@@ -81,21 +81,32 @@ _form 헤더 닫기 (`p-1.5` + 16px svg):_
 - `src/components/stock-option/StockOptionForm.tsx:107`
 - `src/components/watchlist/WatchlistForm.tsx:97`
 - `src/components/dividend/DividendEditPanel.tsx:129`
+- **`src/components/trade/EditPanel.tsx:131`** (Codex #459 P2 — 초기 누락)
 
-_테이블 액션 (`w-[26px] h-[26px]` explicit):_
-- `src/components/expense/BudgetManager.tsx` (edit / delete)
-- `src/components/expense/RecurringTable.tsx` (edit / delete)
-- `src/components/watchlist/WatchlistTable.tsx` (edit / delete)
-- `src/components/deposit/DepositTable.tsx` (edit / delete)
-- `src/components/dividend/DividendTable.tsx` (edit / delete)
-- `src/components/trade/TradeTable.tsx` (edit / delete)
-- `src/components/expense/TransactionTable.tsx` (edit / delete / recurring)
-- `src/components/asset/AssetTable.tsx` (edit / delete)
-- `src/components/rsu/RSUDashboard.tsx` (편집/삭제 아이콘 있으면)
-- `src/components/stock-option/StockOptionCRUD*.tsx`
+_테이블 액션 (`w-[26px] h-[26px]` explicit — 26px):_
+- `src/components/expense/BudgetManager.tsx:214,223` (edit / delete)
+- `src/components/expense/RecurringTable.tsx:93,102` (edit / delete)
+- `src/components/watchlist/WatchlistTable.tsx:91,94` (edit / delete)
 
-_CategoryTable (`p-1.5` + 13~14px svg):_
+_테이블 액션 (`p-1.5` + 소형 svg — 28px, w-[26px] 패턴이 아니라 grep 놓쳤던 케이스):_
+- `src/components/deposit/DepositTable.tsx:120,129,157,165` (edit / delete)
+- `src/components/dividend/DividendTable.tsx:143,152,184` (edit / delete)
+- `src/components/trade/TradeTable.tsx:149,158,194` (edit / delete)
+- `src/components/expense/TransactionTable.tsx:106,117,128` (edit / delete / recurring)
+
+_테이블 액션 (`w-7 h-7` explicit — 28px):_
+- `src/components/asset/AssetTable.tsx:110,119` (edit / delete)
+- `src/components/rsu/RSUDashboard.tsx:188` (편집)
+- `src/components/stock-option/StockOptionForm.tsx` 이하 편집 진입점 확인 필요 (`setEditingItem` 콜백들)
+
+_CategoryTable (`p-1.5` + 13~14px svg — 26~28px):_
 - `src/components/category/CategoryTable.tsx:100,103`
+
+**39-B sweep 명령 (실제 활용):**
+```
+grep -rn 'p-1\.5\|w-\[26px\] h-\[26px\]\|w-7 h-7' src/components/ | grep -E 'button|Button'
+```
+위 3개 패턴 union 이 코드베이스 실체. 단일 패턴만 grep 하면 누락 (Codex 검증).
 
 **Fix 방향** (Codex #459 P2×2 반영):
 아이콘 크기가 소형 (13~16px) 이라 padding 만으로는 44px 달성 안 됨 — 초기 audit 은 `p-2.5` (36px) 로 계산 실수. **hitbox 를 padding 이 아닌 explicit 치수로 잠금**:
@@ -125,9 +136,12 @@ _CategoryTable (`p-1.5` + 13~14px svg):_
 BudgetManager row 는 5개의 direct grid children (카테고리명 · progress bar · 예산 · 사용 · 액션) 을 렌더. **grid template 변경 시 반드시 마크업 변경도 동반**:
 
 - **옵션 (a) — Numeric 컬럼 두 개 (예산·사용) 를 mobile 에서 progress bar 셀 안으로 흡수:**
+
+  **주의 (Codex #459 P2 반영):** 액션 셀 (`w-[26px] × 2 + gap ≈ 60px`) 은 M1 fix 로 `w-11 × 2 + gap ≈ 96px` 가 됨. 40px 트랙은 두 44px 버튼을 담을 수 없으니 mobile 트랙 폭을 **최소 96px (`auto` 로 자연 fit) 또는 명시 100px** 로 확대 필수.
+
   ```
   // 마크업 변경 예:
-  <div className="grid grid-cols-[100px_1fr_40px] sm:grid-cols-[140px_1fr_100px_100px_40px] ...">
+  <div className="grid grid-cols-[minmax(80px,1fr)_1.5fr_auto] sm:grid-cols-[140px_1fr_100px_100px_auto] gap-2 sm:gap-3 ...">
     <span>{카테고리명}</span>
     <div>
       <ProgressBar />
@@ -137,10 +151,10 @@ BudgetManager row 는 5개의 direct grid children (카테고리명 · progress 
     </div>
     <span className="hidden sm:inline">{예산}</span>
     <span className="hidden sm:inline">{사용}</span>
-    <span>{액션}</span>
+    <span>{액션 (44×2 + gap ≈ 96px)}</span>
   </div>
   ```
-  → mobile 3col (100+1fr+40), 데스크톱 5col. 자식 수는 여전히 5개 (하나만 mobile-hidden).
+  → mobile 3col (`minmax(80,1fr) + 1.5fr + auto`), 데스크톱 5col. 자식 수는 여전히 5개 (numeric 두 개만 mobile-hidden). 액션 트랙은 `auto` 로 두어 44px×2 자동 수용.
 
 - **옵션 (b) — mobile 전용 카드 뷰 스택 (`<lg` block):** 완전한 mobile-only 렌더 트리 분리. 유지보수 부담 증가 대신 layout 자유도 최대.
 
