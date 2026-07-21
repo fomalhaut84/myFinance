@@ -243,16 +243,21 @@ describe('buildFailureAlert', () => {
     expect(alert).toContain('&amp;')
   })
 
-  it('긴 detail 은 300 자로 truncate', () => {
-    const long = 'x'.repeat(500)
+  it('긴 detail 은 뒤에서 300 자로 truncate (Codex #473 P2 — stderr tail 유지)', () => {
+    // stderr 는 대개 마지막 라인이 actionable 한 에러라 뒤쪽을 잘라내면 안됨.
+    // AdvisorError.detail = stderr.slice(-1024) 로 이미 tail. alert 도 slice(-300) 유지.
+    const prefix = 'a'.repeat(200)  // 오래된 output
+    const tail = 'FINAL_ERROR_XYZ'
+    const long = prefix + 'b'.repeat(200) + tail
     const s = {
       consecutiveFailures: 3, lastFailureAt: 1000, lastAlertAt: null,
       lastError: { message: 'y', detail: long },
     }
     const alert = buildFailureAlert(s)
-    // 300 자 x + 마크업, 500 자 미포함
-    expect(alert).toContain('x'.repeat(300))
-    expect(alert).not.toContain('x'.repeat(301))
+    // 뒤 300자 유지 → tail (actionable) 포함
+    expect(alert).toContain(tail)
+    // 앞 부분 (200자 a) 은 잘림
+    expect(alert).not.toContain(prefix)
   })
 })
 

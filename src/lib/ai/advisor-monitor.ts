@@ -53,7 +53,11 @@ export function buildFailureAlert(state: AdvisorMonitorState, caller?: string): 
   const err = state.lastError
   const callerLine = caller ? `caller: ${caller}\n` : ''
   const errMsg = err?.message ?? '(unknown)'
-  const detail = err?.detail ? `\n<code>${escapeForTelegram(err.detail.slice(0, 300))}</code>` : ''
+  // Codex #473 P2: AdvisorError.detail 은 `stderr.slice(-1024)` (claude-advisor.ts) 라
+  // 이미 stderr **끝** 1KB. slice(0, 300) 로 앞을 자르면 오래된 output 만 남고 정말
+  // actionable 한 마지막 에러 라인 (예: `Error: session expired`) 이 잘림.
+  // 뒤 300자 (`slice(-300)`) 로 tail 을 유지.
+  const detail = err?.detail ? `\n<code>${escapeForTelegram(err.detail.slice(-300))}</code>` : ''
   return (
     `🚨 <b>AI 어드바이저 실패 지속 (${count}회)</b>\n\n` +
     callerLine +
