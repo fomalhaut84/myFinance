@@ -64,9 +64,13 @@ describe('classifyAdvisorError', () => {
     expect(classifyAdvisorError('api_error_status=429')).toBe('quota_exceeded')
     // colon 형식
     expect(classifyAdvisorError('api_error_status:401')).toBe('auth_expired')
-    // HTTP prefix
+    // HTTP prefix (with or without protocol version)
     expect(classifyAdvisorError('Error: HTTP 401 from Claude API')).toBe('auth_expired')
     expect(classifyAdvisorError('HTTP/1.1 429 Too Many Requests')).toBe('quota_exceeded')
+    // Codex #479 P2 (3차): 버전 있는 curl-style 도 (reason phrase 없이) 매칭
+    expect(classifyAdvisorError('response: HTTP/1.1 401')).toBe('auth_expired')
+    expect(classifyAdvisorError('got HTTP/2 403 from server')).toBe('auth_expired')
+    expect(classifyAdvisorError('HTTP/1.1 429')).toBe('quota_exceeded')
     // status: prefix
     expect(classifyAdvisorError('response status: 403')).toBe('auth_expired')
     // Reason phrase

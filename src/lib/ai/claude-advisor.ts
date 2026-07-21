@@ -107,15 +107,17 @@ export class AdvisorError extends Error {
  *   - `status: 401` (JSON stringify or log format)
  *   - `401 Unauthorized` / `403 Forbidden` (HTTP standard reason)
  */
+// Codex #479 P2 (3차): `HTTP/1.1 401` 처럼 protocol version 이 사이에 있는
+// curl-style 도 매칭 지원 — `http` (optional `/N.N` version) + 공백/slash + status.
 const AUTH_STATUS_PATTERNS: RegExp[] = [
   /api_error_status[=:]\s*(?:401|403)\b/i,
-  /\bhttp[/ ]+(?:401|403)\b/i,
+  /\bhttp(?:\/[\d.]+)?[\s/]+(?:401|403)\b/i,
   /\bstatus[:\s]+(?:401|403)\b/i,
   /\b(?:401|403)\s+(?:unauthorized|forbidden)\b/i,
 ]
 const QUOTA_STATUS_PATTERNS: RegExp[] = [
   /api_error_status[=:]\s*429\b/i,
-  /\bhttp[/ ]+429\b/i,
+  /\bhttp(?:\/[\d.]+)?[\s/]+429\b/i,
   /\bstatus[:\s]+429\b/i,
   /\b429\s+(?:too\s+many\s+requests|rate\s+limit)\b/i,
 ]
