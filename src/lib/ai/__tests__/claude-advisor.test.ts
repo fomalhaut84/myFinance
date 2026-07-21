@@ -12,6 +12,7 @@ import {
   AdvisorTimeoutError,
   classifyAdvisorError,
   describeAdvisorError,
+  extractAdvisorErrorText,
 } from '../claude-advisor'
 
 describe('classifyAdvisorError', () => {
@@ -53,6 +54,13 @@ describe('classifyAdvisorError', () => {
   it('대소문자 무관 매치', () => {
     expect(classifyAdvisorError('NOT LOGGED IN')).toBe('auth_expired')
     expect(classifyAdvisorError('QUOTA EXCEEDED')).toBe('quota_exceeded')
+  })
+
+  // Codex #479 P2 회귀 방지 — Claude API status code 매칭
+  it('HTTP status code 로도 분류 (401/403 → auth, 429 → quota)', () => {
+    expect(classifyAdvisorError('api_error_status=401')).toBe('auth_expired')
+    expect(classifyAdvisorError('api_error_status=403')).toBe('auth_expired')
+    expect(classifyAdvisorError('api_error_status=429')).toBe('quota_exceeded')
   })
 
   it('여러 패턴 매치 시 우선순위 (auth > quota > server)', () => {
@@ -147,5 +155,41 @@ describe('AdvisorTimeoutError.code', () => {
   it('항상 timeout', () => {
     expect(new AdvisorTimeoutError(30_000).code).toBe('timeout')
     expect(new AdvisorTimeoutError(180_000).code).toBe('timeout')
+  })
+})
+
+// Codex #479 P2 회귀 방지 — Claude JSON 에서 classify 대상 문자열 조립.
+describe('extractAdvisorErrorText', () => {
+  it('result 만 있으면 그대로', () => {
+    expect(extractAdvisorErrorText({ result: 'Not logged in' })).toBe('Not logged in')
+  })
+
+  it('result 비고 api_error_status 만 있으면 status 만 리턴', () => {
+    // Claude 최종 API 실패 (rate limit 등) 시 result 는 비고 status 만 채워짐
+    expect(extractAdvisorErrorText({ result: '', api_error_status: 429 }))
+      .toBe('api_error_status=429')
+  })
+
+  it('result + api_error_status 결합', () => {
+    const text = extractAdvisorErrorText({ result: 'Some error', api_error_status: 401 })
+    expect(text).toContain('Some error')
+    expect(text).toContain('api_error_status=401')
+  })
+
+  it('errors 필드도 stringify 후 결합', () => {
+    const text = extractAdvisorErrorText({ result: 'X', errors: [{ type: 'ratelimit' }] })
+    expect(text).toContain('X')
+    expect(text).toContain('ratelimit')
+  })
+
+  it('빈 output → 빈 문자열', () => {
+    expect(extractAdvisorErrorText({})).toBe('')
+    expect(extractAdvisorErrorText({ result: '' })).toBe('')
+  })
+
+  it('classify 와 결합해 rate-limit (429 only) 정확 분류', () => {
+    // Codex #479 P2 시나리오 — Claude API 429 는 result 없이 api_error_status 만 채워짐
+    const text = extractAdvisorErrorText({ result: '', api_error_status: 429 })
+    expect(classifyAdvisorError(text)).toBe('quota_exceeded')
   })
 })
