@@ -133,15 +133,6 @@ body {
   overflow-wrap: anywhere;
   word-break: break-word;
 }
-/* Phase 41-B (#471): 마크다운 테이블은 mobile 에서만 좌우 스크롤 컨테이너로 (display:block
-   전환은 desktop layout 을 깨뜨릴 수 있어 media query 로 격리). */
-@media (max-width: 640px) {
-  .ai-markdown table {
-    display: block;
-    overflow-x: auto;
-    max-width: 100%;
-  }
-}
 .ai-markdown hr {
   border: none;
   border-top: 1px solid var(--border);
@@ -167,6 +158,17 @@ body {
   border: 1px solid var(--border);
   border-radius: 8px;
   overflow: hidden;
+}
+/* Phase 41-B (#471): 마크다운 테이블은 mobile 에서만 좌우 스크롤 컨테이너로 (display:block
+   전환은 desktop layout 을 깨뜨릴 수 있어 media query 로 격리).
+   Codex #476 P2: 기본 rule 의 `overflow: hidden` shorthand 가 뒤늦게 override 하지
+   않도록 base rule **뒤에** 배치. `overflow-x: auto` 가 hidden 을 최종 덮음. */
+@media (max-width: 640px) {
+  .ai-markdown table {
+    display: block;
+    overflow-x: auto;
+    max-width: 100%;
+  }
 }
 .ai-markdown th {
   background: var(--surface);
