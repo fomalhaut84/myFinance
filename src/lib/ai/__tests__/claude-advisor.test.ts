@@ -56,11 +56,34 @@ describe('classifyAdvisorError', () => {
     expect(classifyAdvisorError('QUOTA EXCEEDED')).toBe('quota_exceeded')
   })
 
-  // Codex #479 P2 회귀 방지 — Claude API status code 매칭
-  it('HTTP status code 로도 분류 (401/403 → auth, 429 → quota)', () => {
+  // Codex #479 P2 회귀 방지 — Claude API status code 매칭 (명시적 토큰만)
+  it('HTTP status code 매칭 (api_error_status / HTTP / status: / reason phrase)', () => {
+    // Claude JSON 형식
     expect(classifyAdvisorError('api_error_status=401')).toBe('auth_expired')
     expect(classifyAdvisorError('api_error_status=403')).toBe('auth_expired')
     expect(classifyAdvisorError('api_error_status=429')).toBe('quota_exceeded')
+    // colon 형식
+    expect(classifyAdvisorError('api_error_status:401')).toBe('auth_expired')
+    // HTTP prefix
+    expect(classifyAdvisorError('Error: HTTP 401 from Claude API')).toBe('auth_expired')
+    expect(classifyAdvisorError('HTTP/1.1 429 Too Many Requests')).toBe('quota_exceeded')
+    // status: prefix
+    expect(classifyAdvisorError('response status: 403')).toBe('auth_expired')
+    // Reason phrase
+    expect(classifyAdvisorError('got 429 Too Many Requests')).toBe('quota_exceeded')
+    expect(classifyAdvisorError('401 Unauthorized')).toBe('auth_expired')
+  })
+
+  // Codex #479 P2 재수정 회귀 방지 — bare digit substring false positive 방지
+  it('unrelated 401/403/429 숫자 sequence 는 매칭 안 함', () => {
+    // 포트 번호에 4030
+    expect(classifyAdvisorError('bind ECONNREFUSED 127.0.0.1:4030')).toBe('server_down')
+    // 라인 번호 401 (stack trace)
+    expect(classifyAdvisorError('SyntaxError at line 401 col 12')).toBe('unknown')
+    // request id 안 429
+    expect(classifyAdvisorError('request_id=abc429def')).toBe('unknown')
+    // 파일 경로 안 403
+    expect(classifyAdvisorError('cannot read /home/user/403-config.json')).toBe('unknown')
   })
 
   it('여러 패턴 매치 시 우선순위 (auth > quota > server)', () => {

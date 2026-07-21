@@ -98,12 +98,32 @@ export class AdvisorError extends Error {
  * pure — 판정 규칙만 담아 test 용이. subprocess 성공/spawn 실패는 caller 에서
  * 직접 code 지정 (예: `AdvisorError('...', undefined, 'server_down')`).
  */
+/**
+ * Codex #479 P2 재수정: bare `'401'` / `'403'` / `'429'` substring 매칭은
+ * false positive 유발 (port 4030 · 라인 401 · request id 포함 등). Claude 가
+ * 실제 뱉는 형태만 명시적으로 매칭 (regex):
+ *   - `api_error_status=401` (extractAdvisorErrorText 조립 형식)
+ *   - `HTTP 401` / `HTTP/1.1 401` (curl-style)
+ *   - `status: 401` (JSON stringify or log format)
+ *   - `401 Unauthorized` / `403 Forbidden` (HTTP standard reason)
+ */
+const AUTH_STATUS_PATTERNS: RegExp[] = [
+  /api_error_status[=:]\s*(?:401|403)\b/i,
+  /\bhttp[/ ]+(?:401|403)\b/i,
+  /\bstatus[:\s]+(?:401|403)\b/i,
+  /\b(?:401|403)\s+(?:unauthorized|forbidden)\b/i,
+]
+const QUOTA_STATUS_PATTERNS: RegExp[] = [
+  /api_error_status[=:]\s*429\b/i,
+  /\bhttp[/ ]+429\b/i,
+  /\bstatus[:\s]+429\b/i,
+  /\b429\s+(?:too\s+many\s+requests|rate\s+limit)\b/i,
+]
+
 export function classifyAdvisorError(stderr: string | undefined): AdvisorErrorCode {
   if (!stderr) return 'unknown'
   const s = stderr.toLowerCase()
-  // 인증 만료 계열 — claude CLI 가 auth 실패 시 뱉는 문구들. Codex #479 P2:
-  // Claude API `api_error_status=401` / `403` 도 auth 로 분류 (rate limit 은 429 →
-  // quota_exceeded 로 이미 매칭).
+  // 인증 만료 계열 — claude CLI 가 auth 실패 시 뱉는 문구들.
   if (
     s.includes('not logged in') ||
     s.includes('unauthorized') ||
@@ -111,8 +131,7 @@ export function classifyAdvisorError(stderr: string | undefined): AdvisorErrorCo
     s.includes('please login') ||
     s.includes('session expired') ||
     s.includes('authentication') ||
-    s.includes('401') ||
-    s.includes('403')
+    AUTH_STATUS_PATTERNS.some((re) => re.test(stderr))
   ) return 'auth_expired'
   // 쿼터 초과 — MAX 플랜 usage limit
   if (
@@ -120,7 +139,7 @@ export function classifyAdvisorError(stderr: string | undefined): AdvisorErrorCo
     s.includes('rate limit') ||
     s.includes('usage limit') ||
     s.includes('too many requests') ||
-    s.includes('429')
+    QUOTA_STATUS_PATTERNS.some((re) => re.test(stderr))
   ) return 'quota_exceeded'
   // MCP 서버 접근 실패
   if (
