@@ -182,20 +182,32 @@ let productionMonitor: AdvisorMonitor | null = null
 
 /**
  * Production 용 lazy singleton. bot 프로세스에서 최초 호출 시 초기화.
- * Alert sender 는 `getBot()` + `TELEGRAM_ALLOWED_CHAT_IDS` chat 들에게 sendHtml.
  * 봇 모듈에 대한 의존성을 lazy require 로 해결 → 순환 참조 방지.
+ *
+ * **Alert 대상 (Codex #473 P2):** `TELEGRAM_ADMIN_CHAT_IDS` (관리자 전용, 콤마 구분).
+ * `TELEGRAM_ALLOWED_CHAT_IDS` (봇 사용자 화이트리스트, 가족 chat 포함) 는 alert
+ * 대상으로 사용 금지 — alert 본문에 `AdvisorError.detail` (stderr tail) 이 포함되며
+ * claude-advisor.ts 는 이를 "사용자 노출 불가 디버깅 정보" 로 명시. 관리자가 아닌
+ * 가족 chat 에 internal 진단이 노출되면 안 됨.
+ *
+ * 미설정 시 alert 스킵 (console.warn) — 조용히 fallback 하지 않음 (`TELEGRAM_ALLOWED_
+ * CHAT_IDS` 첫 값 재사용 같은 heuristic 은 secure default 원칙 위반).
  */
 export function getGlobalAdvisorMonitor(): AdvisorMonitor {
   if (productionMonitor === null) {
     productionMonitor = createAdvisorMonitor(async (message) => {
-      const chatIds = (process.env.TELEGRAM_ALLOWED_CHAT_IDS ?? '')
+      const chatIds = (process.env.TELEGRAM_ADMIN_CHAT_IDS ?? '')
         .split(',')
         .map((s) => s.trim())
         .filter(Boolean)
         .map(Number)
         .filter((n) => !Number.isNaN(n))
       if (chatIds.length === 0) {
-        console.warn('[advisor-monitor] TELEGRAM_ALLOWED_CHAT_IDS 미설정, alert 발송 스킵')
+        console.warn(
+          '[advisor-monitor] TELEGRAM_ADMIN_CHAT_IDS 미설정 → 관리자 alert 발송 스킵. ' +
+            '이 env 는 봇 사용자 화이트리스트 (TELEGRAM_ALLOWED_CHAT_IDS) 와 분리 관리해야 함 ' +
+            '(alert 본문에 stderr detail 포함, non-admin 노출 금지).',
+        )
         return false
       }
       // Lazy require — advisor-monitor 는 lib/ 아래 있어 web/bot 양쪽에서 load 됨.
