@@ -156,16 +156,20 @@ export default function VestingCalendar({ events, todayMs }: Props) {
  * Phase 41-A (#470) — 모바일 (`<lg`) 전용 vesting 리스트 뷰.
  * 다가오는 90일 이벤트만 카드 스택으로 표시. 데스크톱은 캘린더 그리드 유지.
  */
+// Codex #477 P2: `exercisable` 은 OPTION 전용 actionable 상태 (행사 가능) — RSU 의
+// `vested` (완료 상태) 와 구분해야 사용자가 행사 액션을 놓치지 않음.
+// StockOptionDashboard 와 동일 라벨 (`행사 가능`) 사용.
 const STATUS_LABEL: Record<VestingEvent['status'], string> = {
   pending: '미베스팅',
-  exercisable: '베스팅 완료',
+  exercisable: '행사 가능',
   vested: '베스팅 완료',
   exercised: '행사 완료',
   expired: '만료',
 }
 const STATUS_CLASS: Record<VestingEvent['status'], string> = {
   pending: 'text-dim',
-  exercisable: 'text-sejin',
+  // actionable → amber 강조 + bold (사용자 시선 유도)
+  exercisable: 'text-amber-500 dark:text-amber-400 font-bold',
   vested: 'text-sejin',
   exercised: 'text-sub opacity-60',
   expired: 'text-sub opacity-60',
