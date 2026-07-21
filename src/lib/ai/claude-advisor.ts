@@ -340,12 +340,29 @@ export async function askAdvisor(
       const stderr = errBuf.toString('utf-8').trim()
 
       if (code !== 0) {
-        // 디버깅 detail: stderr 끝 1KB 만 별도 프로퍼티로 전달 (message 는 사용자 노출 가능한 정적 문장)
+        // Codex #478 P2: `--output-format json` 은 에러도 stdout JSON 으로 반환 후
+        // exit code 를 non-zero 로 종료. stdout 파싱 없이 stderr 만 보면 대부분
+        // 비어있어 unknown 처리 → fallback UX 오분류. stdout JSON 우선 시도.
         const stderrTail = stderr.slice(-1024)
         if (stderrTail) console.error('[advisor] claude stderr:', stderrTail)
-        // Phase 40-B (#469): stderr pattern matching 으로 code 결정 → fallback UX 분기
-        const errorCode = classifyAdvisorError(stderrTail)
-        reject(new AdvisorError(`Claude CLI 종료 코드: ${code}`, stderrTail || undefined, errorCode))
+        // stdout JSON 에서 error 문구 추출 시도. 실패해도 stderr fallback.
+        let jsonErrorText = ''
+        try {
+          const parsed = JSON.parse(stdout) as Partial<ClaudeJsonOutput>
+          if (parsed && typeof parsed.result === 'string') {
+            jsonErrorText = parsed.result
+          }
+        } catch {
+          // stdout 이 JSON 아니거나 partial — stderr 만 사용
+        }
+        // classifyAdvisorError 는 stdout error 텍스트 + stderr 을 함께 검사 →
+        // JSON result 에 담긴 auth/quota 문구도 정확히 분류.
+        const combined = [jsonErrorText, stderrTail].filter(Boolean).join('\n')
+        const errorCode = classifyAdvisorError(combined || undefined)
+        // detail 은 사용자 진단 정보 우선순위: stdout JSON 문구 > stderr tail.
+        // 관리자 alert 에도 이게 더 actionable (Claude 자체의 에러 원문).
+        const detail = jsonErrorText.slice(0, 1024) || stderrTail || undefined
+        reject(new AdvisorError(`Claude CLI 종료 코드: ${code}`, detail, errorCode))
         return
       }
 
@@ -353,7 +370,10 @@ export async function askAdvisor(
         const output: ClaudeJsonOutput = JSON.parse(stdout)
 
         if (output.is_error) {
-          reject(new AdvisorError(`AI 응답 오류: ${output.result}`, undefined, 'unknown'))
+          // Codex #478 P2: exit code 0 인데 is_error=true 인 케이스도 classify.
+          // 이론상 CLI 는 대부분 non-zero exit 하지만 방어적으로 result 문구 활용.
+          const errorCode = classifyAdvisorError(output.result || undefined)
+          reject(new AdvisorError(`AI 응답 오류: ${output.result}`, output.result?.slice(0, 1024), errorCode))
           return
         }
 
