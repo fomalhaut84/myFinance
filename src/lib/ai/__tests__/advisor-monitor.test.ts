@@ -120,20 +120,63 @@ describe('createAdvisorMonitor — 실패 카운트 + alert', () => {
     expect(sender).not.toHaveBeenCalled()
   })
 
-  it('sendAlert 실패 → lastAlertAt 미갱신 → 다음 실패에서 재시도', async () => {
+  it('sendAlert 예외 → lastAlertAt 원복 → 다음 실패에서 재시도 (self-review P1)', async () => {
     const sender = vi.fn().mockRejectedValueOnce(new Error('네트워크')).mockResolvedValue(true)
     const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
     const m = createAdvisorMonitor(sender)
     for (let i = 0; i < FAIL_THRESHOLD; i++) {
       await m.recordFailure(makeError(), 'briefing', 1000 + i)
     }
-    // 첫 발송 실패 → lastAlertAt 여전히 null
+    // 첫 발송 예외 → lastAlertAt 원복 (여전히 null)
     expect(m.getState().lastAlertAt).toBeNull()
     // 다음 실패에서 (interval 로직 우회) 재시도
     await m.recordFailure(makeError(), 'briefing', 1000 + FAIL_THRESHOLD)
     expect(sender).toHaveBeenCalledTimes(2)
     expect(m.getState().lastAlertAt).not.toBeNull()
     errSpy.mockRestore()
+  })
+
+  // Self-review P1 회귀 방지 — sender false 리턴 (web 프로세스 getBot 실패,
+  // TELEGRAM_ALLOWED_CHAT_IDS 미설정, 모든 chat 발송 실패 등) 은 미발송으로 취급.
+  // 이전 코드는 boolean 무시하고 lastAlertAt 세팅 → 30분 억제 + 관리자 알림 0건.
+  it('sender false 리턴 → lastAlertAt 원복 → 다음 실패에서 재시도', async () => {
+    const sender = vi.fn().mockResolvedValueOnce(false).mockResolvedValue(true)
+    const m = createAdvisorMonitor(sender)
+    for (let i = 0; i < FAIL_THRESHOLD; i++) {
+      await m.recordFailure(makeError(), 'briefing', 1000 + i)
+    }
+    // 첫 발송 false → lastAlertAt 원복 (null 유지)
+    expect(m.getState().lastAlertAt).toBeNull()
+    // 다음 실패에서 재시도 → 이번엔 true
+    await m.recordFailure(makeError(), 'briefing', 1000 + FAIL_THRESHOLD)
+    expect(sender).toHaveBeenCalledTimes(2)
+    expect(m.getState().lastAlertAt).toBe(1000 + FAIL_THRESHOLD)
+  })
+
+  // Self-review P1 회귀 방지 — 동시 recordFailure race 시 두 번째 호출이 첫 번째의
+  // `await sendAlert` 중에 shouldSend=true 판정하는 window 를 좁힘.
+  // lastAlertAt 을 낙관적으로 세팅 → 두 번째 호출은 shouldSend=false.
+  it('동시 recordFailure race → 중복 alert 없이 1회만 발송', async () => {
+    // sender 를 지연 (await 로 microtask 흐름 시뮬레이션)
+    let resolveFirst!: () => void
+    const sender = vi.fn().mockImplementation(async () => {
+      await new Promise<void>((r) => { resolveFirst = r })
+      return true
+    })
+    const m = createAdvisorMonitor(sender)
+    // 3회 실패 미리 쌓기 (아직 alert 발동 전 상태 세팅)
+    for (let i = 0; i < FAIL_THRESHOLD - 1; i++) {
+      await m.recordFailure(makeError(), 'briefing', 1000 + i)
+    }
+    // 3번째 = 첫 alert trigger. await 하지 않고 in-flight 유지.
+    const p1 = m.recordFailure(makeError(), 'briefing', 1002)
+    // 즉시 4번째 실패 유입 (concurrent) — lastAlertAt 이 이미 세팅됐으니 shouldSend=false
+    await m.recordFailure(makeError(), 'briefing', 1003)
+    // 이제 첫 발송 resolve
+    resolveFirst()
+    await p1
+    // sender 1회만 호출 (중복 없음)
+    expect(sender).toHaveBeenCalledTimes(1)
   })
 
   it('failThreshold override', async () => {

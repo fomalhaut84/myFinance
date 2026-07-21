@@ -122,12 +122,23 @@ export function createAdvisorMonitor(
         state.lastAlertAt === null || (now - state.lastAlertAt) >= interval
       if (!shouldSend) return
 
+      // Self-review P1: `await sendAlert` 전에 `lastAlertAt` 을 낙관적으로 세팅
+      // (동시 recordFailure 경합에서 락 역할 — 두 microtask 가 동시에 shouldSend=true
+      // 판정해 중복 alert 발송하는 것 방지). 실패/미발송 시 원복.
+      const prevAlertAt = state.lastAlertAt
+      state.lastAlertAt = now
       try {
-        await sendAlert(buildFailureAlert(state, caller))
-        state.lastAlertAt = now
+        const delivered = await sendAlert(buildFailureAlert(state, caller))
+        // Self-review P1: sender 가 false 리턴 시 (예: web 프로세스 getBot 실패,
+        // TELEGRAM_ALLOWED_CHAT_IDS 미설정, 모든 chat 발송 실패) 실제 관리자에게
+        // 도달 안 함 → lastAlertAt 원복해 다음 실패에서 재시도 가능하게.
+        if (!delivered) {
+          state.lastAlertAt = prevAlertAt
+        }
       } catch (sendErr) {
         console.error('[advisor-monitor] alert 발송 실패:', sendErr)
-        // lastAlertAt 은 갱신하지 않음 → 다음 실패 시 재시도
+        // sender 예외도 미발송으로 취급 → lastAlertAt 원복
+        state.lastAlertAt = prevAlertAt
       }
     },
 

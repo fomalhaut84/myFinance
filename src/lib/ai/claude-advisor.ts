@@ -296,7 +296,9 @@ export async function askAdvisor(
   // Phase 40-A (#468) — 실패/성공을 monitor 에 기록 → 연속 3회 실패 시 관리자
   // 텔레그램 alert 자동 발송. resolve/reject 결과에 side-effect 만 추가하고 원본
   // promise 를 그대로 리턴 (호출자 관점 동작 무변경).
-  subprocessPromise.then(
+  // `void ...` 로 명시적 fire-and-forget — hook 실패는 caller 로 전파되지 않고
+  // console.error 로만 남김 (모니터 실패가 원본 응답을 오염 안 시킴).
+  void subprocessPromise.then(
     () => {
       getGlobalAdvisorMonitor().recordSuccess().catch((e) => {
         console.error('[advisor] monitor.recordSuccess 실패:', e)
