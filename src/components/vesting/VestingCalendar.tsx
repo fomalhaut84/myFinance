@@ -3,8 +3,10 @@
 import { useMemo, useState } from 'react'
 import {
   buildMonthGrid,
+  diffDaysKST,
   groupEventsByDate,
   toKSTDateString,
+  upcomingEvents,
   type VestingEvent,
 } from '@/lib/vesting-events'
 import VestingEventBar from './VestingEventBar'
@@ -46,7 +48,9 @@ export default function VestingCalendar({ events, todayMs }: Props) {
 
   return (
     <div className="bg-card border border-border rounded-2xl overflow-hidden">
-      <div className="px-5 py-4 flex items-center justify-between border-b border-border">
+      {/* Phase 41-A (#470): 캘린더 헤더 (월 이동) 는 데스크톱 전용. mobile 리스트 뷰는
+          자체 헤더 (다가오는 90일) 를 MobileVestingList 안에 둠. */}
+      <div className="hidden lg:flex px-5 py-4 items-center justify-between border-b border-border">
         <div className="flex items-center gap-4">
           <h2 className="text-[18px] font-bold text-bright tracking-tight tabular-nums">
             {monthLabel}
@@ -78,7 +82,12 @@ export default function VestingCalendar({ events, todayMs }: Props) {
         </div>
       </div>
 
-      <div className="grid grid-cols-7 px-2 pt-3 pb-2 text-[10px] font-bold text-dim tracking-[1.2px] uppercase">
+      {/* Phase 41-A (#470, 39-A audit L1): mobile 은 리스트 뷰. 7-col grid 는
+          375px viewport 에서 셀당 ~50px → 날짜/뱃지 겹칠 여지. lg 이하는 다가오는
+          이벤트 (90일) 카드 스택으로 대체. lg+ 는 기존 캘린더 유지. */}
+      <MobileVestingList events={events} todayMs={todayMs} todayKey={todayKey} />
+
+      <div className="hidden lg:grid grid-cols-7 px-2 pt-3 pb-2 text-[10px] font-bold text-dim tracking-[1.2px] uppercase">
         {WEEKDAYS.map((d, i) => (
           <div key={d} className={`px-3 ${i === 0 ? 'text-red-500/80 dark:text-red-400/80' : ''}`}>
             {d}
@@ -86,7 +95,7 @@ export default function VestingCalendar({ events, todayMs }: Props) {
         ))}
       </div>
 
-      <div className="grid grid-cols-7 gap-px px-2 pb-3">
+      <div className="hidden lg:grid grid-cols-7 gap-px px-2 pb-3">
         {grid.map((d) => {
           const key = toKSTDateString(d)
           const otherMonth = d.getMonth() !== cursor.month
@@ -139,6 +148,82 @@ export default function VestingCalendar({ events, todayMs }: Props) {
           미베스팅(점) · 베스팅 완료(✓) · 행사 완료(엷음) · 만료(회색 ✗)
         </span>
       </div>
+    </div>
+  )
+}
+
+/**
+ * Phase 41-A (#470) — 모바일 (`<lg`) 전용 vesting 리스트 뷰.
+ * 다가오는 90일 이벤트만 카드 스택으로 표시. 데스크톱은 캘린더 그리드 유지.
+ */
+const STATUS_LABEL: Record<VestingEvent['status'], string> = {
+  pending: '미베스팅',
+  exercisable: '베스팅 완료',
+  vested: '베스팅 완료',
+  exercised: '행사 완료',
+  expired: '만료',
+}
+const STATUS_CLASS: Record<VestingEvent['status'], string> = {
+  pending: 'text-dim',
+  exercisable: 'text-sejin',
+  vested: 'text-sejin',
+  exercised: 'text-sub opacity-60',
+  expired: 'text-sub opacity-60',
+}
+const TYPE_DOT: Record<VestingEvent['type'], string> = {
+  RSU: 'bg-sejin',
+  OPTION: 'bg-sodam',
+}
+
+function MobileVestingList({
+  events, todayMs, todayKey,
+}: { events: VestingEvent[]; todayMs: number; todayKey: string }) {
+  const upcoming = useMemo(() => upcomingEvents(events, 90, todayMs), [events, todayMs])
+
+  return (
+    <div className="lg:hidden">
+      <div className="px-4 py-3 border-b border-border flex items-baseline justify-between">
+        <h2 className="text-[14px] font-bold text-bright">다가오는 90일</h2>
+        <span className="text-[11px] text-dim">{upcoming.length}건 · KST</span>
+      </div>
+      {upcoming.length === 0 ? (
+        <div className="px-4 py-8 text-center text-[12px] text-dim">
+          다가오는 vesting 이 없습니다.
+        </div>
+      ) : (
+        <ul className="divide-y divide-border">
+          {upcoming.map((ev) => {
+            const days = diffDaysKST(ev.date, todayMs)
+            const isToday = ev.date === todayKey
+            const daysLabel = isToday ? '오늘' : days === 1 ? '내일' : `${days}일 후`
+            return (
+              <li
+                key={ev.id}
+                className={`px-4 py-3 flex items-center gap-3 ${isToday ? 'bg-amber-500/10 dark:bg-amber-500/15' : ''}`}
+              >
+                <span className={`w-2 h-2 rounded-full shrink-0 ${TYPE_DOT[ev.type]}`} aria-hidden />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-[13px] font-bold text-bright tabular-nums">{ev.date.slice(5)}</span>
+                    <span className={`text-[11px] ${isToday ? 'text-amber-500 dark:text-amber-400 font-semibold' : 'text-sub'}`}>
+                      {daysLabel}
+                    </span>
+                  </div>
+                  <div className="text-[12px] text-sub truncate mt-0.5">
+                    <span className="font-semibold text-bright">{ev.displayName}</span>
+                    {ev.shares > 0 && (
+                      <span className="text-dim tabular-nums"> · {ev.shares.toLocaleString('ko-KR')}주</span>
+                    )}
+                  </div>
+                </div>
+                <span className={`text-[11px] font-semibold tabular-nums shrink-0 ${STATUS_CLASS[ev.status]}`}>
+                  {STATUS_LABEL[ev.status]}
+                </span>
+              </li>
+            )
+          })}
+        </ul>
+      )}
     </div>
   )
 }

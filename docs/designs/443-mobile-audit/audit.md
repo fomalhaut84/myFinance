@@ -228,6 +228,8 @@ BudgetManager row 는 5개의 direct grid children (카테고리명 · progress 
 
 **Fix 방향**: 상세 페이지에서만 열리므로 유지 가능. 심각하면 mobile 은 리스트 뷰로 전환.
 
+**해결 (Phase 41-A, #470, 2026-07-21):** mobile (`<lg`) 전용 `MobileVestingList` 서브컴포넌트 추가 — 다가오는 90일 이벤트 카드 스택 (날짜 · 티커 · 남은 일수 · 상태). 캘린더 그리드 + 헤더 (월 이동 버튼) 는 `hidden lg:*` 로 격리. 데스크톱 UX 무변경.
+
 ---
 
 ### L2. AI chat 페이지 message max-width
