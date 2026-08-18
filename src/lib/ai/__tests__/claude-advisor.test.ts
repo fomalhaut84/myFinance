@@ -13,6 +13,7 @@ import {
   classifyAdvisorError,
   describeAdvisorError,
   extractAdvisorErrorText,
+  hasNoToolResponse,
 } from '../claude-advisor'
 
 describe('classifyAdvisorError', () => {
@@ -229,5 +230,45 @@ describe('extractAdvisorErrorText', () => {
     // Codex #479 P2 시나리오 — Claude API 429 는 result 없이 api_error_status 만 채워짐
     const text = extractAdvisorErrorText({ result: '', api_error_status: 429 })
     expect(classifyAdvisorError(text)).toBe('quota_exceeded')
+  })
+})
+
+// Codex PR #484 P1 회귀 방지 — 응답 텍스트 fingerprint 로 도구 미사용 감지.
+// num_turns 만으로는 부정확 (Claude 가 WebSearch 만 부르고 MCP tool skip 해도
+// num_turns >= 2). semantic 검증 fallback.
+describe('hasNoToolResponse', () => {
+  it('실제 발송된 실패 응답 (2026-08-18 브리핑) 감지', () => {
+    const actual = `⚠️ 도구 연결 문제 안내
+
+죄송하지만 현재 세션에서 myFinance 데이터 도구(포트폴리오, 전략, 기술적분석 등)가 연결되지 않아 아래 항목을 확인할 수 없었습니다:
+
+- 📊 get_all_strategies (전체 종목 전략)
+- 💼 get_portfolio (계좌별 보유 현황)`
+    expect(hasNoToolResponse(actual)).toBe(true)
+  })
+
+  it('다양한 실패 pattern 변형 감지', () => {
+    expect(hasNoToolResponse('도구가 연결되지 않아서')).toBe(true)
+    expect(hasNoToolResponse('데이터 도구가 연결되지 않았습니다')).toBe(true)
+    expect(hasNoToolResponse('도구 연결 문제로')).toBe(true)
+    expect(hasNoToolResponse('도구 연결 불가')).toBe(true)
+    expect(hasNoToolResponse('MCP 연결 실패')).toBe(true)
+    expect(hasNoToolResponse('도구 접근 불가')).toBe(true)
+    expect(hasNoToolResponse('MCP 접근 문제')).toBe(true)
+  })
+
+  it('정상 응답은 false (false positive 방지)', () => {
+    // 실제 정상 브리핑에 나올 수 있는 문구들
+    expect(hasNoToolResponse('AAPL 현재가는 $180 입니다.')).toBe(false)
+    expect(hasNoToolResponse('세진 계좌 총 평가금 3,200만원')).toBe(false)
+    expect(hasNoToolResponse('RSI 65, MACD 상승 전환')).toBe(false)
+    expect(hasNoToolResponse('오늘 시장 하락. 관망 권장.')).toBe(false)
+    // 도구 이름이 언급되더라도 "연결 문제" 서술이 없으면 통과
+    expect(hasNoToolResponse('get_portfolio 결과: 3개 계좌')).toBe(false)
+  })
+
+  it('빈 입력 → false', () => {
+    expect(hasNoToolResponse('')).toBe(false)
+    expect(hasNoToolResponse(undefined)).toBe(false)
   })
 })

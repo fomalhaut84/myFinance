@@ -122,6 +122,43 @@ export class AdvisorError extends Error {
  * 직접 code 지정 (예: `AdvisorError('...', undefined, 'server_down')`).
  */
 /**
+ * Codex PR #484 P1: `num_turns` 는 MCP tool 사용 여부의 정확한 지표가 아님.
+ * 실측: 브리핑처럼 "WebSearch 로 뉴스 검색" 을 프롬프트에 명시하면 Claude 가
+ * MCP tool 은 건너뛰고 WebSearch 만 호출해도 `num_turns >= 2` 가 나옴 →
+ * guard 통과되어 데이터 없는 브리핑이 여전히 발송됨. 또 `--output-format json`
+ * 은 실제 호출된 tool 이름 목록을 노출하지 않음 (`iterations` 는 token 사용량
+ * 뿐).
+ *
+ * → Structural 검증 (`num_turns === 1` = 완전 미사용) + Semantic 검증 (응답
+ * 텍스트 fingerprint) 이중 방어. Semantic 은 아래 pattern.
+ *
+ * 실제 발송된 실패 응답 (2026-08-18):
+ *   "⚠️ 도구 연결 문제 안내
+ *    죄송하지만 현재 세션에서 myFinance 데이터 도구(포트폴리오, 전략, 기술적분석 등)
+ *    가 연결되지 않아 아래 항목을 확인할 수 없었습니다:"
+ *
+ * Pattern 은 매우 좁게 (정상 응답에서 우연히 등장할 수 없는 조합) 잡아
+ * false positive 최소화. 정상 브리핑이 "도구가 연결되지 않아" 를 언급할 이유는
+ * 없음 (정상 응답은 데이터를 나열).
+ */
+const NO_TOOL_RESPONSE_PATTERNS: RegExp[] = [
+  // Claude 가 "도구 접근/연결 실패" 를 명시적으로 서술하는 패턴
+  /(데이터\s*)?도구.{0,20}연결되지\s*않/,
+  /(도구|MCP).{0,20}(연결|접근)\s*(문제|불가|실패)/,
+  /(도구|MCP)\s*(연결|접근).{0,10}(못|안|불가)\s*(했|합|됩)/,
+]
+
+/**
+ * Pure — 응답 텍스트에서 "도구 미사용" fingerprint 감지.
+ * `expectsTools: true` caller 는 이 결과가 true 일 때 `no_tool_used` 로 실패 처리.
+ * 테스트 용이하도록 export.
+ */
+export function hasNoToolResponse(text: string | undefined): boolean {
+  if (!text) return false
+  return NO_TOOL_RESPONSE_PATTERNS.some((re) => re.test(text))
+}
+
+/**
  * Codex #479 P2 재수정: bare `'401'` / `'403'` / `'429'` substring 매칭은
  * false positive 유발 (port 4030 · 라인 401 · request id 포함 등). Claude 가
  * 실제 뱉는 형태만 명시적으로 매칭 (regex):
@@ -468,19 +505,32 @@ export async function askAdvisor(
 
         const numTurns = typeof output.num_turns === 'number' ? output.num_turns : 0
 
-        // #483: caller 가 tool 사용을 필수로 기대한 경우 (예: 브리핑) num_turns
-        // 로 도구 미호출 여부 검증. Claude subprocess 는 성공 (is_error=false)
-        // 이지만 도구를 한 번도 안 부른 케이스 (num_turns=1) 를 실패로 재분류.
-        // - tool 호출 시 최소 2 turn (assistant → tool_use → assistant)
-        // - num_turns 필드가 없으면 (구버전 CLI 등) 검증 스킵해 하위 호환
-        if (options.expectsTools && numTurns > 0 && numTurns < 2) {
-          reject(new AdvisorError(
-            `AI 응답이 도구를 호출하지 않았습니다 (num_turns=${numTurns}).`,
-            `stop_reason=${JSON.stringify((output as { stop_reason?: unknown }).stop_reason ?? null)} ` +
-              `result_len=${output.result?.length ?? 0}`,
-            'no_tool_used',
-          ))
-          return
+        // #483 + Codex PR #484 P1: caller 가 MCP tool 사용을 필수로 기대한 경우
+        // 이중 방어 (structural + semantic):
+        //  1. `num_turns === 1` = 어떤 tool 도 호출 안 함 (fast fail)
+        //  2. `hasNoToolResponse(result)` = Claude 가 "도구 접근 불가" 안내를
+        //     본문에 직접 서술한 케이스. 브리핑 프롬프트에 WebSearch 가 명시되어
+        //     있어 Claude 가 MCP tool 은 skip 하고 WebSearch 만 호출해도
+        //     `num_turns >= 2` 로 나옴 → 이 경우 텍스트 fingerprint 로 감지.
+        //
+        // num_turns >= 2 && !hasNoToolResponse 케이스는 실제로 tool 을 사용한
+        // 정상 응답으로 간주 (일부 tool 만 호출한 부분 성공은 통과). num_turns
+        // 필드 자체가 없으면 (구버전 CLI 등) structural 검증은 스킵되고
+        // semantic 검증만 유효.
+        if (options.expectsTools) {
+          const skippedAll = numTurns === 1
+          const advertisedFailure = hasNoToolResponse(output.result)
+          if (skippedAll || advertisedFailure) {
+            reject(new AdvisorError(
+              'AI 응답이 데이터 도구를 사용하지 않았습니다.',
+              `num_turns=${numTurns} ` +
+                `stop_reason=${JSON.stringify((output as { stop_reason?: unknown }).stop_reason ?? null)} ` +
+                `result_len=${output.result?.length ?? 0} ` +
+                `advertised_failure=${advertisedFailure}`,
+              'no_tool_used',
+            ))
+            return
+          }
         }
 
         resolve({
