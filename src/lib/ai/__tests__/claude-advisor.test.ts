@@ -295,10 +295,10 @@ describe('parseClaudeStreamJson', () => {
     ].join('\n')
     const parsed = parseClaudeStreamJson(stream)
     expect(parsed.toolCalls).toEqual([
-      { id: 't1', name: 'mcp__myfinance__get_all_strategies', isError: false },
-      { id: 't2', name: 'mcp__myfinance__get_portfolio', isError: true },
-      // WebSearch tool_result 는 is_error 없음 → undefined
-      { id: 't3', name: 'WebSearch', isError: undefined },
+      { id: 't1', name: 'mcp__myfinance__get_all_strategies', hasResult: true, isError: false },
+      { id: 't2', name: 'mcp__myfinance__get_portfolio', hasResult: true, isError: true },
+      // WebSearch tool_result 는 is_error 없음 → undefined (정상 성공)
+      { id: 't3', name: 'WebSearch', hasResult: true, isError: undefined },
     ])
     expect(parsed.finalResult?.is_error).toBe(false)
     expect(parsed.finalResult?.num_turns).toBe(7)
@@ -327,7 +327,7 @@ describe('parseClaudeStreamJson', () => {
       '{"type":"result","is_error":false,"result":"","num_turns":2}',
     ].join('\n')
     const parsed = parseClaudeStreamJson(stream)
-    expect(parsed.toolCalls).toEqual([{ id: 'x1', name: 'X', isError: undefined }])
+    expect(parsed.toolCalls).toEqual([{ id: 'x1', name: 'X', hasResult: false, isError: undefined }])
     expect(parsed.finalResult?.num_turns).toBe(2)
   })
 
@@ -337,20 +337,36 @@ describe('parseClaudeStreamJson', () => {
       '{"type":"result","is_error":false,"result":"","num_turns":1}',
     ].join('\n')
     const parsed = parseClaudeStreamJson(stream)
-    expect(parsed.toolCalls).toEqual([{ id: undefined, name: 'NoId', isError: undefined }])
+    expect(parsed.toolCalls).toEqual([{ id: undefined, name: 'NoId', hasResult: false, isError: undefined }])
   })
 
-  it('tool_result 가 없는 tool_use → isError undefined (엄격 판정으로 실패 취급)', () => {
+  it('orphan tool_use (tool_result 없음) → hasResult=false → 성공 아님', () => {
     // Claude subprocess 이상 종료 시나리오 — tool_use 는 emit 됐지만 result 못 받음
     const stream = [
       '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"orphan","name":"mcp__myfinance__get_portfolio"}]}}',
       '{"type":"result","is_error":false,"result":"","num_turns":1}',
     ].join('\n')
     const parsed = parseClaudeStreamJson(stream)
+    expect(parsed.toolCalls[0].hasResult).toBe(false)
     expect(parsed.toolCalls[0].isError).toBeUndefined()
-    // countSuccessfulMcpMyFinanceCalls 는 undefined 를 성공으로 안 봄 (fail-closed)
+    // hasResult=false 이면 성공 카운트 안 됨 (fail-closed)
     expect(countSuccessfulMcpMyFinanceCalls(parsed.toolCalls)).toBe(0)
     expect(countMcpMyFinanceCalls(parsed.toolCalls)).toBe(1)
+  })
+
+  // Codex PR #484 P1 (5차) 회귀 방지 — is_error 필드 생략된 tool_result 는 성공.
+  // src/mcp/utils.ts 의 성공 응답 (`toolResult`) 은 is_error 없이 content 만 반환.
+  it('tool_result 에 is_error 필드 없음 = 정상 성공 (Anthropic 스키마 optional)', () => {
+    const stream = [
+      // 실제 MCP 성공 응답 형식 — is_error 필드 없음
+      '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"s1","name":"mcp__myfinance__get_portfolio"}]}}',
+      '{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"s1","content":"[{...portfolio data...}]"}]}}',
+      '{"type":"result","is_error":false,"result":"브리핑","num_turns":2}',
+    ].join('\n')
+    const parsed = parseClaudeStreamJson(stream)
+    expect(parsed.toolCalls[0].hasResult).toBe(true)
+    expect(parsed.toolCalls[0].isError).toBeUndefined()  // 생략 = 성공
+    expect(countSuccessfulMcpMyFinanceCalls(parsed.toolCalls)).toBe(1)  // 정확히 성공으로 카운트
   })
 
   it('result event 없으면 finalResult undefined', () => {
@@ -373,22 +389,29 @@ describe('parseClaudeStreamJson', () => {
 describe('countMcpMyFinanceCalls (시도 카운트)', () => {
   it('mcp__myfinance__* prefix 만 카운트 (WebSearch/WebFetch 등 제외)', () => {
     const calls = [
-      { name: 'mcp__myfinance__get_portfolio', isError: false },
-      { name: 'WebSearch' },
-      { name: 'mcp__myfinance__get_all_strategies', isError: true },  // 실패해도 시도로 카운트
-      { name: 'WebFetch' },
-      { name: 'mcp__myfinance__get_technical_analysis', isError: false },
-      { name: 'Read' },
+      { name: 'mcp__myfinance__get_portfolio', hasResult: true, isError: false },
+      { name: 'WebSearch', hasResult: true },
+      { name: 'mcp__myfinance__get_all_strategies', hasResult: true, isError: true },  // 실패해도 시도로 카운트
+      { name: 'WebFetch', hasResult: true },
+      { name: 'mcp__myfinance__get_technical_analysis', hasResult: true, isError: false },
+      { name: 'Read', hasResult: true },
     ]
     expect(countMcpMyFinanceCalls(calls)).toBe(3)
   })
 
   it('다른 MCP 서버 tool 은 제외', () => {
-    expect(countMcpMyFinanceCalls([{ name: 'mcp__other__foo' }, { name: 'mcp__external__bar' }])).toBe(0)
+    expect(countMcpMyFinanceCalls([
+      { name: 'mcp__other__foo', hasResult: true },
+      { name: 'mcp__external__bar', hasResult: true },
+    ])).toBe(0)
   })
 
   it('WebSearch-only (Codex 3차 시나리오) = 0', () => {
-    expect(countMcpMyFinanceCalls([{ name: 'WebSearch' }, { name: 'WebSearch' }, { name: 'WebFetch' }])).toBe(0)
+    expect(countMcpMyFinanceCalls([
+      { name: 'WebSearch', hasResult: true },
+      { name: 'WebSearch', hasResult: true },
+      { name: 'WebFetch', hasResult: true },
+    ])).toBe(0)
   })
 
   it('빈 배열 → 0', () => {
@@ -396,41 +419,51 @@ describe('countMcpMyFinanceCalls (시도 카운트)', () => {
   })
 })
 
-// Codex PR #484 P1 4차 회귀 방지 — 성공 카운트는 isError === false 만.
+// Codex PR #484 P1 (4차/5차) 회귀 방지.
 describe('countSuccessfulMcpMyFinanceCalls (성공 카운트)', () => {
-  it('mcp__myfinance__* 중 isError === false 만 카운트', () => {
+  it('mcp__myfinance__* 중 hasResult=true && isError !== true 만 카운트', () => {
     const calls = [
-      { name: 'mcp__myfinance__get_portfolio', isError: false },
-      { name: 'mcp__myfinance__get_all_strategies', isError: true },  // 실패
-      { name: 'mcp__myfinance__get_technical_analysis', isError: false },
-      { name: 'WebSearch', isError: false },  // 성공이어도 mcp 아니라 제외
+      { name: 'mcp__myfinance__get_portfolio', hasResult: true, isError: false },    // 성공
+      { name: 'mcp__myfinance__get_all_strategies', hasResult: true, isError: true },  // 실패
+      { name: 'mcp__myfinance__get_technical_analysis', hasResult: true },  // is_error 생략 = 성공 (5차)
+      { name: 'WebSearch', hasResult: true, isError: false },  // mcp 아님 → 제외
     ]
     expect(countSuccessfulMcpMyFinanceCalls(calls)).toBe(2)
   })
 
   it('4차 시나리오: tool_use 는 있지만 모두 tool_result is_error=true = 0', () => {
-    // Codex 지적: tool_use 카운트만 하면 통과. 성공 카운트로 정확 감지.
     const calls = [
-      { name: 'mcp__myfinance__get_portfolio', isError: true },
-      { name: 'mcp__myfinance__get_all_strategies', isError: true },
+      { name: 'mcp__myfinance__get_portfolio', hasResult: true, isError: true },
+      { name: 'mcp__myfinance__get_all_strategies', hasResult: true, isError: true },
     ]
     expect(countMcpMyFinanceCalls(calls)).toBe(2)  // 시도는 있음
     expect(countSuccessfulMcpMyFinanceCalls(calls)).toBe(0)  // 하지만 성공 0
   })
 
-  it('isError undefined (매칭 실패/이상 상태) 는 성공으로 카운트 안 함 (fail-closed)', () => {
+  it('5차 시나리오: is_error 생략된 정상 응답을 성공으로 카운트', () => {
+    // src/mcp/utils.ts 의 toolResult 는 is_error 없이 content 만 반환.
+    // 이걸 실패로 판정하면 모든 정상 브리핑이 no_tool_used 로 fail.
     const calls = [
-      { name: 'mcp__myfinance__get_portfolio', isError: undefined },
-      { name: 'mcp__myfinance__get_portfolio' },  // undefined 와 동일
+      { name: 'mcp__myfinance__get_portfolio', hasResult: true /* isError 생략 */ },
+      { name: 'mcp__myfinance__get_all_strategies', hasResult: true, isError: undefined },
+    ]
+    expect(countSuccessfulMcpMyFinanceCalls(calls)).toBe(2)  // 둘 다 성공
+  })
+
+  it('hasResult=false (orphan tool_use) 는 성공 카운트 안 함 (fail-closed)', () => {
+    const calls = [
+      { name: 'mcp__myfinance__get_portfolio', hasResult: false },  // orphan
+      { name: 'mcp__myfinance__get_all_strategies', hasResult: false, isError: undefined },
     ]
     expect(countSuccessfulMcpMyFinanceCalls(calls)).toBe(0)
   })
 
-  it('일부 성공 + 일부 실패 = 성공만 카운트', () => {
+  it('일부 성공 + 일부 실패 + 일부 orphan = 성공만 카운트', () => {
     const calls = [
-      { name: 'mcp__myfinance__get_portfolio', isError: false },
-      { name: 'mcp__myfinance__get_all_strategies', isError: true },
-      { name: 'mcp__myfinance__get_prices', isError: false },
+      { name: 'mcp__myfinance__get_portfolio', hasResult: true, isError: false },
+      { name: 'mcp__myfinance__get_all_strategies', hasResult: true, isError: true },
+      { name: 'mcp__myfinance__get_prices', hasResult: false },  // orphan
+      { name: 'mcp__myfinance__get_fx_rate', hasResult: true },  // is_error 생략 = 성공
     ]
     expect(countSuccessfulMcpMyFinanceCalls(calls)).toBe(2)
   })

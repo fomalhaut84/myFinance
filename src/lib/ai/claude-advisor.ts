@@ -178,12 +178,18 @@ export interface ParsedToolCall {
   /** Tool 이름 (예: `mcp__myfinance__get_portfolio`, `WebSearch`, `Bash`) */
   name: string
   /**
-   * 매칭된 tool_result 의 is_error 값.
-   *   - `false`: 정상 완료
-   *   - `true`: 실패 (MCP 오류 · validation · 예외 등)
-   *   - `undefined`: tool_result 이벤트가 없거나 매칭 실패 (이상 상태 — 실측에선
-   *     assistant tool_use 는 반드시 이후 user tool_result 로 응답. undefined 로
-   *     남는 케이스는 subprocess 이상 종료 등)
+   * 매칭된 tool_result 이벤트가 수신됐는지.
+   * false 면 subprocess 이상 종료 (assistant tool_use 만 emit 되고 user
+   * tool_result 못 받음) — 이 경우 성공으로 간주하지 않음 (fail-closed).
+   */
+  hasResult: boolean
+  /**
+   * 매칭된 tool_result 의 `is_error` 필드 값 (optional).
+   *   - `undefined`: 필드가 없음 → **정상 성공** (Anthropic ToolResultBlockParam
+   *     스키마상 is_error 는 optional. `src/mcp/utils.ts` 의 성공 응답
+   *     `toolResult` 는 이 필드를 생략, 실패 `toolError` 만 `isError: true` 추가)
+   *   - `false`: 명시적 성공
+   *   - `true`: 명시적 실패 (MCP 오류 · validation · 예외 등)
    */
   isError?: boolean
 }
@@ -227,6 +233,7 @@ export function parseClaudeStreamJson(stdout: string): ParsedClaudeStream {
             const call: ParsedToolCall = {
               id: typeof block.id === 'string' ? block.id : undefined,
               name: block.name,
+              hasResult: false,
             }
             toolCalls.push(call)
             if (call.id) byId.set(call.id, call)
@@ -242,9 +249,15 @@ export function parseClaudeStreamJson(stdout: string): ParsedClaudeStream {
             typeof block.tool_use_id === 'string'
           ) {
             const call = byId.get(block.tool_use_id)
-            // is_error 는 명시적 boolean 만 신뢰 (없으면 undefined 유지).
-            if (call && typeof block.is_error === 'boolean') {
-              call.isError = block.is_error
+            if (call) {
+              // Codex PR #484 P1 (5차): result 이벤트 수신 자체는 성공 신호.
+              // is_error 는 optional (Anthropic ToolResultBlockParam 스키마) —
+              // 성공 응답은 이 필드 생략. 명시적 boolean 만 채우고 없으면
+              // undefined 유지, 성공 판정은 countSuccessful* 이 담당.
+              call.hasResult = true
+              if (typeof block.is_error === 'boolean') {
+                call.isError = block.is_error
+              }
             }
           }
         }
@@ -263,14 +276,20 @@ export function countMcpMyFinanceCalls(toolCalls: ParsedToolCall[]): number {
 
 /**
  * Pure — `mcp__myfinance__*` 중 **성공** 한 호출 카운트.
- * Codex PR #484 P1 (4차): tool_use 만 카운트하면 tool_result 가 실패여도
- * "호출됨" 으로 판정되어 데이터 없는 응답 통과. 성공 = `isError === false`
- * (명시적 성공만). `undefined` (tool_result 매칭 실패) 나 `true` 는 실패 취급 —
- * 이상 상태에서 안전한 fail-closed default.
+ *
+ * 성공 판정: `hasResult === true && isError !== true`
+ *   - matching tool_result 이벤트를 받았고 (subprocess 이상 종료 아님)
+ *   - is_error 가 명시적으로 true 가 아님 (undefined 나 false 모두 성공)
+ *
+ * Codex PR #484 P1 (5차): is_error 는 Anthropic ToolResultBlockParam 스키마상
+ * optional. 성공 응답 (`src/mcp/utils.ts` 의 `toolResult`) 은 이 필드를 생략
+ * 하고 실패 (`toolError`) 만 `isError: true` 를 추가. 4차 fix 는 undefined
+ * 를 fail-closed 로 다뤘는데 이는 **모든 정상 브리핑을 실패 처리** 하는
+ * 문제 발생 → matching result 수신 여부 (`hasResult`) 로 pivot.
  */
 export function countSuccessfulMcpMyFinanceCalls(toolCalls: ParsedToolCall[]): number {
   return toolCalls.filter(
-    (c) => c.name.startsWith('mcp__myfinance__') && c.isError === false,
+    (c) => c.name.startsWith('mcp__myfinance__') && c.hasResult && c.isError !== true,
   ).length
 }
 
@@ -643,7 +662,12 @@ export async function askAdvisor(
         const advertisedFailure = hasNoToolResponse(output.result)
         if (mcpSuccesses === 0 || advertisedFailure) {
           const preview = toolCalls.slice(0, 20)
-            .map((c) => `${c.name}${c.isError === true ? '!err' : c.isError === undefined ? '?' : ''}`)
+            .map((c) => {
+              // 진단 마커: !err = tool_result is_error=true, ?nores = matching
+              // tool_result 없음 (subprocess 이상 종료). 마커 없음 = 성공.
+              const marker = c.isError === true ? '!err' : !c.hasResult ? '?nores' : ''
+              return `${c.name}${marker}`
+            })
             .join(',')
           reject(new AdvisorError(
             'AI 응답이 성공한 myFinance MCP 도구 호출을 갖지 않습니다.',
