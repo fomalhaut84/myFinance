@@ -44,6 +44,17 @@ export interface AdvisorOptions {
    * 어느 flow 가 실패했는지 즉시 파악 가능 (briefing / ta-signal / active-review / etc).
    */
   caller?: string
+  /**
+   * #483 — 호출부가 MCP 도구 사용을 필수로 기대하는 flow (예: 모닝 브리핑).
+   * true 이면 Claude JSON output `num_turns` 이 2 미만 (도구 미호출) 인 응답을
+   * `no_tool_used` 로 실패 처리 → caller 는 fallback + monitor alert 트리거.
+   *
+   * **왜 필요:** Claude 가 `--strict-mcp-config` + tools/list 정상 수신에도
+   * 간헐적으로 도구를 한 번도 호출하지 않고 "도구 접근 불가" 안내 텍스트만
+   * 리턴하는 케이스 발생. `is_error=false` 이므로 CLI 성공 응답으로 판정되어
+   * 그대로 사용자에게 발송됨. num_turns 기반 검증으로 감지.
+   */
+  expectsTools?: boolean
 }
 
 export interface AdvisorResult {
@@ -52,6 +63,12 @@ export interface AdvisorResult {
   durationMs: number
   costUsd: number
   sessionId: string
+  /**
+   * #483 — Claude 대화 turn 수. tool 호출이 있으면 최소 2 (assistant → tool → assistant),
+   * 없으면 1. `expectsTools` 검증에 사용. `--output-format json` 에 없거나 파싱 실패
+   * 케이스는 0.
+   */
+  numTurns: number
 }
 
 /**
@@ -70,6 +87,12 @@ export type AdvisorErrorCode =
   | 'server_down'
   | 'timeout'
   | 'parse_error'
+  /**
+   * #483 — Claude 가 MCP 도구를 한 번도 호출하지 않고 응답 종료 (num_turns=1).
+   * caller 가 `expectsTools: true` 로 opt-in 했을 때만 발생. CLI subprocess 자체는
+   * exit 0 + is_error=false 라 별도 판정 필요.
+   */
+  | 'no_tool_used'
   | 'unknown'
 
 export class AdvisorTimeoutError extends Error {
@@ -171,6 +194,8 @@ export function describeAdvisorError(err: AdvisorError | AdvisorTimeoutError | E
       return '⏱ AI 응답 시간 초과 — 잠시 후 다시 시도해주세요.'
     case 'parse_error':
       return '🤖 AI 응답을 처리할 수 없습니다 — 잠시 후 다시 시도해주세요.'
+    case 'no_tool_used':
+      return '🤖 AI 어드바이저가 데이터 도구를 호출하지 않았습니다 — 관리자에게 문의해주세요.'
     default:
       return '🤖 AI 어드바이저 일시 중단 — 관리자에게 문의해주세요.'
   }
@@ -250,6 +275,12 @@ interface ClaudeJsonOutput {
   // classify 시 이 필드도 참조해야 auth/quota 분류 가능.
   api_error_status?: number | string
   errors?: unknown
+  /**
+   * #483 — Claude 대화 turn 수. tool 사용 시 최소 2 (assistant → tool_use →
+   * assistant), 미사용 시 1. `expectsTools: true` caller 는 이 값으로 도구
+   * 미호출 응답을 감지.
+   */
+  num_turns?: number
 }
 
 /**
@@ -335,7 +366,10 @@ export async function askAdvisor(
     '--mcp-config', shellEscape(mcpConfigPath),
     '--strict-mcp-config',
     '--allowedTools', shellEscape(ALLOWED_TOOLS),
-    '--tools', '"WebSearch,WebFetch"',
+    // #483: 기존에 있던 `--tools "WebSearch,WebFetch"` 제거.
+    // `--tools` 는 built-in tool set (Bash/Read/Edit/…) 제한용이며 MCP tool 에는
+    // 영향 없음. WebSearch/WebFetch 는 이미 `--allowedTools` 에 포함되어 있어
+    // 중복. 남겨두면 built-in tool 이 예기치 않게 제한될 수 있어 제거.
     '--max-budget-usd', String(maxBudgetUsd),
     '--permission-mode', 'dontAsk',
   )
@@ -432,12 +466,30 @@ export async function askAdvisor(
           return
         }
 
+        const numTurns = typeof output.num_turns === 'number' ? output.num_turns : 0
+
+        // #483: caller 가 tool 사용을 필수로 기대한 경우 (예: 브리핑) num_turns
+        // 로 도구 미호출 여부 검증. Claude subprocess 는 성공 (is_error=false)
+        // 이지만 도구를 한 번도 안 부른 케이스 (num_turns=1) 를 실패로 재분류.
+        // - tool 호출 시 최소 2 turn (assistant → tool_use → assistant)
+        // - num_turns 필드가 없으면 (구버전 CLI 등) 검증 스킵해 하위 호환
+        if (options.expectsTools && numTurns > 0 && numTurns < 2) {
+          reject(new AdvisorError(
+            `AI 응답이 도구를 호출하지 않았습니다 (num_turns=${numTurns}).`,
+            `stop_reason=${JSON.stringify((output as { stop_reason?: unknown }).stop_reason ?? null)} ` +
+              `result_len=${output.result?.length ?? 0}`,
+            'no_tool_used',
+          ))
+          return
+        }
+
         resolve({
           response: output.result,
           model,
           durationMs: output.duration_ms,
           costUsd: output.total_cost_usd,
           sessionId: output.session_id ?? '',
+          numTurns,
         })
       } catch {
         reject(new AdvisorError('AI 응답을 파싱할 수 없습니다.', undefined, 'parse_error'))

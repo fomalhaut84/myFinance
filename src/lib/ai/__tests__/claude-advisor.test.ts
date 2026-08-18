@@ -142,6 +142,17 @@ describe('describeAdvisorError', () => {
     expect(msg).toContain('관리자')
   })
 
+  // #483 회귀 방지 — MCP 도구 미호출 감지 fallback 메시지
+  it('no_tool_used → 도구 미호출 안내 (관리자 문의)', () => {
+    const err = new AdvisorError('x', undefined, 'no_tool_used')
+    const msg = describeAdvisorError(err)
+    expect(msg).toContain('데이터 도구를 호출하지 않았습니다')
+    expect(msg).toContain('관리자')
+    // detail (num_turns, stop_reason 등) 은 사용자에게 노출되지 않아야
+    expect(msg).not.toContain('num_turns')
+    expect(msg).not.toContain('stop_reason')
+  })
+
   it('AdvisorError/Timeout 이 아닌 일반 Error → unknown 처리', () => {
     const err = new Error('random')
     const msg = describeAdvisorError(err)
@@ -172,7 +183,7 @@ describe('AdvisorError.code 계약', () => {
   })
 
   it('code 명시 시 그대로', () => {
-    for (const c of ['auth_expired', 'quota_exceeded', 'server_down', 'parse_error'] as const) {
+    for (const c of ['auth_expired', 'quota_exceeded', 'server_down', 'parse_error', 'no_tool_used'] as const) {
       expect(new AdvisorError('x', undefined, c).code).toBe(c)
     }
   })
