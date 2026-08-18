@@ -155,38 +155,57 @@ export function hasNoToolResponse(text: string | undefined): boolean {
 }
 
 /**
- * Codex PR #484 P1 (3차) — `--output-format stream-json --verbose` 응답 파싱.
+ * Codex PR #484 P1 (3차/4차) — `--output-format stream-json --verbose` 응답 파싱.
  *
  * 각 라인은 완전한 NDJSON event. 관심 event:
- *   - `type: 'assistant'` — `message.content[]` 배열에 여러 block. `tool_use` block 은
- *     `name` (tool 이름) 을 담음. 이걸 수집해 caller 가 `mcp__myfinance__*` 카운트로
- *     실제 호출 여부 판정.
+ *   - `type: 'assistant'` — `message.content[]` 배열의 `tool_use` block. `id` + `name`.
+ *     시도 자체가 성공을 의미하지는 않음 (매칭되는 tool_result 를 확인해야).
+ *   - `type: 'user'` — `message.content[]` 의 `tool_result` block. `tool_use_id` 로
+ *     이전 tool_use 와 correlate. `is_error: true` 면 그 호출은 실패 (예: MCP
+ *     서버 오류, tool arg validation 실패, tool 내부 예외).
  *   - `type: 'result'` — 마지막 event. `is_error` / `result` / `num_turns` /
- *     `session_id` / `duration_ms` / `total_cost_usd` / `api_error_status` / `errors`
- *     등 최종 metadata. 기존 `--output-format json` 과 동일 스키마.
+ *     `session_id` / `duration_ms` / `total_cost_usd` / `api_error_status` / `errors`.
  *
- * pure 로 stdout 문자열만 받아 파싱 → 테스트 용이. malformed line 은 skip.
+ * 4차 지적 반영: tool_use 만 카운트하면 tool_result 가 `is_error: true` 라도
+ * "호출됨" 으로 판정되어 데이터 없는 응답이 통과. tool_use.id ↔ tool_result.
+ * tool_use_id 매칭으로 각 호출의 실제 성공 여부까지 확인.
+ *
+ * pure — 테스트 용이. malformed line 은 skip.
  */
+export interface ParsedToolCall {
+  /** Claude 가 부여한 unique id — tool_result 매칭용. 누락 가능 (구버전). */
+  id?: string
+  /** Tool 이름 (예: `mcp__myfinance__get_portfolio`, `WebSearch`, `Bash`) */
+  name: string
+  /**
+   * 매칭된 tool_result 의 is_error 값.
+   *   - `false`: 정상 완료
+   *   - `true`: 실패 (MCP 오류 · validation · 예외 등)
+   *   - `undefined`: tool_result 이벤트가 없거나 매칭 실패 (이상 상태 — 실측에선
+   *     assistant tool_use 는 반드시 이후 user tool_result 로 응답. undefined 로
+   *     남는 케이스는 subprocess 이상 종료 등)
+   */
+  isError?: boolean
+}
+
 export interface ParsedClaudeStream {
   /** 마지막 result event (기존 ClaudeJsonOutput 과 동일 스키마) */
   finalResult?: ClaudeJsonOutput
-  /** 모든 assistant tool_use event 의 `name` 목록 (호출 순서대로) */
-  toolCalls: string[]
+  /** 모든 assistant tool_use event (호출 순서대로) + 매칭된 tool_result.is_error */
+  toolCalls: ParsedToolCall[]
 }
 
 interface ClaudeStreamContentBlock {
   type?: string
   name?: string
-}
-interface ClaudeStreamAssistantEvent {
-  type: 'assistant'
-  message?: {
-    content?: ClaudeStreamContentBlock[]
-  }
+  id?: string
+  tool_use_id?: string
+  is_error?: boolean
 }
 
 export function parseClaudeStreamJson(stdout: string): ParsedClaudeStream {
-  const toolCalls: string[] = []
+  const toolCalls: ParsedToolCall[] = []
+  const byId = new Map<string, ParsedToolCall>()
   let finalResult: ClaudeJsonOutput | undefined
   const lines = stdout.split('\n')
   for (const line of lines) {
@@ -201,11 +220,32 @@ export function parseClaudeStreamJson(stdout: string): ParsedClaudeStream {
     if (typeof evt !== 'object' || evt === null) continue
     const type = (evt as { type?: unknown }).type
     if (type === 'assistant') {
-      const content = (evt as ClaudeStreamAssistantEvent).message?.content
+      const content = (evt as { message?: { content?: ClaudeStreamContentBlock[] } }).message?.content
       if (Array.isArray(content)) {
         for (const block of content) {
           if (block?.type === 'tool_use' && typeof block.name === 'string') {
-            toolCalls.push(block.name)
+            const call: ParsedToolCall = {
+              id: typeof block.id === 'string' ? block.id : undefined,
+              name: block.name,
+            }
+            toolCalls.push(call)
+            if (call.id) byId.set(call.id, call)
+          }
+        }
+      }
+    } else if (type === 'user') {
+      const content = (evt as { message?: { content?: ClaudeStreamContentBlock[] } }).message?.content
+      if (Array.isArray(content)) {
+        for (const block of content) {
+          if (
+            block?.type === 'tool_result' &&
+            typeof block.tool_use_id === 'string'
+          ) {
+            const call = byId.get(block.tool_use_id)
+            // is_error 는 명시적 boolean 만 신뢰 (없으면 undefined 유지).
+            if (call && typeof block.is_error === 'boolean') {
+              call.isError = block.is_error
+            }
           }
         }
       }
@@ -216,9 +256,22 @@ export function parseClaudeStreamJson(stdout: string): ParsedClaudeStream {
   return { finalResult, toolCalls }
 }
 
-/** Pure — `mcp__myfinance__*` prefix 카운트. */
-export function countMcpMyFinanceCalls(toolCalls: string[]): number {
-  return toolCalls.filter((n) => typeof n === 'string' && n.startsWith('mcp__myfinance__')).length
+/** Pure — `mcp__myfinance__*` prefix 시도 카운트 (성공/실패 무관). */
+export function countMcpMyFinanceCalls(toolCalls: ParsedToolCall[]): number {
+  return toolCalls.filter((c) => c.name.startsWith('mcp__myfinance__')).length
+}
+
+/**
+ * Pure — `mcp__myfinance__*` 중 **성공** 한 호출 카운트.
+ * Codex PR #484 P1 (4차): tool_use 만 카운트하면 tool_result 가 실패여도
+ * "호출됨" 으로 판정되어 데이터 없는 응답 통과. 성공 = `isError === false`
+ * (명시적 성공만). `undefined` (tool_result 매칭 실패) 나 `true` 는 실패 취급 —
+ * 이상 상태에서 안전한 fail-closed default.
+ */
+export function countSuccessfulMcpMyFinanceCalls(toolCalls: ParsedToolCall[]): number {
+  return toolCalls.filter(
+    (c) => c.name.startsWith('mcp__myfinance__') && c.isError === false,
+  ).length
 }
 
 /**
@@ -574,18 +627,28 @@ export async function askAdvisor(
 
       const numTurns = typeof output.num_turns === 'number' ? output.num_turns : 0
 
-      // Codex PR #484 P1 (3차) — 정확한 evaluator: `mcp__myfinance__*` 호출 카운트.
-      // 이전 시도들 (num_turns / 응답 fingerprint) 은 WebSearch-only 우회에
-      // 취약. tool_use event 카운트가 유일한 정답. fingerprint 는 belt-and-
-      // suspenders 로 유지 (tool 호출 후 오류로 실패 안내가 응답에 섞이는 경우).
+      // Codex PR #484 P1 (3차/4차) — 정확한 evaluator: `mcp__myfinance__*` 중
+      // **성공** 한 호출이 최소 1건 있는지. 이전 시도들:
+      //   - num_turns >= 2 (3차 지적): WebSearch-only 우회 취약
+      //   - tool_use 카운트만 (3차 fix): tool_result 실패 여도 카운트되어 우회 취약
+      //   - 응답 fingerprint (2차 fix): plausible 하지만 데이터 없는 report 우회
+      //
+      // → tool_use.id ↔ tool_result.tool_use_id 매칭으로 실제 성공한 mcp 호출
+      // (`isError === false` 인 것만) 을 카운트. fingerprint 는 belt-and-
+      // suspenders 로 유지 (모든 tool 이 성공했더라도 최종 응답에 "도구 접근
+      // 불가" 안내가 섞이는 부분 실패 케이스 방어).
       if (options.expectsTools) {
-        const mcpCount = countMcpMyFinanceCalls(toolCalls)
+        const mcpAttempts = countMcpMyFinanceCalls(toolCalls)
+        const mcpSuccesses = countSuccessfulMcpMyFinanceCalls(toolCalls)
         const advertisedFailure = hasNoToolResponse(output.result)
-        if (mcpCount === 0 || advertisedFailure) {
-          const preview = toolCalls.slice(0, 20).join(',')
+        if (mcpSuccesses === 0 || advertisedFailure) {
+          const preview = toolCalls.slice(0, 20)
+            .map((c) => `${c.name}${c.isError === true ? '!err' : c.isError === undefined ? '?' : ''}`)
+            .join(',')
           reject(new AdvisorError(
-            'AI 응답이 myFinance MCP 도구를 호출하지 않았습니다.',
-            `mcp_calls=${mcpCount} total_tool_calls=${toolCalls.length} ` +
+            'AI 응답이 성공한 myFinance MCP 도구 호출을 갖지 않습니다.',
+            `mcp_success=${mcpSuccesses} mcp_attempts=${mcpAttempts} ` +
+              `total_tool_calls=${toolCalls.length} ` +
               `tools=[${preview}] ` +
               `num_turns=${numTurns} ` +
               `advertised_failure=${advertisedFailure}`,
