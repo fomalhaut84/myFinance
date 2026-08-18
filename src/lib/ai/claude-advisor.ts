@@ -122,40 +122,103 @@ export class AdvisorError extends Error {
  * 직접 code 지정 (예: `AdvisorError('...', undefined, 'server_down')`).
  */
 /**
- * Codex PR #484 P1: `num_turns` 는 MCP tool 사용 여부의 정확한 지표가 아님.
- * 실측: 브리핑처럼 "WebSearch 로 뉴스 검색" 을 프롬프트에 명시하면 Claude 가
- * MCP tool 은 건너뛰고 WebSearch 만 호출해도 `num_turns >= 2` 가 나옴 →
- * guard 통과되어 데이터 없는 브리핑이 여전히 발송됨. 또 `--output-format json`
- * 은 실제 호출된 tool 이름 목록을 노출하지 않음 (`iterations` 는 token 사용량
- * 뿐).
+ * Codex PR #484 P1 (3차 지적): num_turns 도, 응답 텍스트 fingerprint 도 MCP
+ * tool 실제 호출 여부의 정확한 evaluator 가 아님.
+ *   - `num_turns >= 2` 는 WebSearch 만 호출한 경우에도 성립 → 통과되면 데이터
+ *     없는 브리핑 발송.
+ *   - 응답 텍스트에 "도구 접근 불가" 안내가 없어도 (Claude 가 plausible 하지만
+ *     데이터 없는 report 를 만들면) fingerprint 매칭 실패 → 통과.
  *
- * → Structural 검증 (`num_turns === 1` = 완전 미사용) + Semantic 검증 (응답
- * 텍스트 fingerprint) 이중 방어. Semantic 은 아래 pattern.
+ * 유일한 정답: **실제 호출된 tool 이름 목록** 을 확인.
+ * `--output-format stream-json --verbose` 는 각 assistant event 의
+ * `message.content[]` 배열에 `type: 'tool_use'` + `name` 을 담음 → 파싱해서
+ * `mcp__myfinance__*` prefix 카운트가 evaluator.
  *
- * 실제 발송된 실패 응답 (2026-08-18):
- *   "⚠️ 도구 연결 문제 안내
- *    죄송하지만 현재 세션에서 myFinance 데이터 도구(포트폴리오, 전략, 기술적분석 등)
- *    가 연결되지 않아 아래 항목을 확인할 수 없었습니다:"
- *
- * Pattern 은 매우 좁게 (정상 응답에서 우연히 등장할 수 없는 조합) 잡아
- * false positive 최소화. 정상 브리핑이 "도구가 연결되지 않아" 를 언급할 이유는
- * 없음 (정상 응답은 데이터를 나열).
+ * `hasNoToolResponse` fingerprint 는 belt-and-suspenders 로 유지 — MCP tool
+ * 을 호출했더라도 응답 본문에 "도구 접근 불가" 를 쓰면 여전히 사용자에게
+ * 유해 (일부 tool 실패 시 Claude 가 이런 문구를 섞을 수 있음). 정상 응답이
+ * 이 pattern 을 언급할 이유는 없어 false positive 낮음.
  */
 const NO_TOOL_RESPONSE_PATTERNS: RegExp[] = [
-  // Claude 가 "도구 접근/연결 실패" 를 명시적으로 서술하는 패턴
   /(데이터\s*)?도구.{0,20}연결되지\s*않/,
   /(도구|MCP).{0,20}(연결|접근)\s*(문제|불가|실패)/,
   /(도구|MCP)\s*(연결|접근).{0,10}(못|안|불가)\s*(했|합|됩)/,
 ]
 
 /**
- * Pure — 응답 텍스트에서 "도구 미사용" fingerprint 감지.
- * `expectsTools: true` caller 는 이 결과가 true 일 때 `no_tool_used` 로 실패 처리.
- * 테스트 용이하도록 export.
+ * Pure — 응답 텍스트에서 "도구 미사용" fingerprint 감지 (belt-and-suspenders).
+ * 정확한 evaluator 는 `countMcpMyFinanceCalls` — 이건 보조 검증.
  */
 export function hasNoToolResponse(text: string | undefined): boolean {
   if (!text) return false
   return NO_TOOL_RESPONSE_PATTERNS.some((re) => re.test(text))
+}
+
+/**
+ * Codex PR #484 P1 (3차) — `--output-format stream-json --verbose` 응답 파싱.
+ *
+ * 각 라인은 완전한 NDJSON event. 관심 event:
+ *   - `type: 'assistant'` — `message.content[]` 배열에 여러 block. `tool_use` block 은
+ *     `name` (tool 이름) 을 담음. 이걸 수집해 caller 가 `mcp__myfinance__*` 카운트로
+ *     실제 호출 여부 판정.
+ *   - `type: 'result'` — 마지막 event. `is_error` / `result` / `num_turns` /
+ *     `session_id` / `duration_ms` / `total_cost_usd` / `api_error_status` / `errors`
+ *     등 최종 metadata. 기존 `--output-format json` 과 동일 스키마.
+ *
+ * pure 로 stdout 문자열만 받아 파싱 → 테스트 용이. malformed line 은 skip.
+ */
+export interface ParsedClaudeStream {
+  /** 마지막 result event (기존 ClaudeJsonOutput 과 동일 스키마) */
+  finalResult?: ClaudeJsonOutput
+  /** 모든 assistant tool_use event 의 `name` 목록 (호출 순서대로) */
+  toolCalls: string[]
+}
+
+interface ClaudeStreamContentBlock {
+  type?: string
+  name?: string
+}
+interface ClaudeStreamAssistantEvent {
+  type: 'assistant'
+  message?: {
+    content?: ClaudeStreamContentBlock[]
+  }
+}
+
+export function parseClaudeStreamJson(stdout: string): ParsedClaudeStream {
+  const toolCalls: string[] = []
+  let finalResult: ClaudeJsonOutput | undefined
+  const lines = stdout.split('\n')
+  for (const line of lines) {
+    const trimmed = line.trim()
+    if (!trimmed) continue
+    let evt: unknown
+    try {
+      evt = JSON.parse(trimmed)
+    } catch {
+      continue
+    }
+    if (typeof evt !== 'object' || evt === null) continue
+    const type = (evt as { type?: unknown }).type
+    if (type === 'assistant') {
+      const content = (evt as ClaudeStreamAssistantEvent).message?.content
+      if (Array.isArray(content)) {
+        for (const block of content) {
+          if (block?.type === 'tool_use' && typeof block.name === 'string') {
+            toolCalls.push(block.name)
+          }
+        }
+      }
+    } else if (type === 'result') {
+      finalResult = evt as ClaudeJsonOutput
+    }
+  }
+  return { finalResult, toolCalls }
+}
+
+/** Pure — `mcp__myfinance__*` prefix 카운트. */
+export function countMcpMyFinanceCalls(toolCalls: string[]): number {
+  return toolCalls.filter((n) => typeof n === 'string' && n.startsWith('mcp__myfinance__')).length
 }
 
 /**
@@ -387,7 +450,12 @@ export async function askAdvisor(
   const cmdParts = [
     'claude',
     '-p', shellEscape(prompt),
-    '--output-format', 'json',
+    // Codex PR #484 P1 (3차): `--output-format json` 은 최종 result 텍스트만
+    // 노출 → 실제로 어떤 tool 이 호출됐는지 알 수 없음. `stream-json` + `--verbose`
+    // 로 각 assistant event 의 `tool_use` block 을 파싱해 `mcp__myfinance__*`
+    // 호출 횟수를 정확히 카운트 (expectsTools 검증에 사용).
+    '--output-format', 'stream-json',
+    '--verbose',
     '--model', model,
   ]
 
@@ -466,93 +534,75 @@ export async function askAdvisor(
       const stdout = Buffer.concat(chunks).toString('utf-8')
       const stderr = errBuf.toString('utf-8').trim()
 
+      // Codex PR #484 P1 (3차): stream-json 은 NDJSON. 마지막 result event 가 최종
+      // metadata. 각 assistant event 의 tool_use block 도 함께 수집해 expectsTools
+      // 검증에 사용.
+      const parsedStream = parseClaudeStreamJson(stdout)
+      const output = parsedStream.finalResult
+      const toolCalls = parsedStream.toolCalls
+
       if (code !== 0) {
-        // Codex #478 P2: `--output-format json` 은 에러도 stdout JSON 으로 반환 후
-        // exit code 를 non-zero 로 종료. stdout 파싱 없이 stderr 만 보면 대부분
-        // 비어있어 unknown 처리 → fallback UX 오분류. stdout JSON 우선 시도.
+        // stream-json 도 에러 시 result event 를 마지막에 emit 하고 exit code
+        // non-zero 로 종료. output 이 파싱 됐으면 그 안의 result/api_error_status
+        // 로 classify.
         const stderrTail = stderr.slice(-1024)
         if (stderrTail) console.error('[advisor] claude stderr:', stderrTail)
-        // stdout JSON 에서 error 문구 추출 시도. 실패해도 stderr fallback.
-        // Codex #479 P2: `result` 뿐 아니라 `api_error_status` (예: 429) · `errors`
-        // 필드까지 결합 — Claude 는 rate limit/최종 실패 시 result 비고 status 만 채움.
-        let jsonErrorText = ''
-        try {
-          const parsed = JSON.parse(stdout) as Partial<ClaudeJsonOutput>
-          if (parsed && typeof parsed === 'object') {
-            jsonErrorText = extractAdvisorErrorText(parsed)
-          }
-        } catch {
-          // stdout 이 JSON 아니거나 partial — stderr 만 사용
-        }
-        // classifyAdvisorError 는 stdout error 텍스트 + stderr 을 함께 검사 →
-        // JSON result 에 담긴 auth/quota 문구도 정확히 분류.
+        const jsonErrorText = output ? extractAdvisorErrorText(output) : ''
         const combined = [jsonErrorText, stderrTail].filter(Boolean).join('\n')
         const errorCode = classifyAdvisorError(combined || undefined)
-        // detail 은 사용자 진단 정보 우선순위: stdout JSON 문구 > stderr tail.
-        // 관리자 alert 에도 이게 더 actionable (Claude 자체의 에러 원문).
         const detail = jsonErrorText.slice(0, 1024) || stderrTail || undefined
         reject(new AdvisorError(`Claude CLI 종료 코드: ${code}`, detail, errorCode))
         return
       }
 
-      try {
-        const output: ClaudeJsonOutput = JSON.parse(stdout)
+      if (!output) {
+        // stdout 에 result event 없음 (파싱 실패 or 이상 종료)
+        reject(new AdvisorError('AI 응답을 파싱할 수 없습니다.', undefined, 'parse_error'))
+        return
+      }
 
-        if (output.is_error) {
-          // Codex #478 P2: exit code 0 인데 is_error=true 인 케이스도 classify.
-          // Codex #479 P2: `result` 가 비어있어도 `api_error_status` / `errors`
-          // 활용해 auth/quota 정확 분류.
-          const errorText = extractAdvisorErrorText(output)
-          const errorCode = classifyAdvisorError(errorText || undefined)
+      if (output.is_error) {
+        const errorText = extractAdvisorErrorText(output)
+        const errorCode = classifyAdvisorError(errorText || undefined)
+        reject(new AdvisorError(
+          `AI 응답 오류: ${output.result || `api_error_status=${output.api_error_status ?? 'unknown'}`}`,
+          errorText.slice(0, 1024) || undefined,
+          errorCode,
+        ))
+        return
+      }
+
+      const numTurns = typeof output.num_turns === 'number' ? output.num_turns : 0
+
+      // Codex PR #484 P1 (3차) — 정확한 evaluator: `mcp__myfinance__*` 호출 카운트.
+      // 이전 시도들 (num_turns / 응답 fingerprint) 은 WebSearch-only 우회에
+      // 취약. tool_use event 카운트가 유일한 정답. fingerprint 는 belt-and-
+      // suspenders 로 유지 (tool 호출 후 오류로 실패 안내가 응답에 섞이는 경우).
+      if (options.expectsTools) {
+        const mcpCount = countMcpMyFinanceCalls(toolCalls)
+        const advertisedFailure = hasNoToolResponse(output.result)
+        if (mcpCount === 0 || advertisedFailure) {
+          const preview = toolCalls.slice(0, 20).join(',')
           reject(new AdvisorError(
-            `AI 응답 오류: ${output.result || `api_error_status=${output.api_error_status ?? 'unknown'}`}`,
-            errorText.slice(0, 1024) || undefined,
-            errorCode,
+            'AI 응답이 myFinance MCP 도구를 호출하지 않았습니다.',
+            `mcp_calls=${mcpCount} total_tool_calls=${toolCalls.length} ` +
+              `tools=[${preview}] ` +
+              `num_turns=${numTurns} ` +
+              `advertised_failure=${advertisedFailure}`,
+            'no_tool_used',
           ))
           return
         }
-
-        const numTurns = typeof output.num_turns === 'number' ? output.num_turns : 0
-
-        // #483 + Codex PR #484 P1: caller 가 MCP tool 사용을 필수로 기대한 경우
-        // 이중 방어 (structural + semantic):
-        //  1. `num_turns === 1` = 어떤 tool 도 호출 안 함 (fast fail)
-        //  2. `hasNoToolResponse(result)` = Claude 가 "도구 접근 불가" 안내를
-        //     본문에 직접 서술한 케이스. 브리핑 프롬프트에 WebSearch 가 명시되어
-        //     있어 Claude 가 MCP tool 은 skip 하고 WebSearch 만 호출해도
-        //     `num_turns >= 2` 로 나옴 → 이 경우 텍스트 fingerprint 로 감지.
-        //
-        // num_turns >= 2 && !hasNoToolResponse 케이스는 실제로 tool 을 사용한
-        // 정상 응답으로 간주 (일부 tool 만 호출한 부분 성공은 통과). num_turns
-        // 필드 자체가 없으면 (구버전 CLI 등) structural 검증은 스킵되고
-        // semantic 검증만 유효.
-        if (options.expectsTools) {
-          const skippedAll = numTurns === 1
-          const advertisedFailure = hasNoToolResponse(output.result)
-          if (skippedAll || advertisedFailure) {
-            reject(new AdvisorError(
-              'AI 응답이 데이터 도구를 사용하지 않았습니다.',
-              `num_turns=${numTurns} ` +
-                `stop_reason=${JSON.stringify((output as { stop_reason?: unknown }).stop_reason ?? null)} ` +
-                `result_len=${output.result?.length ?? 0} ` +
-                `advertised_failure=${advertisedFailure}`,
-              'no_tool_used',
-            ))
-            return
-          }
-        }
-
-        resolve({
-          response: output.result,
-          model,
-          durationMs: output.duration_ms,
-          costUsd: output.total_cost_usd,
-          sessionId: output.session_id ?? '',
-          numTurns,
-        })
-      } catch {
-        reject(new AdvisorError('AI 응답을 파싱할 수 없습니다.', undefined, 'parse_error'))
       }
+
+      resolve({
+        response: output.result,
+        model,
+        durationMs: output.duration_ms,
+        costUsd: output.total_cost_usd,
+        sessionId: output.session_id ?? '',
+        numTurns,
+      })
     })
 
     child.on('error', (error) => {

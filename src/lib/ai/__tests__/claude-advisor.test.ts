@@ -11,9 +11,11 @@ import {
   AdvisorError,
   AdvisorTimeoutError,
   classifyAdvisorError,
+  countMcpMyFinanceCalls,
   describeAdvisorError,
   extractAdvisorErrorText,
   hasNoToolResponse,
+  parseClaudeStreamJson,
 } from '../claude-advisor'
 
 describe('classifyAdvisorError', () => {
@@ -270,5 +272,103 @@ describe('hasNoToolResponse', () => {
   it('빈 입력 → false', () => {
     expect(hasNoToolResponse('')).toBe(false)
     expect(hasNoToolResponse(undefined)).toBe(false)
+  })
+})
+
+// Codex PR #484 P1 (3차) 회귀 방지 — stream-json 파싱 + mcp tool 카운트.
+// tool_use event 를 정확히 추출해 WebSearch-only 우회 케이스도 감지 가능해야.
+describe('parseClaudeStreamJson', () => {
+  it('assistant tool_use event 를 순서대로 수집 + 마지막 result event 반환', () => {
+    // 실제 stream-json 형식의 축약 fixture — 각 라인이 JSON event.
+    const stream = [
+      '{"type":"system","subtype":"init","session_id":"abc"}',
+      '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"mcp__myfinance__get_all_strategies"}]}}',
+      '{"type":"user","message":{"content":[{"type":"tool_result","content":"..."}]}}',
+      '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"mcp__myfinance__get_portfolio"}]}}',
+      '{"type":"user","message":{"content":[{"type":"tool_result","content":"..."}]}}',
+      '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"WebSearch"}]}}',
+      '{"type":"user","message":{"content":[{"type":"tool_result","content":"..."}]}}',
+      '{"type":"assistant","message":{"content":[{"type":"text","text":"브리핑..."}]}}',
+      '{"type":"result","is_error":false,"result":"브리핑...","num_turns":7,"session_id":"abc","duration_ms":12000,"total_cost_usd":0.5}',
+    ].join('\n')
+    const parsed = parseClaudeStreamJson(stream)
+    expect(parsed.toolCalls).toEqual([
+      'mcp__myfinance__get_all_strategies',
+      'mcp__myfinance__get_portfolio',
+      'WebSearch',
+    ])
+    expect(parsed.finalResult?.is_error).toBe(false)
+    expect(parsed.finalResult?.num_turns).toBe(7)
+    expect(parsed.finalResult?.result).toBe('브리핑...')
+    expect(parsed.finalResult?.session_id).toBe('abc')
+  })
+
+  it('assistant event 안에 tool_use 가 없는 (thinking/text 만) 케이스 = 빈 배열', () => {
+    const stream = [
+      '{"type":"assistant","message":{"content":[{"type":"thinking","thinking":"..."}]}}',
+      '{"type":"assistant","message":{"content":[{"type":"text","text":"OK"}]}}',
+      '{"type":"result","is_error":false,"result":"OK","num_turns":1}',
+    ].join('\n')
+    const parsed = parseClaudeStreamJson(stream)
+    expect(parsed.toolCalls).toEqual([])
+    expect(parsed.finalResult?.num_turns).toBe(1)
+  })
+
+  it('malformed 라인은 skip, 빈 라인/공백 라인도 skip', () => {
+    const stream = [
+      '',
+      '   ',
+      'not json at all',
+      '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"X"}]}}',
+      '{ broken json',
+      '{"type":"result","is_error":false,"result":"","num_turns":2}',
+    ].join('\n')
+    const parsed = parseClaudeStreamJson(stream)
+    expect(parsed.toolCalls).toEqual(['X'])
+    expect(parsed.finalResult?.num_turns).toBe(2)
+  })
+
+  it('result event 없으면 finalResult undefined', () => {
+    const stream = [
+      '{"type":"system","subtype":"init"}',
+      '{"type":"assistant","message":{"content":[]}}',
+    ].join('\n')
+    const parsed = parseClaudeStreamJson(stream)
+    expect(parsed.finalResult).toBeUndefined()
+    expect(parsed.toolCalls).toEqual([])
+  })
+
+  it('빈 stdout → 빈 결과', () => {
+    const parsed = parseClaudeStreamJson('')
+    expect(parsed.toolCalls).toEqual([])
+    expect(parsed.finalResult).toBeUndefined()
+  })
+})
+
+describe('countMcpMyFinanceCalls', () => {
+  it('mcp__myfinance__* prefix 만 카운트 (WebSearch/WebFetch 등 제외)', () => {
+    const calls = [
+      'mcp__myfinance__get_portfolio',
+      'WebSearch',
+      'mcp__myfinance__get_all_strategies',
+      'WebFetch',
+      'mcp__myfinance__get_technical_analysis',
+      'Read',
+    ]
+    expect(countMcpMyFinanceCalls(calls)).toBe(3)
+  })
+
+  it('다른 MCP 서버 tool 은 제외', () => {
+    expect(countMcpMyFinanceCalls(['mcp__other__foo', 'mcp__external__bar'])).toBe(0)
+  })
+
+  it('WebSearch-only (Codex 지적 시나리오) = 0', () => {
+    // Codex PR #484 P1 3차: Claude 가 WebSearch 만 부르고 MCP tool 은 skip 하면
+    // num_turns >= 2 이지만 MCP count 는 0 → guard 가 정확히 감지.
+    expect(countMcpMyFinanceCalls(['WebSearch', 'WebSearch', 'WebFetch'])).toBe(0)
+  })
+
+  it('빈 배열 → 0', () => {
+    expect(countMcpMyFinanceCalls([])).toBe(0)
   })
 })
