@@ -403,10 +403,19 @@ export async function askAdvisor(
     '--mcp-config', shellEscape(mcpConfigPath),
     '--strict-mcp-config',
     '--allowedTools', shellEscape(ALLOWED_TOOLS),
-    // #483: 기존에 있던 `--tools "WebSearch,WebFetch"` 제거.
-    // `--tools` 는 built-in tool set (Bash/Read/Edit/…) 제한용이며 MCP tool 에는
-    // 영향 없음. WebSearch/WebFetch 는 이미 `--allowedTools` 에 포함되어 있어
-    // 중복. 남겨두면 built-in tool 이 예기치 않게 제한될 수 있어 제거.
+    // Codex PR #484 P1 (security): `--tools` 는 built-in Claude Code tool 의
+    // **availability allowlist** — 지정 tool 만 subprocess 에서 사용 가능.
+    // `--allowedTools` 는 permission prompt 없이 사용 가능한 tool 만 지정
+    // (permission bypass) 이며 availability 를 제한하지 않음.
+    // → 이 옵션을 없애면 `Read`/`Glob`/`Grep` 등 file system 접근 tool 이 모든
+    // `askAdvisor` 호출에서 사용 가능해짐. `Read` 는 기본 permission 이 없어
+    // `/ai` 자유 질문 or 웹 컨텐츠 injection 을 통해 `Read /path/.env` 같이
+    // 유도되면 secret 노출 가능. `--strict-mcp-config` 는 MCP 만 restrict,
+    // built-in tool 은 별도 제한 필요.
+    // WebSearch/WebFetch 만 허용하는 이유: 브리핑/AI 채팅에 필요한 웹 정보 조회
+    // 는 유지하되 file/exec 계열은 완전 차단. MCP tool 은 이 옵션과 orthogonal
+    // 이므로 영향 없음 (필드에서 실측 확인 완료).
+    '--tools', '"WebSearch,WebFetch"',
     '--max-budget-usd', String(maxBudgetUsd),
     '--permission-mode', 'dontAsk',
   )
