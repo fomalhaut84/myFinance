@@ -608,19 +608,21 @@ export async function askAdvisor(
   ) {
     throw new AdvisorError('overallTimeoutMs는 양수여야 합니다.')
   }
-  // Codex PR #487 P2 (3차): NaN/Infinity/음수 defensive.
-  //   - NaN → Math.floor(NaN)=NaN → for 조건이 항상 false → 첫 시도조차 안 함 →
-  //     "unreachable" throw 로 falsely 실패.
-  //   - Infinity → overallTimeoutMs 없을 때 무한 loop 위험.
-  //   - 음수 → 재시도 안 함 이지만 caller 실수 즉시 알리도록 reject.
+  // Codex PR #487 P2 (3차/4차): NaN/Infinity/음수/소수 모두 방어.
+  //   - NaN → Math.floor(NaN)=NaN → for 조건이 항상 false → 첫 시도조차 안 함
+  //   - Infinity → overallTimeoutMs 없을 때 무한 loop 위험
+  //   - 음수 → 재시도 안 함 이지만 caller 실수 즉시 알리도록 reject
+  //   - 소수 (예: 0.9, 1.9) → Number.isFinite 만 검사하면 통과되고 Math.floor
+  //     로 조용히 0/1 이 됨 → 계약 위반 (에러 메시지는 "정수"). config 파싱
+  //     오류를 조용히 삼키지 않도록 Number.isSafeInteger 로 엄격 검증.
   if (
     options.retryOnNoToolUsed !== undefined &&
-    (!Number.isFinite(options.retryOnNoToolUsed) || options.retryOnNoToolUsed < 0)
+    (!Number.isSafeInteger(options.retryOnNoToolUsed) || options.retryOnNoToolUsed < 0)
   ) {
-    throw new AdvisorError('retryOnNoToolUsed는 0 이상의 유한 정수여야 합니다.')
+    throw new AdvisorError('retryOnNoToolUsed는 0 이상의 안전한 정수여야 합니다.')
   }
 
-  const maxRetries = Math.max(0, Math.floor(options.retryOnNoToolUsed ?? 0))
+  const maxRetries = options.retryOnNoToolUsed ?? 0
   const startedAt = Date.now()
   let costSpent = 0
   let lastError: unknown

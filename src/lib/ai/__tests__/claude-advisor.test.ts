@@ -545,21 +545,43 @@ describe('askAdvisor retryOnNoToolUsed validation', () => {
   it('NaN → 즉시 throw (subprocess spawn 전)', async () => {
     const { askAdvisor } = await import('../claude-advisor')
     await expect(askAdvisor('test prompt', { retryOnNoToolUsed: NaN })).rejects.toThrow(
-      '유한 정수',
+      '안전한 정수',
     )
   })
 
   it('Infinity → 즉시 throw', async () => {
     const { askAdvisor } = await import('../claude-advisor')
     await expect(askAdvisor('test prompt', { retryOnNoToolUsed: Infinity })).rejects.toThrow(
-      '유한 정수',
+      '안전한 정수',
     )
   })
 
   it('음수 → 즉시 throw', async () => {
     const { askAdvisor } = await import('../claude-advisor')
     await expect(askAdvisor('test prompt', { retryOnNoToolUsed: -1 })).rejects.toThrow(
-      '유한 정수',
+      '안전한 정수',
+    )
+  })
+
+  // Codex #487 P2 (4차): 소수는 Math.floor 로 조용히 0/1 이 되어 재시도 disabled
+  it('소수 0.9 → 즉시 throw (조용한 재시도 disable 방지)', async () => {
+    const { askAdvisor } = await import('../claude-advisor')
+    await expect(askAdvisor('test prompt', { retryOnNoToolUsed: 0.9 })).rejects.toThrow(
+      '안전한 정수',
+    )
+  })
+
+  it('소수 1.9 → 즉시 throw (조용한 재시도 축소 방지)', async () => {
+    const { askAdvisor } = await import('../claude-advisor')
+    await expect(askAdvisor('test prompt', { retryOnNoToolUsed: 1.9 })).rejects.toThrow(
+      '안전한 정수',
+    )
+  })
+
+  it('MAX_SAFE_INTEGER 초과 → 즉시 throw', async () => {
+    const { askAdvisor } = await import('../claude-advisor')
+    await expect(askAdvisor('test prompt', { retryOnNoToolUsed: Number.MAX_SAFE_INTEGER + 1 })).rejects.toThrow(
+      '안전한 정수',
     )
   })
 
