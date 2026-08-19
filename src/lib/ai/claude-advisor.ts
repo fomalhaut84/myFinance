@@ -608,6 +608,17 @@ export async function askAdvisor(
   ) {
     throw new AdvisorError('overallTimeoutMs는 양수여야 합니다.')
   }
+  // Codex PR #487 P2 (3차): NaN/Infinity/음수 defensive.
+  //   - NaN → Math.floor(NaN)=NaN → for 조건이 항상 false → 첫 시도조차 안 함 →
+  //     "unreachable" throw 로 falsely 실패.
+  //   - Infinity → overallTimeoutMs 없을 때 무한 loop 위험.
+  //   - 음수 → 재시도 안 함 이지만 caller 실수 즉시 알리도록 reject.
+  if (
+    options.retryOnNoToolUsed !== undefined &&
+    (!Number.isFinite(options.retryOnNoToolUsed) || options.retryOnNoToolUsed < 0)
+  ) {
+    throw new AdvisorError('retryOnNoToolUsed는 0 이상의 유한 정수여야 합니다.')
+  }
 
   const maxRetries = Math.max(0, Math.floor(options.retryOnNoToolUsed ?? 0))
   const startedAt = Date.now()

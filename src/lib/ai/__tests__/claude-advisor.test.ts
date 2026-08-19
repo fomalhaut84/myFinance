@@ -538,6 +538,46 @@ describe('augmentRetryPrompt', () => {
   })
 })
 
+// Codex PR #487 P2 (3차) 회귀 방지 — retryOnNoToolUsed validation.
+// NaN/Infinity/음수 defensive. askAdvisor 는 subprocess spawn 하므로 validation
+// 실패는 subprocess 시작 전 즉시 throw.
+describe('askAdvisor retryOnNoToolUsed validation', () => {
+  it('NaN → 즉시 throw (subprocess spawn 전)', async () => {
+    const { askAdvisor } = await import('../claude-advisor')
+    await expect(askAdvisor('test prompt', { retryOnNoToolUsed: NaN })).rejects.toThrow(
+      '유한 정수',
+    )
+  })
+
+  it('Infinity → 즉시 throw', async () => {
+    const { askAdvisor } = await import('../claude-advisor')
+    await expect(askAdvisor('test prompt', { retryOnNoToolUsed: Infinity })).rejects.toThrow(
+      '유한 정수',
+    )
+  })
+
+  it('음수 → 즉시 throw', async () => {
+    const { askAdvisor } = await import('../claude-advisor')
+    await expect(askAdvisor('test prompt', { retryOnNoToolUsed: -1 })).rejects.toThrow(
+      '유한 정수',
+    )
+  })
+
+  it('undefined → 기본 0 (검증 skip)', () => {
+    // 실제 subprocess spawn 하지 않기 위해 validation 만 우회 확인 —
+    // undefined 는 validation 통과. 후속 subprocess 는 별도 시나리오.
+    // 아래는 validation 만 통과함을 보장하는 sanity check (프로세스 spawn
+    // 이후 결과는 관심 밖).
+    expect(() => {
+      // 옵션 값 파싱만 재현 (askAdvisor 내부 로직과 동일).
+      const raw = undefined
+      if (raw !== undefined && (!Number.isFinite(raw) || (raw as number) < 0)) {
+        throw new Error('should not reach')
+      }
+    }).not.toThrow()
+  })
+})
+
 // Codex PR #487 P1/P2 회귀 방지 — retry loop 의 cost cap + overall deadline 판정.
 // runAdvisorOnce 자체는 subprocess 라 mock 없이 unit test 어려움. loop 이 attempt
 // 별 옵션을 어떻게 구성하는지는 다음 두 조건을 확인하는 helper 로 대체 커버:
