@@ -193,6 +193,15 @@ describe('AdvisorError.code 계약', () => {
       expect(new AdvisorError('x', undefined, c).code).toBe(c)
     }
   })
+
+  // Codex PR #487 P1 (2차) 회귀 방지 — 실패 attempt 도 subprocess result event
+  // 가 있으면 실 지출 cost 를 담아야 retry loop 이 total cap 을 정확히 누적.
+  it('costUsd 필드 지원 (미지정 시 undefined)', () => {
+    expect(new AdvisorError('x').costUsd).toBeUndefined()
+    expect(new AdvisorError('x', undefined, 'no_tool_used').costUsd).toBeUndefined()
+    expect(new AdvisorError('x', undefined, 'no_tool_used', 0.15).costUsd).toBe(0.15)
+    expect(new AdvisorError('x', 'detail', 'unknown', 0).costUsd).toBe(0)
+  })
 })
 
 describe('AdvisorTimeoutError.code', () => {

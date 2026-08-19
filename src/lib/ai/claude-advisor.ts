@@ -183,11 +183,25 @@ export class AdvisorError extends Error {
   detail?: string
   /** Phase 40-B (#469) — 원인 분류. 미지정 시 unknown. */
   code: AdvisorErrorCode
-  constructor(message: string, detail?: string, code: AdvisorErrorCode = 'unknown') {
+  /**
+   * Codex PR #487 P1 (2차) — subprocess 가 성공적으로 result event 를 발행한
+   * 뒤 우리가 evaluator 로 실패 재분류한 경우 (예: `no_tool_used`, `is_error=true`,
+   * exit code != 0 with parseable output), Claude 가 실제로 사용한 API 비용.
+   * retry loop 이 costSpent 에 누적해 total cost cap 을 정확히 강제.
+   * subprocess 자체가 파싱 실패/timeout/spawn 실패한 경우는 undefined.
+   */
+  costUsd?: number
+  constructor(
+    message: string,
+    detail?: string,
+    code: AdvisorErrorCode = 'unknown',
+    costUsd?: number,
+  ) {
     super(message)
     this.name = 'AdvisorError'
     this.detail = detail
     this.code = code
+    this.costUsd = costUsd
   }
 }
 
@@ -641,11 +655,14 @@ export async function askAdvisor(
       // 도 관측 가능하도록). durationMs 는 성공한 subprocess 만.
       return { ...result, costUsd: costSpent }
     } catch (err) {
-      // 실패 시도의 cost 는 subprocess 로 부터 회수 불가 (--output-format 이 성공
-      // 응답에서만 cost 를 신뢰 가능하게 제공). 안전한 근사치: 성공 attempt 만
-      // 정확 누적, 실패 attempt 는 0 으로 간주. 다음 시도의 remainingBudget 이
-      // 약간 관대해질 수 있지만 caller 가 명시한 upper bound 는 성공 응답 기준
-      // 이라 실용적으로 문제 없음.
+      // Codex #487 P1 (2차): 실패 attempt 도 subprocess 가 result event 를 발행
+      // 했다면 실제 지출 cost 를 담아 throw. runAdvisorOnce 가 `AdvisorError.
+      // costUsd` 로 전달 → 여기서 costSpent 에 누적해야 다음 attempt 의 remaining
+      // budget 이 정확히 축소되고 total cap 준수. 이 누적 없으면 각 재시도가
+      // 원본 예산 그대로 받아 총 최대 6배 지출 가능 (2차 지적 정확).
+      if (err instanceof AdvisorError && typeof err.costUsd === 'number') {
+        costSpent += err.costUsd
+      }
       if (err instanceof Error) {
         getGlobalAdvisorMonitor().recordFailure(err, options.caller).catch((e) => {
           console.error('[advisor] monitor.recordFailure 실패:', e)
@@ -795,6 +812,12 @@ async function runAdvisorOnce(
       const output = parsedStream.finalResult
       const toolCalls = parsedStream.toolCalls
 
+      // Codex PR #487 P1 (2차): subprocess 가 result event 를 발행했다면 실
+      // 지출 cost 를 담아 error 를 throw. retry loop 이 이걸 costSpent 에 누적
+      // 해 다음 attempt 의 remaining budget 을 정확히 축소 (총 cost cap 준수).
+      const observedCost =
+        output && typeof output.total_cost_usd === 'number' ? output.total_cost_usd : undefined
+
       if (code !== 0) {
         // stream-json 도 에러 시 result event 를 마지막에 emit 하고 exit code
         // non-zero 로 종료. output 이 파싱 됐으면 그 안의 result/api_error_status
@@ -805,12 +828,12 @@ async function runAdvisorOnce(
         const combined = [jsonErrorText, stderrTail].filter(Boolean).join('\n')
         const errorCode = classifyAdvisorError(combined || undefined)
         const detail = jsonErrorText.slice(0, 1024) || stderrTail || undefined
-        reject(new AdvisorError(`Claude CLI 종료 코드: ${code}`, detail, errorCode))
+        reject(new AdvisorError(`Claude CLI 종료 코드: ${code}`, detail, errorCode, observedCost))
         return
       }
 
       if (!output) {
-        // stdout 에 result event 없음 (파싱 실패 or 이상 종료)
+        // stdout 에 result event 없음 (파싱 실패 or 이상 종료). cost 미기재.
         reject(new AdvisorError('AI 응답을 파싱할 수 없습니다.', undefined, 'parse_error'))
         return
       }
@@ -822,6 +845,7 @@ async function runAdvisorOnce(
           `AI 응답 오류: ${output.result || `api_error_status=${output.api_error_status ?? 'unknown'}`}`,
           errorText.slice(0, 1024) || undefined,
           errorCode,
+          observedCost,
         ))
         return
       }
@@ -859,6 +883,7 @@ async function runAdvisorOnce(
               `num_turns=${numTurns} ` +
               `advertised_failure=${advertisedFailure}`,
             'no_tool_used',
+            observedCost,
           ))
           return
         }
