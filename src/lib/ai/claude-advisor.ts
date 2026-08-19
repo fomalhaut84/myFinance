@@ -102,6 +102,15 @@ export interface AdvisorOptions {
 export const RETRY_BACKOFF_MS = 90_000
 
 /**
+ * Codex PR #487 P2 (5차) — retryOnNoToolUsed 실용적 상한.
+ * Number.isSafeInteger(MAX_SAFE_INTEGER)=true 지만 `+1` 하면 unsafe 로 넘어가
+ * `attempt++` 가 stall 하고 loop 조건이 영원히 참. 실무적으로 caller 는 <10 회
+ * (현재 모두 5), 90초 backoff × 100회 = 2.5시간 이상이라 사실상 무한. 100 이면
+ * 어떤 정당한 caller 도 커버하고 safe integer 범위 안.
+ */
+export const RETRY_MAX_CAP = 100
+
+/**
  * Pure — 재시도 대상 판정. `no_tool_used` 만 재시도 의미 있음.
  * auth/quota/timeout/parse 등은 재시도해도 결과 안 바뀌므로 즉시 fallback.
  */
@@ -163,11 +172,19 @@ export type AdvisorErrorCode =
   | 'timeout'
   | 'parse_error'
   /**
-   * #483 — Claude 가 MCP 도구를 한 번도 호출하지 않고 응답 종료 (num_turns=1).
+   * #483 — Claude 가 MCP 도구를 한 번도 호출하지 않고 응답 종료 (mcp_attempts=0).
    * caller 가 `expectsTools: true` 로 opt-in 했을 때만 발생. CLI subprocess 자체는
    * exit 0 + is_error=false 라 별도 판정 필요.
+   *
+   * **재시도 대상** — Claude 판단 flaky 성이라 재시도로 대부분 해결.
    */
   | 'no_tool_used'
+  /**
+   * Codex PR #487 P2 (5차) — Claude 가 MCP 도구를 시도했으나 tool_result 가
+   * 모두 `is_error=true` 로 실패 (예: MCP 서버 down, tool arg validation 실패,
+   * tool 내부 예외). deterministic 실패라 재시도 무의미 — 즉시 fallback.
+   */
+  | 'mcp_call_failed'
   | 'unknown'
 
 export class AdvisorTimeoutError extends Error {
@@ -457,6 +474,8 @@ export function describeAdvisorError(err: AdvisorError | AdvisorTimeoutError | E
       return '🤖 AI 응답을 처리할 수 없습니다 — 잠시 후 다시 시도해주세요.'
     case 'no_tool_used':
       return '🤖 AI 어드바이저가 데이터 도구를 호출하지 않았습니다 — 관리자에게 문의해주세요.'
+    case 'mcp_call_failed':
+      return '🤖 데이터 도구 호출이 실패했습니다 (MCP 서버 오류 가능) — 관리자에게 문의해주세요.'
     default:
       return '🤖 AI 어드바이저 일시 중단 — 관리자에게 문의해주세요.'
   }
@@ -608,18 +627,22 @@ export async function askAdvisor(
   ) {
     throw new AdvisorError('overallTimeoutMs는 양수여야 합니다.')
   }
-  // Codex PR #487 P2 (3차/4차): NaN/Infinity/음수/소수 모두 방어.
+  // Codex PR #487 P2 (3차/4차/5차): NaN/Infinity/음수/소수/과다값 모두 방어.
   //   - NaN → Math.floor(NaN)=NaN → for 조건이 항상 false → 첫 시도조차 안 함
   //   - Infinity → overallTimeoutMs 없을 때 무한 loop 위험
   //   - 음수 → 재시도 안 함 이지만 caller 실수 즉시 알리도록 reject
-  //   - 소수 (예: 0.9, 1.9) → Number.isFinite 만 검사하면 통과되고 Math.floor
-  //     로 조용히 0/1 이 됨 → 계약 위반 (에러 메시지는 "정수"). config 파싱
-  //     오류를 조용히 삼키지 않도록 Number.isSafeInteger 로 엄격 검증.
+  //   - 소수 → Math.floor 로 조용히 0/1 이 되어 재시도 disabled (계약 위반)
+  //   - MAX_SAFE_INTEGER → isSafeInteger 통과지만 +1 하면 unsafe 로 넘어가
+  //     attempt++ stall + loop 무한 → RETRY_MAX_CAP (100) 로 실용적 상한.
   if (
     options.retryOnNoToolUsed !== undefined &&
-    (!Number.isSafeInteger(options.retryOnNoToolUsed) || options.retryOnNoToolUsed < 0)
+    (!Number.isSafeInteger(options.retryOnNoToolUsed) ||
+      options.retryOnNoToolUsed < 0 ||
+      options.retryOnNoToolUsed > RETRY_MAX_CAP)
   ) {
-    throw new AdvisorError('retryOnNoToolUsed는 0 이상의 안전한 정수여야 합니다.')
+    throw new AdvisorError(
+      `retryOnNoToolUsed는 0~${RETRY_MAX_CAP} 사이의 안전한 정수여야 합니다.`,
+    )
   }
 
   const maxRetries = options.retryOnNoToolUsed ?? 0
@@ -888,16 +911,29 @@ async function runAdvisorOnce(
               return `${c.name}${marker}`
             })
             .join(',')
-          reject(new AdvisorError(
-            'AI 응답이 성공한 myFinance MCP 도구 호출을 갖지 않습니다.',
+          const detail =
             `mcp_success=${mcpSuccesses} mcp_attempts=${mcpAttempts} ` +
-              `total_tool_calls=${toolCalls.length} ` +
-              `tools=[${preview}] ` +
-              `num_turns=${numTurns} ` +
-              `advertised_failure=${advertisedFailure}`,
-            'no_tool_used',
-            observedCost,
-          ))
+            `total_tool_calls=${toolCalls.length} ` +
+            `tools=[${preview}] ` +
+            `num_turns=${numTurns} ` +
+            `advertised_failure=${advertisedFailure}`
+          // Codex PR #487 P2 (5차): flaky (재시도 가치) vs deterministic (재시도
+          // 무의미) 분기. mcpAttempts === 0 = Claude 가 tool 을 아예 안 부름 →
+          // Claude 판단 flaky, `no_tool_used` (재시도 대상). mcpAttempts > 0
+          // 인데 성공 0 = MCP 서버 오류 · validation · tool 예외 등 deterministic
+          // 실패 → `mcp_call_failed` (즉시 fallback). advertisedFailure 만 있는
+          // 이상 케이스는 Claude 판단이라 flaky 취급.
+          const code: AdvisorErrorCode =
+            mcpAttempts === 0
+              ? 'no_tool_used'
+              : mcpSuccesses > 0
+                ? 'no_tool_used'  // 성공 있는데 advertisedFailure → 이상 케이스, 재시도 가치
+                : 'mcp_call_failed'  // 시도했지만 모두 실패 → deterministic
+          const message =
+            code === 'mcp_call_failed'
+              ? 'myFinance MCP 도구 호출이 모두 실패했습니다.'
+              : 'AI 응답이 성공한 myFinance MCP 도구 호출을 갖지 않습니다.'
+          reject(new AdvisorError(message, detail, code, observedCost))
           return
         }
       }

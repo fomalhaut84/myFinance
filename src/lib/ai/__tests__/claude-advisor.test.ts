@@ -148,6 +148,15 @@ describe('describeAdvisorError', () => {
     expect(msg).toContain('관리자')
   })
 
+  // Codex PR #487 P2 (5차) — deterministic MCP 실패 (재시도 무의미)
+  it('mcp_call_failed → 도구 호출 실패 안내 (MCP 서버 오류 힌트)', () => {
+    const err = new AdvisorError('x', undefined, 'mcp_call_failed')
+    const msg = describeAdvisorError(err)
+    expect(msg).toContain('도구 호출이 실패')
+    expect(msg).toContain('MCP 서버')
+    expect(msg).toContain('관리자')
+  })
+
   // #483 회귀 방지 — MCP 도구 미호출 감지 fallback 메시지
   it('no_tool_used → 도구 미호출 안내 (관리자 문의)', () => {
     const err = new AdvisorError('x', undefined, 'no_tool_used')
@@ -189,7 +198,7 @@ describe('AdvisorError.code 계약', () => {
   })
 
   it('code 명시 시 그대로', () => {
-    for (const c of ['auth_expired', 'quota_exceeded', 'server_down', 'parse_error', 'no_tool_used'] as const) {
+    for (const c of ['auth_expired', 'quota_exceeded', 'server_down', 'parse_error', 'no_tool_used', 'mcp_call_failed'] as const) {
       expect(new AdvisorError('x', undefined, c).code).toBe(c)
     }
   })
@@ -487,7 +496,8 @@ describe('shouldRetryError', () => {
   })
 
   it('다른 code 는 false (재시도 무의미)', () => {
-    for (const code of ['auth_expired', 'quota_exceeded', 'server_down', 'parse_error', 'unknown'] as const) {
+    // Codex PR #487 P2 (5차): mcp_call_failed 는 deterministic 실패라 재시도 X
+    for (const code of ['auth_expired', 'quota_exceeded', 'server_down', 'parse_error', 'unknown', 'mcp_call_failed'] as const) {
       expect(shouldRetryError(new AdvisorError('x', undefined, code))).toBe(false)
     }
   })
@@ -582,6 +592,22 @@ describe('askAdvisor retryOnNoToolUsed validation', () => {
     const { askAdvisor } = await import('../claude-advisor')
     await expect(askAdvisor('test prompt', { retryOnNoToolUsed: Number.MAX_SAFE_INTEGER + 1 })).rejects.toThrow(
       '안전한 정수',
+    )
+  })
+
+  // Codex PR #487 P2 (5차): MAX_SAFE_INTEGER 는 isSafeInteger 통과지만 +1 하면
+  // unsafe → RETRY_MAX_CAP (100) 로 실용적 상한.
+  it('MAX_SAFE_INTEGER (safe integer 지만 attempt++ stall) → 즉시 throw', async () => {
+    const { askAdvisor } = await import('../claude-advisor')
+    await expect(askAdvisor('test prompt', { retryOnNoToolUsed: Number.MAX_SAFE_INTEGER })).rejects.toThrow(
+      '0~100',
+    )
+  })
+
+  it('RETRY_MAX_CAP 초과 (101) → 즉시 throw', async () => {
+    const { askAdvisor, RETRY_MAX_CAP } = await import('../claude-advisor')
+    await expect(askAdvisor('test prompt', { retryOnNoToolUsed: RETRY_MAX_CAP + 1 })).rejects.toThrow(
+      '0~100',
     )
   })
 
