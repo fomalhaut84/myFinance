@@ -55,6 +55,63 @@ export interface AdvisorOptions {
    * 그대로 사용자에게 발송됨. num_turns 기반 검증으로 감지.
    */
   expectsTools?: boolean
+  /**
+   * #486 — `no_tool_used` 실패 시 자동 재시도 횟수 (기본 0 = 재시도 안 함).
+   *
+   * v0.16.2 (#483) 는 감지 + fallback 만 도입. 실운영에서 자동 브리핑이 매번
+   * fallback 되는 문제 관찰 (2026-08-19). 원인은 Claude CLI/모델 판단 쪽이라
+   * 우리가 직접 fix 불가 — 재시도로 대부분 해결 (수동 재시도 시 정상 브리핑).
+   *
+   * **정책:**
+   *   - `no_tool_used` 만 재시도 (auth_expired/quota_exceeded/timeout 등은
+   *     즉시 fallback, 재시도 무의미)
+   *   - 각 재시도 사이 `RETRY_BACKOFF_MS` 만큼 sleep (기본 90초 — Claude 재
+   *     판단 리셋 여유, MCP 30분 TTL 미달, rate limit 부담 낮음)
+   *   - 재시도 시 프롬프트에 "이전 시도에서 도구를 호출하지 않았습니다..." hint
+   *     prepend 로 성공률 개선 (`augmentRetryPrompt` 참고)
+   *   - 각 실패는 advisor-monitor 에 여전히 카운트 → 6회 모두 실패면 3회
+   *     임계 훌쩍 넘어 관리자 alert 자동 발동
+   *   - `expectsTools: true` 와 함께 써야 의미 있음 (그 옵션 없이는 no_tool_used
+   *     자체가 발생 안 함)
+   *
+   * **시간 예산 (실측):** 실패 subprocess ~26초, 성공 1~3분. 5회 재시도 (총 6회
+   * 시도) + 90초 backoff → 모두 실패 ~10분, 마지막 성공 ~13분. 15분 예산 안.
+   */
+  retryOnNoToolUsed?: number
+}
+
+/** #486 — 재시도 간 backoff (ms). Claude 재판단 리셋 + rate limit 여유. */
+export const RETRY_BACKOFF_MS = 90_000
+
+/**
+ * Pure — 재시도 대상 판정. `no_tool_used` 만 재시도 의미 있음.
+ * auth/quota/timeout/parse 등은 재시도해도 결과 안 바뀌므로 즉시 fallback.
+ */
+export function shouldRetryError(err: unknown): boolean {
+  if (!(err instanceof AdvisorError)) return false
+  return err.code === 'no_tool_used'
+}
+
+/**
+ * Pure — 재시도 시 프롬프트 앞에 hint prepend. attempt 는 1-based 시도 번호
+ * (1 = 첫 시도, 2 = 첫 재시도, ...). attempt <= 1 이면 원본 그대로.
+ *
+ * hint 는 "이번엔 반드시 MCP 도구부터 호출해라" 를 명확히 지시해 Claude 판단
+ * 편향을 재시도 프롬프트로 correct. augmentation 없이 그냥 재시도해도 재시도
+ * 자체가 새 세션이라 성공률 높지만 hint 로 추가 개선.
+ */
+export function augmentRetryPrompt(originalPrompt: string, attempt: number): string {
+  if (attempt <= 1) return originalPrompt
+  return (
+    `⚠️ [재시도 ${attempt - 1}회차] 이전 시도에서 데이터 도구 (mcp__myfinance__*) 를 ` +
+    `한 번도 호출하지 않았습니다. 반드시 필요한 MCP 도구부터 먼저 호출한 뒤 응답을 ` +
+    `작성해주세요. WebSearch 만으로는 불충분합니다.\n\n---\n\n${originalPrompt}`
+  )
+}
+
+/** #486 — 재시도 loop 용 sleep. 테스트에서 timer mock 가능. */
+export function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 export interface AdvisorResult {
@@ -484,10 +541,76 @@ function shellEscape(s: string): string {
  *
  * shell 경유 실행 (spawn with shell: true)으로
  * 긴 시스템 프롬프트와 빈 문자열 인자를 안전하게 전달.
+ *
+ * #486 — `retryOnNoToolUsed` 옵션 시 no_tool_used 실패에 한해 재시도. 각
+ * 재시도는 새 subprocess spawn (Claude 세션도 새로 초기화) + prompt hint
+ * augmentation + `RETRY_BACKOFF_MS` sleep. auth/quota 등 다른 실패는 즉시
+ * throw (재시도 무의미).
  */
 export async function askAdvisor(
   prompt: string,
   options: AdvisorOptions = {}
+): Promise<AdvisorResult> {
+  // 원본 prompt 기준 validation (augmented prompt 는 hint 추가만 하므로 원본
+  // 유효하면 augmented 도 유효 — 별도 검증 불필요).
+  const MAX_PROMPT_LENGTH = 10_000
+  if (!prompt || prompt.trim().length === 0) {
+    throw new AdvisorError('질문을 입력해주세요.')
+  }
+  if (prompt.length > MAX_PROMPT_LENGTH) {
+    throw new AdvisorError(`질문이 너무 깁니다. (최대 ${MAX_PROMPT_LENGTH}자)`)
+  }
+
+  const timeout = options.timeout ?? 180_000
+  const maxBudgetUsd = options.maxBudgetUsd ?? 0.50
+  if (!Number.isFinite(timeout) || timeout <= 0) {
+    throw new AdvisorError('timeout은 양수여야 합니다.')
+  }
+  if (!Number.isFinite(maxBudgetUsd) || maxBudgetUsd <= 0) {
+    throw new AdvisorError('maxBudgetUsd는 양수여야 합니다.')
+  }
+
+  const maxRetries = Math.max(0, Math.floor(options.retryOnNoToolUsed ?? 0))
+  let lastError: unknown
+  for (let attempt = 1; attempt <= maxRetries + 1; attempt++) {
+    const effectivePrompt = augmentRetryPrompt(prompt, attempt)
+    try {
+      const result = await runAdvisorOnce(effectivePrompt, options)
+      // 성공 monitor — 재시도 성공 시에도 이전 실패 카운트를 리셋
+      getGlobalAdvisorMonitor().recordSuccess().catch((e) => {
+        console.error('[advisor] monitor.recordSuccess 실패:', e)
+      })
+      return result
+    } catch (err) {
+      // 각 시도 실패는 monitor 에 기록 → 3회 연속 실패 임계 관리자 alert
+      if (err instanceof Error) {
+        getGlobalAdvisorMonitor().recordFailure(err, options.caller).catch((e) => {
+          console.error('[advisor] monitor.recordFailure 실패:', e)
+        })
+      }
+      lastError = err
+      if (attempt <= maxRetries && shouldRetryError(err)) {
+        console.warn(
+          `[advisor] no_tool_used → retry ${attempt}/${maxRetries + 1} ` +
+            `(caller=${options.caller ?? 'unknown'}, sleep ${RETRY_BACKOFF_MS}ms)`,
+        )
+        await sleep(RETRY_BACKOFF_MS)
+        continue
+      }
+      throw err
+    }
+  }
+  // Unreachable — for loop 은 항상 return or throw. lastError 는 defensive.
+  throw lastError ?? new AdvisorError('AI 응답 실패 (재시도 소진).', undefined, 'unknown')
+}
+
+/**
+ * 단일 subprocess 시도. `askAdvisor` 내부 retry loop 에서 사용.
+ * monitor hook 은 호출하지 않음 (loop 이 시도별로 명시 기록).
+ */
+async function runAdvisorOnce(
+  prompt: string,
+  options: AdvisorOptions,
 ): Promise<AdvisorResult> {
   const {
     timeout = 180_000,
@@ -497,23 +620,6 @@ export async function askAdvisor(
   } = options
   // Phase 35-A (#433): intent → model 폴백 매핑. 명시 model 우선.
   const model = pickModel(options.model, options.intent)
-
-  // 프롬프트 길이 제한
-  const MAX_PROMPT_LENGTH = 10_000
-  if (!prompt || prompt.trim().length === 0) {
-    throw new AdvisorError('질문을 입력해주세요.')
-  }
-  if (prompt.length > MAX_PROMPT_LENGTH) {
-    throw new AdvisorError(`질문이 너무 깁니다. (최대 ${MAX_PROMPT_LENGTH}자)`)
-  }
-
-  // 입력 검증
-  if (!Number.isFinite(timeout) || timeout <= 0) {
-    throw new AdvisorError('timeout은 양수여야 합니다.')
-  }
-  if (!Number.isFinite(maxBudgetUsd) || maxBudgetUsd <= 0) {
-    throw new AdvisorError('maxBudgetUsd는 양수여야 합니다.')
-  }
 
   const projectRoot = process.env.MYFINANCE_ROOT ?? process.cwd()
   const mcpConfigPath = process.env.MCP_CONFIG_PATH
@@ -699,26 +805,8 @@ export async function askAdvisor(
     })
   })
 
-  // Phase 40-A (#468) — 실패/성공을 monitor 에 기록 → 연속 3회 실패 시 관리자
-  // 텔레그램 alert 자동 발송. resolve/reject 결과에 side-effect 만 추가하고 원본
-  // promise 를 그대로 리턴 (호출자 관점 동작 무변경).
-  // `void ...` 로 명시적 fire-and-forget — hook 실패는 caller 로 전파되지 않고
-  // console.error 로만 남김 (모니터 실패가 원본 응답을 오염 안 시킴).
-  void subprocessPromise.then(
-    () => {
-      getGlobalAdvisorMonitor().recordSuccess().catch((e) => {
-        console.error('[advisor] monitor.recordSuccess 실패:', e)
-      })
-    },
-    (err: unknown) => {
-      // 실패 계열만 monitor 에 기록 (Error 인스턴스). unknown 은 무시.
-      if (err instanceof Error) {
-        getGlobalAdvisorMonitor().recordFailure(err, options.caller).catch((e) => {
-          console.error('[advisor] monitor.recordFailure 실패:', e)
-        })
-      }
-    },
-  )
-
+  // #486: monitor hook 은 `askAdvisor` retry loop 이 시도별로 명시 호출.
+  // 여기서 hook 을 걸면 loop 의 명시 호출과 중복되어 recordFailure/Success 가
+  // 두 번씩 카운트됨 (임계 판정 왜곡). monitor 관리는 loop 이 단일 책임.
   return subprocessPromise
 }

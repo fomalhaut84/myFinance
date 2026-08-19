@@ -42,6 +42,8 @@ export async function sendMonthlyReport(chatIds: number[]): Promise<void> {
       caller: 'cron:monthly_report',
       // #483: 월간 리포트도 포트폴리오/거래/배당/소비/증여세 MCP 도구 사용 필수.
       expectsTools: true,
+      // #486: 5회 재시도 (총 6회, 90초 backoff, 최대 ~13분).
+      retryOnNoToolUsed: 5,
     })
 
     const html = markdownToTelegramHtml(result.response)

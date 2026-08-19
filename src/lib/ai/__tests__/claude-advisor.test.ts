@@ -10,6 +10,7 @@ import { describe, expect, it } from 'vitest'
 import {
   AdvisorError,
   AdvisorTimeoutError,
+  augmentRetryPrompt,
   classifyAdvisorError,
   countMcpMyFinanceCalls,
   countSuccessfulMcpMyFinanceCalls,
@@ -17,6 +18,7 @@ import {
   extractAdvisorErrorText,
   hasNoToolResponse,
   parseClaudeStreamJson,
+  shouldRetryError,
 } from '../claude-advisor'
 
 describe('classifyAdvisorError', () => {
@@ -466,5 +468,63 @@ describe('countSuccessfulMcpMyFinanceCalls (성공 카운트)', () => {
       { name: 'mcp__myfinance__get_fx_rate', hasResult: true },  // is_error 생략 = 성공
     ]
     expect(countSuccessfulMcpMyFinanceCalls(calls)).toBe(2)
+  })
+})
+
+// #486 회귀 방지 — no_tool_used 자동 재시도 정책.
+describe('shouldRetryError', () => {
+  it('no_tool_used AdvisorError → true (재시도 대상)', () => {
+    expect(shouldRetryError(new AdvisorError('x', undefined, 'no_tool_used'))).toBe(true)
+  })
+
+  it('다른 code 는 false (재시도 무의미)', () => {
+    for (const code of ['auth_expired', 'quota_exceeded', 'server_down', 'parse_error', 'unknown'] as const) {
+      expect(shouldRetryError(new AdvisorError('x', undefined, code))).toBe(false)
+    }
+  })
+
+  it('AdvisorTimeoutError → false (timeout 도 재시도 무의미)', () => {
+    expect(shouldRetryError(new AdvisorTimeoutError(180_000))).toBe(false)
+  })
+
+  it('일반 Error → false', () => {
+    expect(shouldRetryError(new Error('random'))).toBe(false)
+  })
+
+  it('non-Error (null / undefined / string) → false', () => {
+    expect(shouldRetryError(null)).toBe(false)
+    expect(shouldRetryError(undefined)).toBe(false)
+    expect(shouldRetryError('some error')).toBe(false)
+  })
+})
+
+describe('augmentRetryPrompt', () => {
+  it('attempt=1 (첫 시도) → 원본 그대로', () => {
+    expect(augmentRetryPrompt('원본 프롬프트', 1)).toBe('원본 프롬프트')
+  })
+
+  it('attempt=0 이나 음수 → 원본 그대로 (defensive)', () => {
+    expect(augmentRetryPrompt('원본 프롬프트', 0)).toBe('원본 프롬프트')
+    expect(augmentRetryPrompt('원본 프롬프트', -1)).toBe('원본 프롬프트')
+  })
+
+  it('attempt=2 (첫 재시도) → hint prepend + 원본 유지', () => {
+    const out = augmentRetryPrompt('브리핑 작성', 2)
+    expect(out).toContain('재시도 1회차')
+    expect(out).toContain('mcp__myfinance__')
+    expect(out).toContain('브리핑 작성')
+    // 원본은 hint 뒤에 위치 (Claude 가 최근 텍스트 = 원 지시 를 강하게 반영)
+    expect(out.indexOf('재시도')).toBeLessThan(out.indexOf('브리핑 작성'))
+  })
+
+  it('attempt=6 → "재시도 5회차" 표기', () => {
+    const out = augmentRetryPrompt('원본', 6)
+    expect(out).toContain('재시도 5회차')
+  })
+
+  it('WebSearch 만으로 불충분함을 명시 (성공률 개선)', () => {
+    const out = augmentRetryPrompt('원본', 2)
+    expect(out).toContain('WebSearch')
+    expect(out).toContain('불충분')
   })
 })

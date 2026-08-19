@@ -36,8 +36,9 @@ async function handleBriefing(ctx: Context): Promise<void> {
     return
   }
 
-  // 전체 모닝 브리핑
-  await ctx.reply('📊 브리핑 생성 중... (1~2분 소요)')
+  // 전체 모닝 브리핑 — #486 재시도 도입으로 최대 ~13분 (통상 1~2분, 도구 미호출
+  // flaky 시 재시도로 지연). 사용자가 프리즈로 오해하지 않도록 상한 안내.
+  await ctx.reply('📊 브리핑 생성 중... (통상 1~2분, 최대 10분 이상 걸릴 수 있어요)')
 
   let session: 'KR' | 'US'
   if (args === '한국' || args === 'kr' || args === 'KR') {
@@ -80,7 +81,15 @@ function fireTickerAnalysis(ctx: Context, chatId: number, ticker: string): void 
     '- 종합 판단 + 주의사항',
   ].join('\n')
 
-  askAdvisor(prompt, { model: 'sonnet', timeout: 300_000, maxBudgetUsd: 1.0, caller: 'bot:brief_command', expectsTools: true })
+  askAdvisor(prompt, {
+    model: 'sonnet',
+    timeout: 300_000,
+    maxBudgetUsd: 1.0,
+    caller: 'bot:brief_command',
+    expectsTools: true,
+    // #486: 5회 재시도 (총 6회, 90초 backoff, 최대 ~13분).
+    retryOnNoToolUsed: 5,
+  })
     .then(async (result) => {
       const html = markdownToTelegramHtml(result.response)
       if (html.length <= 4096) {
