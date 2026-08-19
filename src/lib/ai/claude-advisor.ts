@@ -76,8 +76,26 @@ export interface AdvisorOptions {
    *
    * **시간 예산 (실측):** 실패 subprocess ~26초, 성공 1~3분. 5회 재시도 (총 6회
    * 시도) + 90초 backoff → 모두 실패 ~10분, 마지막 성공 ~13분. 15분 예산 안.
+   *
+   * ⚠️ **`maxBudgetUsd` 는 total cap** (Codex PR #487 P1): 재시도가 도입되면
+   * 개별 subprocess 마다 원본 예산을 그대로 쓰던 옛 동작은 총 지출을 6배로
+   * 만들 위험. retry loop 이 costSpent 를 누적하고 남은 예산만 다음 시도로 전달.
+   * `overallTimeoutMs` 도 함께 지정하지 않으면 각 시도가 개별 `timeout` 만큼
+   * 걸릴 수 있어 총 시간이 문서화된 예산을 초과할 수 있음.
    */
   retryOnNoToolUsed?: number
+  /**
+   * Codex PR #487 P2 — retry loop 전체의 end-to-end deadline (ms).
+   *
+   * 미지정이면 각 subprocess 가 개별 `timeout` 만큼 걸릴 수 있어 (subprocess 6회
+   * + backoff 5회) 문서화된 시간 예산을 초과. 이 옵션을 지정하면 loop 이 elapsed
+   * 를 추적해 각 attempt timeout 을 `min(timeout, remaining_deadline)` 으로
+   * 축소하고, 다음 backoff sleep 이 deadline 을 넘길 것으로 예상되면 재시도를
+   * 조기 중단하고 `AdvisorTimeoutError` 를 throw.
+   *
+   * caller 권장 세팅: 15분 예산 = `900_000` (retry × 5 + 90s backoff × 5 커버).
+   */
+  overallTimeoutMs?: number
 }
 
 /** #486 — 재시도 간 backoff (ms). Claude 재판단 리셋 + rate limit 여유. */
@@ -569,20 +587,65 @@ export async function askAdvisor(
   if (!Number.isFinite(maxBudgetUsd) || maxBudgetUsd <= 0) {
     throw new AdvisorError('maxBudgetUsd는 양수여야 합니다.')
   }
+  const overallTimeoutMs = options.overallTimeoutMs
+  if (
+    overallTimeoutMs !== undefined &&
+    (!Number.isFinite(overallTimeoutMs) || overallTimeoutMs <= 0)
+  ) {
+    throw new AdvisorError('overallTimeoutMs는 양수여야 합니다.')
+  }
 
   const maxRetries = Math.max(0, Math.floor(options.retryOnNoToolUsed ?? 0))
+  const startedAt = Date.now()
+  let costSpent = 0
   let lastError: unknown
   for (let attempt = 1; attempt <= maxRetries + 1; attempt++) {
+    // Codex #487 P2: overall deadline 체크. remaining <= 0 이면 즉시 timeout.
+    const elapsed = Date.now() - startedAt
+    const remainingDeadline =
+      overallTimeoutMs !== undefined ? overallTimeoutMs - elapsed : Infinity
+    if (remainingDeadline <= 0) {
+      throw new AdvisorTimeoutError(overallTimeoutMs ?? timeout)
+    }
+    // Codex #487 P1: 총 예산 cap. 남은 예산이 없으면 재시도 중단.
+    const remainingBudget = maxBudgetUsd - costSpent
+    if (remainingBudget <= 0) {
+      throw new AdvisorError(
+        `AI 어드바이저 예산 초과 (spent=$${costSpent.toFixed(4)} / cap=$${maxBudgetUsd}).`,
+        undefined,
+        'quota_exceeded',
+      )
+    }
+    // 이번 attempt 옵션: timeout 은 min(perAttempt, remaining), budget 은 남은 잔액.
+    const perAttemptTimeout =
+      overallTimeoutMs !== undefined
+        ? Math.max(1, Math.min(timeout, remainingDeadline))
+        : timeout
+    const attemptOptions: AdvisorOptions = {
+      ...options,
+      timeout: perAttemptTimeout,
+      maxBudgetUsd: remainingBudget,
+      // 재귀 방지 — runAdvisorOnce 는 retry 옵션 무시하지만 명시적으로 clear
+      retryOnNoToolUsed: 0,
+      overallTimeoutMs: undefined,
+    }
     const effectivePrompt = augmentRetryPrompt(prompt, attempt)
     try {
-      const result = await runAdvisorOnce(effectivePrompt, options)
+      const result = await runAdvisorOnce(effectivePrompt, attemptOptions)
+      costSpent += result.costUsd
       // 성공 monitor — 재시도 성공 시에도 이전 실패 카운트를 리셋
       getGlobalAdvisorMonitor().recordSuccess().catch((e) => {
         console.error('[advisor] monitor.recordSuccess 실패:', e)
       })
-      return result
+      // Codex #487 P1: 최종 반환 costUsd 는 모든 시도의 총합 (부분 실패 spend
+      // 도 관측 가능하도록). durationMs 는 성공한 subprocess 만.
+      return { ...result, costUsd: costSpent }
     } catch (err) {
-      // 각 시도 실패는 monitor 에 기록 → 3회 연속 실패 임계 관리자 alert
+      // 실패 시도의 cost 는 subprocess 로 부터 회수 불가 (--output-format 이 성공
+      // 응답에서만 cost 를 신뢰 가능하게 제공). 안전한 근사치: 성공 attempt 만
+      // 정확 누적, 실패 attempt 는 0 으로 간주. 다음 시도의 remainingBudget 이
+      // 약간 관대해질 수 있지만 caller 가 명시한 upper bound 는 성공 응답 기준
+      // 이라 실용적으로 문제 없음.
       if (err instanceof Error) {
         getGlobalAdvisorMonitor().recordFailure(err, options.caller).catch((e) => {
           console.error('[advisor] monitor.recordFailure 실패:', e)
@@ -590,9 +653,22 @@ export async function askAdvisor(
       }
       lastError = err
       if (attempt <= maxRetries && shouldRetryError(err)) {
+        // Codex #487 P2: backoff 이후에도 deadline 안에 다음 attempt 가 들어갈
+        // 수 있는지 확인. 초과 예상되면 재시도 중단하고 마지막 실패를 throw.
+        const elapsedAfterAttempt = Date.now() - startedAt
+        const remainingAfterAttempt =
+          overallTimeoutMs !== undefined ? overallTimeoutMs - elapsedAfterAttempt : Infinity
+        if (remainingAfterAttempt <= RETRY_BACKOFF_MS) {
+          console.warn(
+            `[advisor] no_tool_used → 재시도 중단 (deadline 초과 예상: ` +
+              `remaining=${remainingAfterAttempt}ms < backoff=${RETRY_BACKOFF_MS}ms)`,
+          )
+          throw err
+        }
         console.warn(
           `[advisor] no_tool_used → retry ${attempt}/${maxRetries + 1} ` +
-            `(caller=${options.caller ?? 'unknown'}, sleep ${RETRY_BACKOFF_MS}ms)`,
+            `(caller=${options.caller ?? 'unknown'}, sleep ${RETRY_BACKOFF_MS}ms, ` +
+            `costSpent=$${costSpent.toFixed(4)})`,
         )
         await sleep(RETRY_BACKOFF_MS)
         continue

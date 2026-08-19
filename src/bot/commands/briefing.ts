@@ -31,7 +31,8 @@ async function handleBriefing(ctx: Context): Promise<void> {
 
   // 종목 심층 분석: 한국/미국 키워드가 아닌 인자 → 종목으로 판단
   if (args && !SESSION_KEYWORDS.has(args)) {
-    await ctx.reply(`🔍 ${args.toUpperCase()} 심층 분석 중... (1~2분 소요)`)
+    // Codex #487 P2: retryOnNoToolUsed 로 최대 ~13분 걸릴 수 있음 (통상 1~2분).
+    await ctx.reply(`🔍 ${args.toUpperCase()} 심층 분석 중... (통상 1~2분, 최대 10분 이상 걸릴 수 있어요)`)
     fireTickerAnalysis(ctx, chatId, args.toUpperCase())
     return
   }
@@ -89,6 +90,8 @@ function fireTickerAnalysis(ctx: Context, chatId: number, ticker: string): void 
     expectsTools: true,
     // #486: 5회 재시도 (총 6회, 90초 backoff, 최대 ~13분).
     retryOnNoToolUsed: 5,
+    // Codex #487 P2: 15분 상한 강제.
+    overallTimeoutMs: 900_000,
   })
     .then(async (result) => {
       const html = markdownToTelegramHtml(result.response)

@@ -59,6 +59,9 @@ export async function sendBriefing(
       // (총 6회 시도, 90초 backoff, 최대 ~13분) → 15분 예산 안. 사용자 관점
       // fallback 최소화.
       retryOnNoToolUsed: 5,
+      // Codex #487 P2: 각 subprocess timeout 300s × 6 + backoff 90s × 5 는
+      // 최악 37.5분. overallTimeoutMs 로 전체 15분 상한 강제.
+      overallTimeoutMs: 900_000,
     })
 
     const html = markdownToTelegramHtml(result.response)

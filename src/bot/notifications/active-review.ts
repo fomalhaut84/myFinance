@@ -114,6 +114,8 @@ async function sendReview(
       expectsTools: true,
       // #486: 5회 재시도 (총 6회, 90초 backoff, 최대 ~13분).
       retryOnNoToolUsed: 5,
+      // Codex #487 P2: 15분 상한 강제.
+      overallTimeoutMs: 900_000,
     })
 
     const html = markdownToTelegramHtml(result.response)

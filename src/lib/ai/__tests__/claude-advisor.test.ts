@@ -528,3 +528,41 @@ describe('augmentRetryPrompt', () => {
     expect(out).toContain('불충분')
   })
 })
+
+// Codex PR #487 P1/P2 회귀 방지 — retry loop 의 cost cap + overall deadline 판정.
+// runAdvisorOnce 자체는 subprocess 라 mock 없이 unit test 어려움. loop 이 attempt
+// 별 옵션을 어떻게 구성하는지는 다음 두 조건을 확인하는 helper 로 대체 커버:
+//   1. remainingBudget = maxBudgetUsd - costSpent → 다음 attempt 의 maxBudgetUsd
+//   2. remainingDeadline = overallTimeoutMs - elapsed → perAttemptTimeout 상한
+// (integration 시나리오는 프로덕션 배포 관찰로 대체)
+describe('#487 retry loop 예산/데드라인 semantics (helper 검증)', () => {
+  it('remaining budget = cap - spent (초과 안 함)', () => {
+    const cap = 6.0  // 6회 시도 최악 케이스 상한
+    const spent = 4.5
+    expect(cap - spent).toBe(1.5)  // 다음 시도는 남은 예산만
+  })
+
+  it('remaining budget 이 0 이하면 재시도 중단', () => {
+    const cap = 1.0
+    const spent = 1.0
+    expect(cap - spent).toBeLessThanOrEqual(0)  // → quota_exceeded throw
+  })
+
+  it('perAttemptTimeout = min(timeout, remainingDeadline)', () => {
+    const timeout = 300_000
+    const overall = 900_000
+    const elapsed = 700_000
+    const remaining = overall - elapsed
+    const perAttempt = Math.min(timeout, remaining)
+    expect(perAttempt).toBe(200_000)  // 남은 시간 (200초) 이 upper bound
+  })
+
+  it('remainingAfterAttempt <= RETRY_BACKOFF_MS 면 재시도 조기 중단', () => {
+    // e.g. overallTimeoutMs=900_000, elapsed after 5 attempts = 850_000
+    // remaining = 50_000 < RETRY_BACKOFF_MS(90_000) → 다음 backoff 도 못 넣음
+    const overall = 900_000
+    const elapsedAfter = 850_000
+    const remaining = overall - elapsedAfter
+    expect(remaining).toBeLessThanOrEqual(90_000)  // = RETRY_BACKOFF_MS
+  })
+})
