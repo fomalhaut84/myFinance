@@ -29,8 +29,8 @@ hotfix: main → hotfix/20-crash → main + dev 양쪽 머지
 - GitHub에서 릴리즈 생성 + 릴리즈 노트 작성 후 배포.
 
 **릴리즈도 PR 을 거친다.** "`main` 직접 커밋 금지"와 "머지는 사용자가 직접"은 릴리즈에도 적용된다.
-**릴리즈 PR 은 9절의 `Closes #<issue-number>` 규칙의 예외다** — 대응 이슈가 없으므로 `Closes` 를 넣지 않고,
-본문에 이번 릴리즈에 포함된 이슈 목록을 적는다.
+**릴리즈 PR 의 `Closes`:** 마일스톤 **마스터 이슈가 있으면 `Closes #{master}`** 를 넣는다(`release-publisher` 템플릿).
+마스터 이슈가 없는 릴리즈만 9절 `Closes` 규칙의 예외로 두고, 본문에 포함된 이슈 목록을 적는다.
 
 ```bash
 # 1. dev → main PR 생성 (Claude)
