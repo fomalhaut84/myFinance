@@ -74,7 +74,7 @@ myFinance 의 `docs/specs/` 문서 규격. spec-planner 가 사용.
 
 ## 완료 조건
 - [ ] lint / typecheck / test / build 통과
-- [ ] 코드 리뷰 P1/P2 = 0
+- [ ] 코드 리뷰 사전 critical/major = 0 · 봇 P0/P1 = 0
 - [ ] {수동 검증 항목}
 
 Closes #{issue}
@@ -82,7 +82,7 @@ Closes #{issue}
 
 ## 필수 요소
 - **`Closes #N`** — 자동 이슈 종료
-- **완료 조건 체크리스트** — 항상 4종 검증 + P1/P2 = 0
+- **완료 조건 체크리스트** — 항상 4종 검증 + 사전 critical/major = 0 · 봇 P0/P1 = 0
 - **의존성** — 선행 있으면 명시, 없으면 "없음"
 - **`- [ ]`** 마크다운 체크박스 — 진행 상황 시각화
 
@@ -103,7 +103,7 @@ EOF
 라벨:
 - `phase-{N}` (있으면)
 - `feature` / `bug` / `chore`
-- 우선순위: `P0` (info), `P1` (major), `P2` (critical)
+- 우선순위: `P0` (낮음), `P1` (높음), `P2` (긴급) — **GitHub 이슈 라벨** 규약이다. 코드 리뷰 척도(로컬 critical/major/info · 봇 P0 최고)와는 별개
 
 ## 참고 파일
 - 마스터 예시: `docs/specs/402-milestone-14-master.md`, `docs/specs/414-milestone-15-master.md`, `docs/specs/432-milestone-16-master.md`

@@ -96,7 +96,7 @@ Agent(subagent_type="release-manager", model="opus", prompt="PR #{N} 머지 완�
 | feature-implementer 컨벤션 위반 | quality-guardian 이 발견 → 즉시 반영 요청 |
 | Codex 반복 라운드 > 5 | release-manager 가 근본 원칙 재검토 신호 (스코프 축소 or 원칙 확립) |
 | 배포 실패 | 로그 요약 + 사용자 확인 (예: 포트 충돌 → 별도 fix 이슈) |
-| Codex quota 소진 | 재리뷰 요청 중단, 자체 리뷰만으로 진행 (경험상 익일 새 quota) |
+| Codex quota 소진 | **릴리즈 PR 은 봇 회복까지 대기** (봇 P0/P1 = 0 게이트는 우회하지 않는다). 일반 PR 은 사전 에이전트 리뷰(critical/major = 0)로 진행하되 PR body 에 `봇: 미실행 (쿼터 소진, YYYY-MM-DD)` 를 명시하고 회복 후 `@codex review` (경험상 익일 새 quota) |
 
 ## 테스트 시나리오
 ### 정상 흐름 (신규 마일스톤)

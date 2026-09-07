@@ -20,7 +20,7 @@ description: "myFinance 프로젝트에서 사용자 요청을 마일스톤 마�
 - **분할 원칙**: 1 서브 이슈 = XS(반나절) ~ M(1~3일). L 이상이면 더 쪼갤 수 있는지 검토
 - **자동 우선순위 검토**: 사용자 pain (배포 이슈, 알림 노이즈 등) 은 최우선
 - **의존성 명시**: `선행: #N (Phase XX)` 형식
-- **완료 조건 체크리스트**: lint/typecheck/test/build + self-review P1/P2 = 0 항상 포함
+- **완료 조건 체크리스트**: lint/typecheck/test/build + self-review critical/major = 0 · 봇 P0/P1 = 0 항상 포함
 - **참조 재사용 명시**: 15차 도입 `kst-date.ts`, 16차 도입 `AdvisorIntent` / `conditionsEqual` canonical key 등 재사용 가능 유틸 언급
 
 ## 입력/출력 프로토콜
