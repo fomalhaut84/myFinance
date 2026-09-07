@@ -28,15 +28,29 @@ hotfix: main → hotfix/20-crash → main + dev 양쪽 머지
 - 태그 형식: `v{major}.{minor}.{patch}` (예: `v1.0.0`, `v1.2.1`)
 - GitHub에서 릴리즈 생성 + 릴리즈 노트 작성 후 배포.
 
-```bash
-# 릴리즈 절차
-git checkout main && git pull
-git merge dev
-git tag v1.0.0
-git push origin main --tags
+**릴리즈도 PR 을 거친다.** "`main` 직접 커밋 금지"와 "머지는 사용자가 직접"은 릴리즈에도 적용된다.
+**릴리즈 PR 의 `Closes`:** 마일스톤 **마스터 이슈가 있으면 `Closes #{master}`** 를 넣는다(`release-publisher` 템플릿).
+마스터 이슈가 없는 릴리즈만 9절 `Closes` 규칙의 예외로 두고, 본문에 포함된 이슈 목록을 적는다.
 
+```bash
+# 1. dev → main PR 생성 (Claude)
+gh pr create --base main --head dev --title "Release v1.0.0" --body "포함 이슈 목록 …"
+
+# 2. 봇 리뷰 게이트 — 8-2·8-3 을 그대로 거친다. 봇 P0/P1 = 0 이 될 때까지 머지하지 않는다.
+#    수정이 필요하면 dev 로 fix/<issue>-<n> PR 을 태워 반영 → @codex review
+
+# 3. 사용자가 머지
+
+# 4. 머지 확인 후 태그 (Claude)
+git checkout main && git pull
+git tag v1.0.0
+git push origin --tags
 gh release create v1.0.0 --title "v1.0.0" --notes "릴리즈 노트 내용"
 ```
+
+> **정정 (pleiades#8 결함 ①).** 이전 절차는 로컬에서 `git merge dev` → `git push origin main --tags` 로
+> **`main` 을 직접 갱신·push** 했다. 같은 문서의 "`main` 직접 커밋 금지"·"머지는 사용자가 직접"과 모순이고,
+> `main` 이 보호되면 절차 자체가 실패하며, 보호가 없으면 리뷰 없는 릴리즈가 통과한다.
 
 버전 기준:
 - major: 큰 기능 추가 또는 Breaking change (Phase 완료 등)
@@ -56,7 +70,7 @@ gh release create v1.0.0 --title "v1.0.0" --notes "릴리즈 노트 내용"
 ```bash
 gh issue create --title "[Phase N] 기능명" --body "$(cat docs/specs/...)" --label "phase-N,feature"
 ```
-라벨: `phase-1`~`phase-6`, `feature`/`bug`/`chore`, `P0`/`P1`/`P2`
+라벨: `phase-1`~`phase-6`, `feature`/`bug`/`chore`, `P0`/`P1`/`P2` (이 `P0/P1/P2` 는 **GitHub 이슈 우선순위 라벨**이다. 8절의 봇 심각도 척도와는 별개)
 
 ### 4. UI/UX 디자인
 
@@ -112,13 +126,18 @@ npm run lint && npm run typecheck && npm run test && npm run build
 
 ### 8. 코드 리뷰
 
-두 단계 리뷰. 목적: P1/P2 이슈를 걸러내되 재리뷰 사이클과 토큰 소비를 최소화.
+두 단계 리뷰. 목적: **수정 필수 등급**을 걸러내되 재리뷰 사이클과 토큰 소비를 최소화.
+
+> **심각도 척도가 둘이고 방향이 반대다 (pleiades#8 결함 ②).** 로컬 사전 리뷰(8-1)는 **단어**
+> (critical / major / info), GitHub Codex bot(8-2)은 **`P0` 가 최고**인 네이티브 척도를 쓴다. 섞어 쓰지 않는다.
+> 이전 문서는 로컬 프롬프트에서 `P0=info … P2=critical` 로 관례와 반대로 정의했고, 그 결과 8-2 의
+> "P0 는 무시"가 **봇의 최고 심각도를 버리라는 지시**가 됐다.
 
 #### 8-1. 로컬 사전 리뷰 (PR 오픈 전)
 
 **pr-review-toolkit code-reviewer 에이전트 1회.** 아래 예외를 제외하면 자체 검증 없이 PR 을 여는 것은 금지.
 
-**self-review 로 충분** (에이전트 skip 허용) — 다음 중 하나이면서 P2 리스크가 없어야:
+**self-review 로 충분** (에이전트 skip 허용) — 다음 중 하나이면서 critical 리스크가 없어야:
 - 문서만 (`docs/*`, `*.md`)
 - 순수 시각 조정 (색상, spacing, 리터럴 문구)
 - 단순 fix / 리팩터 (< 50 LOC 단일 파일)
@@ -142,47 +161,48 @@ Review branch <current> vs <base> in <repo path>.
 <주요 파일 목록>
 
 ## Severity
-- P0 (info): 스타일·네이밍
-- P1 (major): 로직·엣지케이스·성능
-- P2 (critical): 보안·데이터손실·크래시
+- critical: 보안·데이터손실·크래시
+- major: 로직·엣지케이스·성능
+- info: 스타일·네이밍
 
 ## Output
 각 이슈: severity + file:line + 설명 + fix.
-최종 counts: P0/P1/P2. 300자 이내 결론.
+최종 counts: critical/major/info. 300자 이내 결론.
 """)
 ```
 
 **심각도 대응 (사전 리뷰):**
-- **P2**: 반드시 수정
-- **P1**: 반드시 수정
-- **P0**: 저비용/명확한 것만 반영. 큰 리팩터를 요구하는 P0 는 후속 이슈로 분리
+- **critical**: 반드시 수정
+- **major**: 반드시 수정
+- **info**: 저비용/명확한 것만 반영. 큰 리팩터를 요구하는 info 는 후속 이슈로 분리
 
-P1/P2 반영 후 검증 3종 (`lint / typecheck / build`) 재통과 → PR 오픈. 반영 시 **재발 방지 회귀 테스트도 함께 추가** (같은 P2 반복 발생 억제).
+critical/major 반영 후 검증 3종 (`lint / typecheck / build`) 재통과 → PR 오픈. 반영 시 **재발 방지 회귀 테스트도 함께 추가** (같은 critical 반복 발생 억제).
 
 #### 8-2. GitHub Codex bot 리뷰 (PR 오픈 후)
 
 GitHub 이 PR 오픈 시 자동으로 Codex bot 리뷰 트리거. **매 커밋마다 재실행되지 않음** — 사용자가 `@codex review` 코멘트를 남길 때만 재리뷰.
 
+**봇은 `P0` 를 최고 심각도로 쓴다** — 8-1 의 단어 척도와 방향이 반대다. 봇 지적은 **봇의 표기 그대로** 다룬다:
+
 **심각도 대응 (Codex bot):**
-- **P2**: 반드시 수정
-- **P1**: 반드시 수정
-- **P0**: 원칙적으로 무시 (후속 이슈로만 트래킹). 사전 리뷰에서 P0 를 이미 정리했고, Codex 재리뷰는 사용자 codex 쿼터를 새로 소비함
+- **P0 (최고)·P1**: 반드시 수정
+- **P2 이하**: 후속 이슈로 트래킹. 저비용·명확한 것만 즉시 반영. Codex 재리뷰는 사용자 codex 쿼터를 새로 소비함
 
 **재리뷰 절제 (토큰 소비 억제):**
-- P1/P2 를 실제로 반영한 커밋에 한해 `@codex review` 요청
-- P0 만 반영했거나 문서/스펙만 바꾼 경우엔 재리뷰 요청 금지
+- P0/P1 을 실제로 반영한 커밋에 한해 `@codex review` 요청
+- P2 이하만 반영했거나 문서/스펙만 바꾼 경우엔 재리뷰 요청 금지 (단 봇 지적 자체가 문서에 대한 것이면 그 수정은 P0/P1 반영이므로 요청한다)
 - 반영 시 회귀 테스트 함께 추가 (같은 지적 반복 방지)
 
 #### 8-3. 반복 루프
 
 ```
-사전 리뷰 → P1/P2 = 0 → PR 오픈
+사전 리뷰 → critical/major = 0 → PR 오픈
   ↓
-Codex bot 리뷰 → P1/P2 있음? → Yes → 수정 → 커밋 → @codex review
-                              → No  → ✅ 통과 (P0 는 후속 이슈)
+Codex bot 리뷰 → P0/P1 있음? → Yes → 수정 → 검증 재통과 → 커밋 → @codex review
+                             → No  → ✅ 통과 (P2 이하는 후속 이슈)
 ```
 
-2회 이상 반복 시 스코프/설계 재점검 신호. 최종 통과 시 `✅ 코드 리뷰 통과 (P1/P2: 0건)`. 매 리뷰 결과는 사용자에게 요약 보고.
+2회 이상 반복 시 스코프/설계 재점검 신호. 최종 통과 시 `✅ 코드 리뷰 통과 (사전 critical/major: 0건 · 봇 P0/P1: 0건)`. **봇이 돌 수 없는 경우**(쿼터 소진 등)는 일반 PR 에 한해 `봇: 미실행 (사유, YYYY-MM-DD)` 를 적고 회복 후 `@codex review` — 릴리즈 PR 은 봇 회복까지 대기한다 (`milestone-workflow` 에러 표). 매 리뷰 결과는 사용자에게 요약 보고.
 
 #### 8-4. codex-cli MCP (선택 대안)
 
@@ -210,7 +230,7 @@ PR 본문에 포함:
 - 변경 사항 요약
 - `Closes #<issue-number>`
 - 체크리스트: 린트/타입체크/테스트/빌드/리뷰 통과
-- 코드 리뷰 결과: 리뷰 횟수, P0/P1/P2 건수
+- 코드 리뷰 결과: 리뷰 횟수, 사전 critical/major/info 건수 · 봇 P0/P1/P2 건수
 - 디자인 반영 여부: `docs/designs/` 참조 링크 (UI 기능인 경우)
 
 PR 링크를 사용자에게 알린다. **머지는 사용자가 직접.**
@@ -237,6 +257,8 @@ git checkout dev && git pull && git branch -d feat/<issue>-...
 
 실서비스 버그 시 main에서 분기:
 1. `git checkout main && git checkout -b hotfix/<issue>-<n>`
-2. 수정 → 테스트 → 리뷰(1회, P2만)
+2. 수정 → 테스트 → **로컬 사전 리뷰 1회** (반복 루프만 생략. 게이트는 그대로 — **critical·major 는 반드시 수정**, info 는 후속 이슈)
 3. PR 2개 생성: main 대상 + dev 대상 (양쪽 머지 원칙)
-4. 사용자가 양쪽 머지 → 이슈 종료
+4. **봇 리뷰가 여기서 돈다** (8-2 는 PR 오픈 후에만 실행된다). 봇 **P0·P1** → 반드시 수정
+   → **7절 검증 재실행 → 통과해야 커밋** → 양쪽 PR 에 반영 → `@codex review` 로 재확인. **봇 P0/P1 = 0 이 될 때까지 머지하지 않는다**
+5. 사용자가 양쪽 머지 → 이슈 종료

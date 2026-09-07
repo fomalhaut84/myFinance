@@ -1,16 +1,20 @@
 ---
 name: codex-response-patterns
-description: "myFinance 프로젝트에서 반복 발견되는 Codex bot 리뷰 P2 패턴과 즉시 대응 방법. canonical key = evaluator semantics, defense in depth, KST 정규화, JSON.stringify 대체 등. Codex 리뷰 URL 도착 시, 리뷰 대응 판단, 회귀 방지 테스트 추가 시 사용."
+description: "myFinance 프로젝트에서 반복 발견되는 Codex bot 리뷰 P0/P1 패턴(봇 척도, P0 가 최고)과 즉시 대응 방법. canonical key = evaluator semantics, defense in depth, KST 정규화, JSON.stringify 대체 등. Codex 리뷰 URL 도착 시, 리뷰 대응 판단, 회귀 방지 테스트 추가 시 사용."
 ---
 
-# Codex Response Patterns — 반복 P2 대응 학습
+# Codex Response Patterns — 반복 P0/P1 대응 학습
+
+> **척도:** 이 문서의 `P0`/`P1`/`P2` 는 **GitHub Codex bot 의 네이티브 척도**(`P0` 최고)다. 로컬 사전 리뷰의
+> 단어 척도(critical/major/info)와 섞지 않는다 (`workflow.md` 8절, pleiades#8). 이전 판의 "반복 P2" 는 옛 역방향 척도의
+> critical 을 뜻했고, 봇 표기로는 **P0/P1** 이다.
 
 myFinance 에서 Codex bot 이 반복 발견하는 패턴 카탈로그. release-manager 가 사용.
 
 ## 학습 원칙
 **canonical key = evaluator semantics** — 16차 PR #440 에서 확립. 어떤 비교 로직이든 실행 시 semantics (무시하거나 정규화되는 필드) 를 그대로 반영해야 무변경 편집이 false-positive 되지 않는다.
 
-## 반복 P2 카탈로그
+## 반복 P0/P1 카탈로그
 
 ### 1. Canonical key 정규화 누락
 **증상**: `conditionsEqual` / `condKey` 가 evaluator 실행 시 무시·정규화되는 필드를 유지 → 의미상 동일한 값을 다르다고 오판 → `lastTriggeredAt` 오리셋 → 알림 재무장 회귀.
@@ -73,12 +77,12 @@ myFinance 에서 Codex bot 이 반복 발견하는 패턴 카탈로그. release-
 2. `gh api repos/{owner}/{repo}/pulls/{N}/comments --jq '.[] | select(.pull_request_review_id == {ID}) | {path, line, body}'` 로 finding 확인
 3. 카탈로그 매칭 → 즉시 반영 or 신규 패턴이면 근본 원칙 도출
 4. 수정 커밋 + **회귀 방지 유닛 테스트 페어링 필수**
-5. `@codex review` 재리뷰 요청 (P2 반영 시만)
+5. `@codex review` 재리뷰 요청 (봇 **P0/P1** 반영 시만 — P2 이하만 반영했으면 요청하지 않는다)
 6. 반복 3라운드 초과 시 → 근본 원칙 재검토 (이 파일 확장)
 
 ## 회귀 방지 테스트 원칙
 - 파일: `src/lib/{module}/__tests__/{module}.test.ts`
-- 이름: `it('conditionsEqual — {상황} (Codex #{PR} P2 회귀 방지)', ...)`
+- 이름: `it('conditionsEqual — {상황} (Codex #{PR} P0 회귀 방지)', ...)` — 봇 표기(P0/P1) 그대로 적는다
 - Assertion: 오탐 케이스가 이제는 `equal` (or 정상 판정) 임을 명시
 - 반대 케이스 (실제로 다를 때) 도 함께 검증 → 정규화가 과도하지 않음 증명
 

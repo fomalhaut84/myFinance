@@ -43,9 +43,9 @@ Agent(subagent_type="feature-implementer", model="opus", prompt="이슈 #{N} ({t
 ## Phase 3: 검증+리뷰 (quality-guardian)
 개발 완료 후:
 ```
-Agent(subagent_type="quality-guardian", model="opus", prompt="브랜치 {branch-name} 검증. 4종 세트 (lint/typecheck/test:run/build) + pr-review-toolkit self-review (규칙 8-1 기준) + verify skill (UI/API 변경 시). P1/P2 발견 시 feature-implementer 에게 반영 요청.")
+Agent(subagent_type="quality-guardian", model="opus", prompt="브랜치 {branch-name} 검증. 4종 세트 (lint/typecheck/test:run/build) + pr-review-toolkit self-review (규칙 8-1 기준) + verify skill (UI/API 변경 시). critical/major 발견 시 feature-implementer 에게 반영 요청.")
 ```
-P1/P2 발견 시 → Phase 2 로 되돌아가 반영 후 재검증.
+critical/major 발견 시 → Phase 2 로 되돌아가 반영 후 재검증.
 
 ## Phase 4: PR·Codex 대응 (release-manager)
 검증 통과 후:
@@ -60,12 +60,13 @@ Agent(subagent_type="release-manager", model="opus", prompt="PR #{N} 머지 완�
 ## Phase 5: 릴리즈 (직접 실행)
 마스터 이슈의 모든 서브가 완료되면:
 1. dev → main Release PR 생성 (마일스톤 요약 본문)
-2. 사용자 머지 대기
-3. `git checkout main && git pull`
-4. `git tag v{X.Y.Z} && git push origin v{X.Y.Z}`
-5. `gh release create v{X.Y.Z} --title "..." --notes "..."`
-6. Deploy workflow 모니터링 (`gh run list --workflow=deploy.yml --limit 1`)
-7. 배포 후 조치 안내 (텔레그램 `/reset`, 실서비스 flow 검증)
+2. **봇 리뷰 게이트** — 봇 P0/P1 = 0 까지 머지를 요청하지 않는다. 수정은 dev 로 fix PR → `@codex review`
+3. 사용자 머지 대기
+4. `git checkout main && git pull`
+5. `git tag v{X.Y.Z} && git push origin v{X.Y.Z}`
+6. `gh release create v{X.Y.Z} --title "..." --notes "..."`
+7. Deploy workflow 모니터링 (`gh run list --workflow=deploy.yml --limit 1`)
+8. 배포 후 조치 안내 (텔레그램 `/reset`, 실서비스 flow 검증)
 
 ## 데이터 흐름
 ```
@@ -77,8 +78,8 @@ Agent(subagent_type="release-manager", model="opus", prompt="PR #{N} 머지 완�
   ↓ (사용자 승인)
 [Phase 2: feature-implementer] → 브랜치 + 커밋
   ↓
-[Phase 3: quality-guardian] → 검증 결과 + P1/P2 목록
-  ↓ (P1/P2 = 0 시)
+[Phase 3: quality-guardian] → 검증 결과 + critical/major 목록
+  ↓ (critical/major = 0 시)
 [Phase 4: release-manager] → PR URL
   ↓ (Codex 리뷰 도착 시 반복)
 [Phase 4 (재)] → 반영 커밋
@@ -95,7 +96,7 @@ Agent(subagent_type="release-manager", model="opus", prompt="PR #{N} 머지 완�
 | feature-implementer 컨벤션 위반 | quality-guardian 이 발견 → 즉시 반영 요청 |
 | Codex 반복 라운드 > 5 | release-manager 가 근본 원칙 재검토 신호 (스코프 축소 or 원칙 확립) |
 | 배포 실패 | 로그 요약 + 사용자 확인 (예: 포트 충돌 → 별도 fix 이슈) |
-| Codex quota 소진 | 재리뷰 요청 중단, 자체 리뷰만으로 진행 (경험상 익일 새 quota) |
+| Codex quota 소진 | **릴리즈 PR 은 봇 회복까지 대기** (봇 P0/P1 = 0 게이트는 우회하지 않는다). 일반 PR 은 사전 에이전트 리뷰(critical/major = 0)로 진행하되 PR body 에 `봇: 미실행 (쿼터 소진, YYYY-MM-DD)` 를 명시하고 회복 후 `@codex review` (경험상 익일 새 quota) |
 
 ## 테스트 시나리오
 ### 정상 흐름 (신규 마일스톤)
@@ -104,7 +105,7 @@ Agent(subagent_type="release-manager", model="opus", prompt="PR #{N} 머지 완�
 3. Phase 1: spec-planner → 마스터 스펙 + 5개 서브이슈 발행
 4. 사용자 승인
 5. Phase 2: feature-implementer → 첫 서브이슈 브랜치·커밋
-6. Phase 3: quality-guardian → 검증 통과 (P1/P2 = 0)
+6. Phase 3: quality-guardian → 검증 통과 (critical/major = 0)
 7. Phase 4: release-manager → PR 생성
 8. Codex 리뷰 → Phase 4 재실행 (반영)
 9. 사용자 "머지완료" → Phase 4 정리 + 다음 서브이슈 제안

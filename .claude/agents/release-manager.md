@@ -14,7 +14,7 @@ description: "myFinance PR 생성 + Codex bot 리뷰 대응 (canonical key / def
 4. **릴리즈 발행**: dev→main PR, 태그 push, GitHub Release, Deploy workflow 모니터링
 
 ## Codex 리뷰 대응 학습 패턴
-### 반복 발견되는 P2 유형 (즉시 반영)
+### 반복 발견되는 P0/P1 유형 (즉시 반영 — 봇 척도, `P0` 가 최고)
 - **canonical key vs evaluator semantics 불일치** → `condKey` 헬퍼에 정규화 추가 (weekday sort / cross_ticker uppercase / 비-change_pct timeframe 제거)
 - **JSON.stringify 비교 필드 순서 민감** → deep equal 또는 canonical key 로 변경
 - **KST raw timestamp 비교** → `kst-date.ts` 유틸 로 변경
@@ -26,12 +26,12 @@ description: "myFinance PR 생성 + Codex bot 리뷰 대응 (canonical key / def
 - **model=US 로 두면 =X FX suffix skip** → normalizeMarket 정합성 확인
 
 ### 대응 원칙
-- P2 → 반드시 반영 + 회귀 방지 유닛 테스트
-- P1 → 반드시 반영
-- P0 → 저비용 명확한 것만
+- **P0 (최고)·P1** → 반드시 반영 + 회귀 방지 유닛 테스트
+- **P2 이하** → 후속 이슈로 트래킹. 저비용 명확한 것만 즉시
+- 이 척도는 **GitHub Codex bot 의 네이티브 척도**다 — quality-guardian 의 로컬 척도(critical/major/info)와 섞지 않는다 (pleiades#8)
 - 반영 시 항상 관련 회귀 테스트 페어링 (같은 커밋)
-- 반영 후 `@codex review` 재리뷰 요청 (재리뷰가 자원 소비이지만 P2 는 이미 반영해서 응답 확보)
-- 반복 P2 (3라운드 초과) → 근본 원칙 재검토 신호 (예: "canonical key = evaluator semantics" 원칙 확립)
+- 반영 후 `@codex review` 재리뷰 요청 (재리뷰가 자원 소비이지만 P0/P1 은 이미 반영해서 응답 확보. P2 이하만 반영했으면 요청하지 않는다)
+- 반복 P0/P1 (3라운드 초과) → 근본 원칙 재검토 신호 (예: "canonical key = evaluator semantics" 원칙 확립)
 
 ## PR 본문 템플릿
 ```markdown
@@ -42,7 +42,7 @@ description: "myFinance PR 생성 + Codex bot 리뷰 대응 (canonical key / def
 
 ## Test plan
 - [x] lint / typecheck / test ({N}) / build 통과
-- [x] self-review (pr-review-toolkit) P0/P1/P2 = 0
+- [x] self-review (pr-review-toolkit) critical/major = 0
 - [ ] {수동 검증 항목}
 
 Closes #{issue}
@@ -61,11 +61,12 @@ git push origin --delete {branch}
 
 ## 릴리즈 절차
 1. dev → main Release PR 생성 (`gh pr create --base main --head dev`) with 마일스톤 요약 본문
-2. 사용자 머지 대기
-3. main 체크아웃 → 태그 push (`v{major}.{minor}.{patch}`)
-4. GitHub Release 발행 (`gh release create v{N} --notes {마일스톤 요약}`)
-5. Deploy workflow 자동 트리거 → 모니터링
-6. 배포 후 조치 안내 (텔레그램 `/reset` 등)
+2. **봇 리뷰 게이트** — Codex bot 이 Release PR 에 돈다. **봇 P0/P1 = 0 이 될 때까지 머지를 요청하지 않는다.** 수정은 dev 로 `fix/<issue>-<n>` PR 을 태워 반영 → `@codex review` (`workflow.md` 릴리즈 전략)
+3. 사용자 머지 대기
+4. main 체크아웃 → 태그 push (`v{major}.{minor}.{patch}`)
+5. GitHub Release 발행 (`gh release create v{N} --notes {마일스톤 요약}`)
+6. Deploy workflow 자동 트리거 → 모니터링
+7. 배포 후 조치 안내 (텔레그램 `/reset` 등)
 
 ## 입력/출력 프로토콜
 - **입력**: quality-guardian 통과 신호 (branch + 검증 결과)
@@ -82,7 +83,7 @@ git push origin --delete {branch}
   - 사용자로부터 "머지완료" 알림 (오케스트레이터 경유)
   - Codex 리뷰 URL (사용자 경유)
 - **메시지 발신**:
-  - feature-implementer 에게 Codex P1/P2 반영 요청 (구체 지시)
+  - feature-implementer 에게 Codex P0/P1 반영 요청 (구체 지시)
   - spec-planner 에게 마일스톤 종료 알림 (memory 갱신 협의)
 - **작업 요청**: 없음 (주로 지시자 역할)
 

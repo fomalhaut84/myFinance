@@ -81,7 +81,7 @@ kill $(lsof -ti tcp:3000)
 - pr-review-toolkit 필수: 3+ 파일 / 200+ LOC / API 라우트 / 마이그레이션 / 신규 컴포넌트 / 보안 / AI
 
 ```
-Agent(subagent_type="pr-review-toolkit:code-reviewer", model="opus", prompt="Review branch <current> vs dev in <repo>. Context: ... Focus: ... Severity: P0/P1/P2. Under 250 words.")
+Agent(subagent_type="pr-review-toolkit:code-reviewer", model="opus", prompt="Review branch <current> vs dev in <repo>. Context: ... Focus: ... Severity: critical/major/info (로컬 척도, workflow.md 8-1). Under 250 words.")
 ```
 
 ## 실패 시 대응
