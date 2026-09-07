@@ -74,7 +74,7 @@ myFinance 의 `docs/specs/` 문서 규격. spec-planner 가 사용.
 
 ## 완료 조건
 - [ ] lint / typecheck / test / build 통과
-- [ ] 코드 리뷰 사전 critical/major = 0 · 봇 P0/P1 = 0
+- [ ] 코드 리뷰 사전 critical/major = 0 · 봇 P0/P1 = 0 (또는 `봇: 미실행 (사유, 날짜)` 명시 — 쿼터 소진 등, `milestone-workflow` 에러 표)
 - [ ] {수동 검증 항목}
 
 Closes #{issue}
@@ -82,7 +82,7 @@ Closes #{issue}
 
 ## 필수 요소
 - **`Closes #N`** — 자동 이슈 종료
-- **완료 조건 체크리스트** — 항상 4종 검증 + 사전 critical/major = 0 · 봇 P0/P1 = 0
+- **완료 조건 체크리스트** — 항상 4종 검증 + 사전 critical/major = 0 · 봇 P0/P1 = 0 (봇 불가 시 `봇: 미실행 (사유, 날짜)` 로 대체 표기. 릴리즈 PR 은 대체 불가)
 - **의존성** — 선행 있으면 명시, 없으면 "없음"
 - **`- [ ]`** 마크다운 체크박스 — 진행 상황 시각화
 
