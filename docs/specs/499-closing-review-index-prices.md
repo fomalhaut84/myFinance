@@ -92,7 +92,7 @@ marketState: string | null // quote.marketState (REGULAR/CLOSED/PRE/POST/…)
 - `marketTime` 이 `null` 이면 해당 표기를 생략 (거짓 정보 금지).
 - **기존 `조회 시각:` 라인은 유지** — "도구를 호출한 시각" 과 "시세가 찍힌 시각" 은 다른 의미이므로 둘 다 남기고 레이블로 구분.
 
-**KST 정규화**: 기존 KST 유틸 파일 `src/lib/kst-date.ts` 를 재사용한다. 다만 현재 export 는 `kstMidnightUtc` / `isSameOrFutureKstDay` / `kstDayDiff` 뿐이고 **표기용 포맷 함수가 없다** → 같은 파일에 `formatKstDateTime(d: Date): string` (`MM-DD HH:mm KST`) 을 추가한다. 새 KST 오프셋 상수를 다른 파일에 중복 정의하지 않는다 (기존 `KST_OFFSET_MS` 재사용).
+**KST 정규화**: 기존 KST 유틸 파일 `src/lib/kst-date.ts` 를 재사용한다. 다만 현재 export 는 `kstMidnightUtc` / `isSameOrFutureKstDay` / `kstDayDiff` 뿐이고 **표기용 포맷 함수가 없다** → 같은 파일에 `formatKstDateTime(d: Date): string` (`MM-DD HH:mm KST`, 도구 호출 시각 등 '지금' 인 값 전용) 과 `formatKstDateTimeFull` (`YYYY-MM-DD HH:mm KST`) 을 추가한다. 외부에서 받은 시각 (야후 시세 기준 시각, PriceCache 기록 시각) 은 거래정지 종목·영구 stale 캐시처럼 몇 달 전일 수 있으므로 **항상 연도를 포함** 한다 (사전 리뷰 P1 + Codex #501 P2). 새 KST 오프셋 상수를 다른 파일에 중복 정의하지 않는다 (기존 `KST_OFFSET_MS` 재사용).
 
 ### 3.C 지수 티커 처리 — `src/mcp/tools/market.ts`, `src/lib/price-fetcher.ts`
 

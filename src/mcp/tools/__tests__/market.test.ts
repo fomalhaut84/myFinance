@@ -65,9 +65,22 @@ describe('getPrices — 지수 티커 표기 (#499)', () => {
 
     const text = (await getPrices({ tickers: ['^KS11'] })).content[0].text
 
-    expect(text).toContain('시세 기준: 09-17 15:30 KST (마감)')
+    expect(text).toContain('시세 기준: 2026-09-17 15:30 KST (마감)')
     // 호출 시각 라인은 별개 의미로 유지
     expect(text).toContain('조회 시각:')
+  })
+
+  it('작년 시세 시각 (거래정지 등) 은 연도가 드러나 올해 값으로 오인되지 않음 (Codex #501 P2)', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-09-17T06:40:00Z'))
+    vi.mocked(fetchQuote).mockResolvedValueOnce(
+      kospiQuote({ marketTime: new Date('2025-05-01T06:30:00Z'), marketState: 'CLOSED' }),
+    )
+
+    const text = (await getPrices({ tickers: ['^KS11'] })).content[0].text
+
+    expect(text).toContain('시세 기준: 2025-05-01 15:30 KST (마감)')
+    expect(text).not.toContain('시세 기준: 05-01')
   })
 
   it('marketTime 이 없으면 시세 기준 라인을 생략', async () => {
@@ -98,8 +111,8 @@ describe('getPrices — 지수 티커 표기 (#499)', () => {
 
     const text = (await getPrices({ tickers: ['^KS11', 'AAPL'] })).content[0].text
 
-    expect(text).toContain('· 시세 기준 09-17 15:30 KST (마감)')
-    expect(text).toContain('· 시세 기준 09-17 05:00 KST (장중)')
+    expect(text).toContain('· 시세 기준 2026-09-17 15:30 KST (마감)')
+    expect(text).toContain('· 시세 기준 2026-09-17 05:00 KST (장중)')
     expect(text).not.toContain('\n시세 기준:')
     expect(text).toContain('$252.82')
   })

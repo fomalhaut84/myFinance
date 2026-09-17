@@ -53,9 +53,9 @@ const kstMonthDayTime = (s: Date) =>
   `${pad2(s.getUTCMonth() + 1)}-${pad2(s.getUTCDate())} ${pad2(s.getUTCHours())}:${pad2(s.getUTCMinutes())} KST`
 
 /**
- * KST 기준 시각을 `MM-DD HH:mm KST` 로 표기 (#499 — 라이브 시세 기준 시각·조회 시각용).
- * 연도가 없으므로 "지금 근처" 가 보장되는 값에만 쓴다. 캐시처럼 오래됐을 수 있는
- * 시각은 `formatKstDateTimeFull` 을 사용.
+ * KST 기준 시각을 `MM-DD HH:mm KST` 로 표기 (#499 — 도구 호출 시각 등 '지금' 인 값 전용).
+ * 연도가 없으므로 외부에서 받은 시각 (시세 기준 시각, 캐시 기록 시각) 에는 쓰지 말고
+ * `formatKstDateTimeFull` 을 사용 (Codex #501 P2).
  */
 export function formatKstDateTime(d: Date): string {
   return kstMonthDayTime(kstShifted(d))

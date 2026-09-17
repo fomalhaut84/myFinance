@@ -1,7 +1,7 @@
 import { prisma } from '@/lib/prisma'
 import { formatKRW, formatUSD, formatIndexPoint } from '@/lib/format'
 import { isIndexTicker } from '@/lib/price-fetcher-utils'
-import { formatKstDateTime } from '@/lib/kst-date'
+import { formatKstDateTimeFull } from '@/lib/kst-date'
 
 /**
  * 계좌명 → Account ID 변환
@@ -120,6 +120,8 @@ const MARKET_STATE_LABELS: Record<string, string> = {
  * 시세 기준 시각 표기 (#499): "09-17 15:30 KST (마감)".
  *
  * `marketTime` 이 없으면 null — 호출 시각을 시세 시각인 양 표기하지 않는다.
+ * 연도를 항상 포함한다 — 거래정지/상폐 종목처럼 야후가 유효하지만 오래된
+ * `regularMarketTime` 을 주는 경우 MM-DD 만 찍으면 올해 값처럼 읽힌다 (Codex #501 P2).
  * `marketState` 가 없으면 괄호 없이 시각만 표기.
  */
 export function formatMarketStamp(
@@ -127,7 +129,7 @@ export function formatMarketStamp(
   marketState?: string | null,
 ): string | null {
   if (!marketTime) return null
-  const at = formatKstDateTime(marketTime)
+  const at = formatKstDateTimeFull(marketTime)
   const state = marketState?.trim()
   if (!state) return at
   return `${at} (${MARKET_STATE_LABELS[state.toUpperCase()] ?? state})`

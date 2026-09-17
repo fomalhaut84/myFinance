@@ -64,8 +64,9 @@ const EPOCH_MS_THRESHOLD = 1e11
  * 드물게 epoch milliseconds / ISO 문자열로도 온다. 해석 불가하면 `null` —
  * 거짓 시각을 만들지 않는다.
  *
- * 숫자를 무조건 seconds 로 간주하면 ms 입력이 서기 5만년대로 튀는데, 표기 포맷
- * (`MM-DD HH:mm KST`) 에 연도가 없어 그럴듯한 거짓 시각이 된다 (사전 리뷰 P1).
+ * 숫자를 무조건 seconds 로 간주하면 ms 입력이 서기 5만년대로 튀어 거짓 시각이
+ * 된다 (사전 리뷰 P1). 표기에 연도를 포함해도 (Codex #501 P2) 단위 오해석 자체는
+ * 여기서 막아야 한다.
  * → 크기로 seconds/ms 를 가르고, sanity window 밖은 null.
  *
  * 현재 시세 전용 — sanity window 하한이 2000년이므로 과거 캔들(historical OHLCV)
