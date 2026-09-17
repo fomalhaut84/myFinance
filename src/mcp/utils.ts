@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma'
 import { formatKRW, formatUSD, formatQuoteValue as formatQuoteValueShared } from '@/lib/format'
 import { formatKstDateTimeFull } from '@/lib/kst-date'
+import { normalizeMarket } from '@/lib/market-hours'
 
 /**
  * 계좌명 → Account ID 변환
@@ -106,7 +107,7 @@ export function formatQuoteValue(ticker: string, value: number, currency: string
  * 야후 `marketState` → 한국어 라벨. 미지의 값은 원문 그대로 노출 (#499).
  *
  * 실측: 정규장 전 AAPL 이 `PREPRE`, 마감 후 `^KS11` 이 `POST` 를 반환한다.
- * 한국 지수엔 애프터마켓 개념이 없어 POST 계열은 '장 마감 후' 로 중립 표기.
+ * 한국장은 정규장 마감 후 거래가 없으므로 POST 계열은 '장 마감 후' 가 기본값.
  */
 const MARKET_STATE_LABELS: Record<string, string> = {
   REGULAR: '장중',
@@ -118,22 +119,49 @@ const MARKET_STATE_LABELS: Record<string, string> = {
 }
 
 /**
+ * 미국장 전용 라벨 오버라이드 (#500).
+ *
+ * 미국장은 정규장 마감 후에도 애프터마켓 거래가 이어져 시세가 계속 움직인다.
+ * '장 마감 후' 로 뭉뚱그리면 "더 이상 안 움직이는 값" 으로 읽혀 AI/사용자가
+ * 마감가와 시간외가를 구분하지 못한다. PRE 계열은 한국장의 시가 단일가 개념과
+ * 겹쳐 '프리마켓'/'장 시작 전' 이 양쪽에 무해하므로 분기하지 않는다.
+ */
+const US_MARKET_STATE_LABELS: Record<string, string> = {
+  POST: '시간외',
+  POSTPOST: '시간외',
+}
+
+/**
+ * 장 상태 라벨 확정. `market` 은 `QuoteResult.market` (정규화된 'KR'|'US'|'FX'|'OTHER')
+ * 이지만, 레거시 PriceCache 행의 raw exchange 코드 (`NMS` 등) 도 들어올 수 있어
+ * `normalizeMarket` 을 한 번 더 태운다. 미지정이면 한국장 기준 기본 라벨.
+ */
+function marketStateLabel(state: string, market?: string | null): string {
+  const key = state.toUpperCase()
+  const usOverride =
+    market && normalizeMarket(market) === 'US' ? US_MARKET_STATE_LABELS[key] : undefined
+  return usOverride ?? MARKET_STATE_LABELS[key] ?? state
+}
+
+/**
  * 시세 기준 시각 표기 (#499): "09-17 15:30 KST (마감)".
  *
  * `marketTime` 이 없으면 null — 호출 시각을 시세 시각인 양 표기하지 않는다.
  * 연도를 항상 포함한다 — 거래정지/상폐 종목처럼 야후가 유효하지만 오래된
  * `regularMarketTime` 을 주는 경우 MM-DD 만 찍으면 올해 값처럼 읽힌다 (Codex #501 P2).
  * `marketState` 가 없으면 괄호 없이 시각만 표기.
+ * `market` 은 장 상태 라벨의 시장별 분기용 (#500) — 없으면 기본 라벨.
  */
 export function formatMarketStamp(
   marketTime: Date | null | undefined,
   marketState?: string | null,
+  market?: string | null,
 ): string | null {
   if (!marketTime) return null
   const at = formatKstDateTimeFull(marketTime)
   const state = marketState?.trim()
   if (!state) return at
-  return `${at} (${MARKET_STATE_LABELS[state.toUpperCase()] ?? state})`
+  return `${at} (${marketStateLabel(state, market)})`
 }
 
 /**
