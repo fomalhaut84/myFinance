@@ -1,13 +1,14 @@
 /**
- * `주가` / 시세 응답 메시지 포맷 (pure) — #500.
+ * 봇 시세 표기 포맷 (pure) — #500.
  *
- * price.ts 본체는 prisma / yahoo 인스턴스를 top-level 로 잡아 유닛 테스트가 어렵다.
- * 표기 규칙만 이 모듈로 분리해 회귀 테스트 대상으로 만든다.
+ * `주가` 응답과 `관심종목` 목록이 대상. price.ts / watchlist.ts 본체는 prisma /
+ * yahoo 인스턴스를 top-level 로 잡아 유닛 테스트가 어려우므로 표기 규칙만
+ * 이 모듈로 분리해 회귀 테스트 대상으로 만든다.
  */
 
 import { formatQuoteValue } from '@/lib/format'
 import type { QuoteResult } from '@/lib/price-fetcher'
-import { formatUSD } from '../utils/formatter'
+import { formatUSD, formatPercent } from '../utils/formatter'
 import { escapeHtml, h } from '../utils/telegram'
 
 /**
@@ -36,6 +37,28 @@ export function formatChange(ticker: string, change: number, currency: string): 
 export function formatChangePercent(changePercent: number): string {
   const sign = changePercent >= 0 ? '+' : ''
   return ` (${sign}${changePercent.toFixed(2)}%)`
+}
+
+/** `관심종목` 목록의 시세 행 (PriceCache 또는 실시간 fallback). */
+export interface WatchlistPriceRow {
+  price: number
+  currency: string
+  changePercent: number | null
+}
+
+/**
+ * 관심종목 한 줄의 현재가 표기 (#500).
+ *
+ * 지수 (`^KS11`) 도 관심종목으로 등록 가능하고 cross_ticker 로 PriceCache 에 적재되므로
+ * 여기서도 통화가 아닌 포인트로 표기해야 한다. 시세가 없으면 '시세 없음'.
+ */
+export function formatWatchlistPriceInfo(
+  ticker: string,
+  price: WatchlistPriceRow | null | undefined,
+): string {
+  if (!price) return '시세 없음'
+  const changeStr = price.changePercent != null ? ` (${formatPercent(price.changePercent)})` : ''
+  return `${formatQuoteAmount(ticker, price.price, price.currency)}${changeStr}`
 }
 
 /**

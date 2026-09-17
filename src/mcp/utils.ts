@@ -132,9 +132,10 @@ const US_MARKET_STATE_LABELS: Record<string, string> = {
 }
 
 /**
- * 장 상태 라벨 확정. `market` 은 `QuoteResult.market` (정규화된 'KR'|'US'|'FX'|'OTHER')
- * 이지만, 레거시 PriceCache 행의 raw exchange 코드 (`NMS` 등) 도 들어올 수 있어
- * `normalizeMarket` 을 한 번 더 태운다. 미지정이면 한국장 기준 기본 라벨.
+ * 장 상태 라벨 확정. `market` 은 이미 정규화된 `QuoteResult.market`
+ * ('KR'|'US'|'FX'|'OTHER') 이므로 `normalizeMarket` 은 방어적 no-op 이다 —
+ * 호출부가 raw exchange 코드 (`NMS` 등) 를 넘기게 바뀌어도 라벨이 조용히
+ * 틀리지 않도록 한 겹 둔다. 미지정이면 한국장 기준 기본 라벨.
  */
 function marketStateLabel(state: string, market?: string | null): string {
   const key = state.toUpperCase()

@@ -262,13 +262,14 @@ describe('getPrices — 장 상태 라벨 시장별 분기 (#500)', () => {
     expect(text).not.toContain('장 마감 후')
   })
 
-  it('POSTPOST 도 미국 종목이면 (시간외)', async () => {
+  it('POSTPOST 도 미국 종목이면 (시간외) — raw exchange 코드는 정규화 누락 시 방어층', async () => {
     vi.mocked(fetchQuote).mockResolvedValueOnce({
       ticker: 'AAPL',
       displayName: 'Apple Inc.',
       price: 252.82,
       currency: 'USD',
-      // 레거시 PriceCache 행의 raw exchange 코드도 US 로 정규화되어야 한다
+      // 현재 호출부는 정규화된 'US' 를 넘긴다. 호출부가 야후 raw 코드를 넘기도록
+      // 바뀌어도 라벨이 조용히 틀리지 않는지 확인하는 방어층 테스트.
       market: 'NMS',
       change: null,
       changePercent: null,

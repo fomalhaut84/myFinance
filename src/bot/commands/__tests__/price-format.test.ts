@@ -7,7 +7,12 @@
 
 import { describe, expect, it } from 'vitest'
 import type { QuoteResult } from '@/lib/price-fetcher'
-import { buildQuoteMessage, formatChange, formatQuoteAmount } from '../price-format'
+import {
+  buildQuoteMessage,
+  formatChange,
+  formatQuoteAmount,
+  formatWatchlistPriceInfo,
+} from '../price-format'
 
 function quote(overrides: Partial<QuoteResult> = {}): QuoteResult {
   return {
@@ -101,5 +106,35 @@ describe('buildQuoteMessage — 일반 종목 표기 유지 (#500 리팩터 무�
     const text = buildQuoteMessage(quote(), '⚠️ 캐시 데이터')
 
     expect(text).toContain('\n\n⚠️ 캐시 데이터')
+  })
+})
+
+describe('formatWatchlistPriceInfo — 관심종목 목록 (#500 사전 리뷰 P1)', () => {
+  it('지수 관심종목은 포인트로 표기 (₩ 없음)', () => {
+    const info = formatWatchlistPriceInfo('^KS11', {
+      price: 6717.28,
+      currency: 'KRW',
+      changePercent: -0.18,
+    })
+
+    expect(info).toBe('6,717.28 (-0.2%)')
+    expect(info).not.toContain('₩')
+    expect(info).not.toContain('원')
+  })
+
+  it('한국 종목은 기존 ₩ 표기 유지', () => {
+    expect(
+      formatWatchlistPriceInfo('005930.KS', { price: 70123.4, currency: 'KRW', changePercent: 1.25 }),
+    ).toBe('₩70,123 (+1.3%)')
+  })
+
+  it('미국 종목은 기존 $ 표기 유지', () => {
+    expect(
+      formatWatchlistPriceInfo('AAPL', { price: 252.82, currency: 'USD', changePercent: null }),
+    ).toBe('$252.82')
+  })
+
+  it('시세 행이 없으면 시세 없음', () => {
+    expect(formatWatchlistPriceInfo('^KS11', null)).toBe('시세 없음')
   })
 })
