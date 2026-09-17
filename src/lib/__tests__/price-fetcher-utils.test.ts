@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest'
 // price-fetcher 본체 (Prisma / yahoo top-level 로드) 대신 순수 유틸 모듈에서 직접 import →
 // Prisma generate / DATABASE_URL 없이도 테스트 가능 (Codex #429 P2).
-import { mergeCrossTickersIntoMeta } from '../price-fetcher-utils'
+import {
+  mergeCrossTickersIntoMeta,
+  isIndexTicker,
+  normalizeMarketTime,
+} from '../price-fetcher-utils'
 import { normalizeMarket } from '../market-hours'
 
 describe('mergeCrossTickersIntoMeta (Codex #428 P2 회귀 방지)', () => {
@@ -60,5 +64,45 @@ describe('mergeCrossTickersIntoMeta (Codex #428 P2 회귀 방지)', () => {
     mergeCrossTickersIntoMeta(meta, new Set(['SPY', 'QQQ']))
     expect(meta.has('SPY')).toBe(true)
     expect(meta.has('QQQ')).toBe(true)
+  })
+})
+
+describe('isIndexTicker (#499)', () => {
+  it('^ prefix 는 지수', () => {
+    expect(isIndexTicker('^KS11')).toBe(true)
+    expect(isIndexTicker('^GSPC')).toBe(true)
+    expect(isIndexTicker(' ^DJI')).toBe(true)
+  })
+
+  it('일반 종목 / ETF / FX 는 지수 아님', () => {
+    expect(isIndexTicker('AAPL')).toBe(false)
+    expect(isIndexTicker('005930.KS')).toBe(false)
+    expect(isIndexTicker('USDKRW=X')).toBe(false)
+    expect(isIndexTicker('')).toBe(false)
+  })
+})
+
+describe('normalizeMarketTime (#499)', () => {
+  it('Date 는 그대로', () => {
+    const d = new Date('2026-09-17T06:30:00Z')
+    expect(normalizeMarketTime(d)?.toISOString()).toBe('2026-09-17T06:30:00.000Z')
+  })
+
+  it('epoch seconds 숫자는 ms 로 환산', () => {
+    expect(normalizeMarketTime(1789626600)?.toISOString()).toBe('2026-09-17T06:30:00.000Z')
+  })
+
+  it('ISO 문자열도 파싱', () => {
+    expect(normalizeMarketTime('2026-09-17T06:30:00Z')?.toISOString()).toBe('2026-09-17T06:30:00.000Z')
+  })
+
+  it('해석 불가한 값은 null (거짓 시각 생성 금지)', () => {
+    expect(normalizeMarketTime(undefined)).toBeNull()
+    expect(normalizeMarketTime(null)).toBeNull()
+    expect(normalizeMarketTime('')).toBeNull()
+    expect(normalizeMarketTime('not-a-date')).toBeNull()
+    expect(normalizeMarketTime(0)).toBeNull()
+    expect(normalizeMarketTime(Number.NaN)).toBeNull()
+    expect(normalizeMarketTime(new Date('invalid'))).toBeNull()
   })
 })

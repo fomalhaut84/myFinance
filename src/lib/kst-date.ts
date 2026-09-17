@@ -31,3 +31,25 @@ export function isSameOrFutureKstDay(d: Date, ref: Date): boolean {
 export function kstDayDiff(d: Date, ref: Date): number {
   return Math.round((kstMidnightUtc(d) - kstMidnightUtc(ref)) / DAY_MS)
 }
+
+/**
+ * `d` 를 KST 로 shift 한 Date — 각 구성요소를 `getUTC*` 로 읽으면 KST 값이 된다.
+ * 서버 로컬 타임존에 의존하지 않기 위한 내부 헬퍼.
+ */
+function kstShifted(d: Date): Date {
+  return new Date(d.getTime() + KST_OFFSET_MS)
+}
+
+const pad2 = (n: number) => String(n).padStart(2, '0')
+
+/** KST 캘린더 날짜를 `YYYY-MM-DD` 로 표기 (#499 — 프롬프트의 '오늘' 명시용). */
+export function formatKstDate(d: Date): string {
+  const s = kstShifted(d)
+  return `${s.getUTCFullYear()}-${pad2(s.getUTCMonth() + 1)}-${pad2(s.getUTCDate())}`
+}
+
+/** KST 기준 시각을 `MM-DD HH:mm KST` 로 표기 (#499 — 시세 기준 시각 표기용). */
+export function formatKstDateTime(d: Date): string {
+  const s = kstShifted(d)
+  return `${pad2(s.getUTCMonth() + 1)}-${pad2(s.getUTCDate())} ${pad2(s.getUTCHours())}:${pad2(s.getUTCMinutes())} KST`
+}

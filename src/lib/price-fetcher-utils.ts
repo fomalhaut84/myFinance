@@ -40,3 +40,35 @@ export function mergeCrossTickersIntoMeta(
     })
   }
 }
+
+/**
+ * 지수 티커 판별 (#499). 야후는 지수를 `^` prefix 로 제공한다 (`^KS11`, `^GSPC` 등).
+ * 지수는 (1) 통화가 아니라 포인트로 표기하고 (2) 보유·관심종목이 아니라
+ * 주가 갱신 cron 의 refresh 대상이 아니므로 PriceCache 에 적재하지 않는다.
+ */
+export function isIndexTicker(ticker: string): boolean {
+  return ticker.trim().startsWith('^')
+}
+
+/**
+ * yahoo-finance2 의 `regularMarketTime` 정규화 (#499).
+ *
+ * 라이브러리/응답 버전에 따라 `Date` 또는 epoch seconds (숫자) 로 오고,
+ * 드물게 ISO 문자열로도 온다. 해석 불가하면 `null` — 거짓 시각을 만들지 않는다.
+ */
+export function normalizeMarketTime(raw: unknown): Date | null {
+  if (raw instanceof Date) {
+    return Number.isNaN(raw.getTime()) ? null : raw
+  }
+  if (typeof raw === 'number' && Number.isFinite(raw)) {
+    // epoch seconds 로 간주 (야후 raw 응답 규격). 0 이하는 무효로 취급.
+    if (raw <= 0) return null
+    const d = new Date(raw * 1000)
+    return Number.isNaN(d.getTime()) ? null : d
+  }
+  if (typeof raw === 'string' && raw.trim() !== '') {
+    const d = new Date(raw)
+    return Number.isNaN(d.getTime()) ? null : d
+  }
+  return null
+}

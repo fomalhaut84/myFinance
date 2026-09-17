@@ -1,7 +1,7 @@
 import { prisma } from '@/lib/prisma'
 import { fetchQuote } from '@/lib/price-fetcher'
 import { formatDate, DEFAULT_FX_RATE_USD_KRW } from '@/lib/format'
-import { toolResult, toolError, formatMoney } from '../utils'
+import { toolResult, toolError, formatQuoteValue, formatMarketStamp } from '../utils'
 
 /**
  * get_prices: 보유 종목 또는 지정 종목의 현재 시세
@@ -20,29 +20,54 @@ export async function getPrices(args: { tickers?: string[] }) {
         requestedTickers.map((ticker) => fetchQuote(ticker))
       )
 
-      const lines = [`## 실시간 시세 (${requestedTickers.length}종목)`]
+      // 종목별로 시세 기준 시각이 다를 수 있어 라인과 stamp 를 분리해 모은 뒤 조합 (#499)
+      const entries: { text: string; stamp: string | null }[] = []
       for (let i = 0; i < requestedTickers.length; i++) {
         const ticker = requestedTickers[i]
         const result = results[i]
         if (result.status === 'fulfilled') {
           const quote = result.value
-          const priceStr = formatMoney(quote.price, quote.currency)
+          const priceStr = formatQuoteValue(ticker, quote.price, quote.currency)
           const changeStr = quote.changePercent != null
             ? ` (${quote.changePercent >= 0 ? '+' : ''}${quote.changePercent.toFixed(2)}%)`
             : ''
-          lines.push(`- ${quote.displayName} (${ticker}): ${priceStr}${changeStr}`)
+          entries.push({
+            text: `- ${quote.displayName} (${ticker}): ${priceStr}${changeStr}`,
+            stamp: formatMarketStamp(quote.marketTime, quote.marketState),
+          })
         } else {
           // 실시간 실패 → PriceCache fallback
+          // (지수 티커는 캐시에 적재하지 않으므로 여기서 미스 → '조회 실패')
           const cached = await prisma.priceCache.findUnique({ where: { ticker } })
           if (cached) {
-            const priceStr = formatMoney(cached.price, cached.currency)
-            lines.push(`- ${cached.displayName} (${ticker}): ${priceStr} [캐시]`)
+            const priceStr = formatQuoteValue(ticker, cached.price, cached.currency)
+            entries.push({ text: `- ${cached.displayName} (${ticker}): ${priceStr} [캐시]`, stamp: null })
           } else {
-            lines.push(`- ${ticker}: 조회 실패`)
+            entries.push({ text: `- ${ticker}: 조회 실패`, stamp: null })
           }
         }
       }
-      lines.push(`\n조회 시각: ${formatDate(new Date())}`)
+
+      // 모든 라인의 기준 시각이 동일하면 하단 1줄, 다르거나 일부만 있으면 라인별 표기.
+      const stamps = entries.map((e) => e.stamp)
+      const uniqueStamps = new Set(stamps.filter((s): s is string => s !== null))
+      const sharedStamp =
+        stamps.length > 0 && stamps.every((s) => s !== null) && uniqueStamps.size === 1
+          ? stamps[0]
+          : null
+
+      const lines = [`## 실시간 시세 (${requestedTickers.length}종목)`]
+      for (const entry of entries) {
+        lines.push(
+          !sharedStamp && entry.stamp ? `${entry.text} · 시세 기준 ${entry.stamp}` : entry.text,
+        )
+      }
+
+      const footer: string[] = []
+      if (sharedStamp) footer.push(`시세 기준: ${sharedStamp}`)
+      footer.push(`조회 시각: ${formatDate(new Date())}`)
+      lines.push(`\n${footer.join('\n')}`)
+
       return toolResult(lines.join('\n'))
     }
 
@@ -68,7 +93,7 @@ export async function getPrices(args: { tickers?: string[] }) {
 
     const lines = [`## 시세 (${displayPrices.length}종목)`]
     for (const p of displayPrices) {
-      const priceStr = formatMoney(p.price, p.currency)
+      const priceStr = formatQuoteValue(p.ticker, p.price, p.currency)
       const changeStr = p.changePercent != null
         ? ` (${p.changePercent >= 0 ? '+' : ''}${p.changePercent.toFixed(2)}%)`
         : ''

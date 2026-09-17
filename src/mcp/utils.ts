@@ -1,5 +1,7 @@
 import { prisma } from '@/lib/prisma'
-import { formatKRW, formatUSD } from '@/lib/format'
+import { formatKRW, formatUSD, formatIndexPoint } from '@/lib/format'
+import { isIndexTicker } from '@/lib/price-fetcher-utils'
+import { formatKstDateTime } from '@/lib/kst-date'
 
 /**
  * 계좌명 → Account ID 변환
@@ -89,6 +91,39 @@ export function toolError(error: unknown) {
  */
 export function formatMoney(amount: number, currency: string): string {
   return currency === 'USD' ? formatUSD(amount) : formatKRW(amount)
+}
+
+/**
+ * 시세 값 포맷 (#499). 지수 티커는 통화가 아니라 포인트로 표기한다.
+ * 예) `^KS11` → "6,717.28", `AAPL` → "$252.82"
+ */
+export function formatQuoteValue(ticker: string, value: number, currency: string): string {
+  return isIndexTicker(ticker) ? formatIndexPoint(value) : formatMoney(value, currency)
+}
+
+/** 야후 `marketState` → 한국어 라벨. 미지의 값은 원문 그대로 노출 (#499) */
+const MARKET_STATE_LABELS: Record<string, string> = {
+  REGULAR: '장중',
+  CLOSED: '마감',
+  PRE: '프리마켓',
+  POST: '애프터마켓',
+}
+
+/**
+ * 시세 기준 시각 표기 (#499): "09-17 15:30 KST (마감)".
+ *
+ * `marketTime` 이 없으면 null — 호출 시각을 시세 시각인 양 표기하지 않는다.
+ * `marketState` 가 없으면 괄호 없이 시각만 표기.
+ */
+export function formatMarketStamp(
+  marketTime: Date | null | undefined,
+  marketState?: string | null,
+): string | null {
+  if (!marketTime) return null
+  const at = formatKstDateTime(marketTime)
+  const state = marketState?.trim()
+  if (!state) return at
+  return `${at} (${MARKET_STATE_LABELS[state.toUpperCase()] ?? state})`
 }
 
 /**

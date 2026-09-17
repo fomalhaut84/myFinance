@@ -2,7 +2,7 @@ import YahooFinance from 'yahoo-finance2'
 import { prisma } from './prisma'
 import { normalizeMarket } from './market-hours'
 import { collectCrossTickers } from './custom-strategy/evaluator'
-import { mergeCrossTickersIntoMeta } from './price-fetcher-utils'
+import { mergeCrossTickersIntoMeta, isIndexTicker, normalizeMarketTime } from './price-fetcher-utils'
 export { mergeCrossTickersIntoMeta } from './price-fetcher-utils'
 
 const yahooFinance = new YahooFinance()
@@ -34,6 +34,10 @@ export interface QuoteResult {
   market: string
   change: number | null
   changePercent: number | null
+  /** 시세가 찍힌 시각 (야후 `regularMarketTime`). 해석 불가 시 null (#499) */
+  marketTime: Date | null
+  /** 장 상태 (야후 `marketState`: REGULAR/CLOSED/PRE/POST/…). 없으면 null (#499) */
+  marketState: string | null
 }
 
 /**
@@ -69,20 +73,39 @@ export async function fetchQuote(ticker: string, options?: { signal?: AbortSigna
   // Yahoo의 raw exchange 코드(NCM/NYQ/KSC 등)를 정규화해 저장 — 비교 일관성 보장
   const market = normalizeMarket(quote.exchange ?? '', ticker)
   const displayName = quote.shortName ?? quote.longName ?? ticker
+  // #499: 시세 기준 시각/장 상태 — 반환값이 언제 기준인지 판별 가능하게 함께 전달
+  const marketTime = normalizeMarketTime(quote.regularMarketTime)
+  const marketState = typeof quote.marketState === 'string' ? quote.marketState : null
 
   // PriceCache upsert — 존재하면 갱신, 없으면 생성 (fallback 조회 시 캐시 적재)
   // market은 update 분기에도 포함 — 기존 raw 코드가 신규 정규화 코드로 자연 수렴되도록 보장
-  try {
-    await prisma.priceCache.upsert({
-      where: { ticker },
-      update: { price, change, changePercent: changePct, market },
-      create: { ticker, displayName, market, currency, price, change, changePercent: changePct },
-    })
-  } catch (error) {
-    console.error(`[price-fetcher] 캐시 갱신 실패 (${ticker}):`, error)
+  //
+  // #499: 지수 티커(^KS11 등)는 제외. 보유·관심종목이 아니라 주가 갱신 cron 의 refresh
+  // 대상이 아니므로, 캐시에 넣으면 영구 stale 행이 되어 실시간 실패 시 fallback 이
+  // 오래된 값을 조용히 반환한다. 적재하지 않으면 fallback 도 미스 → '조회 실패' 로 정직하게 표시.
+  if (!isIndexTicker(ticker)) {
+    try {
+      await prisma.priceCache.upsert({
+        where: { ticker },
+        update: { price, change, changePercent: changePct, market },
+        create: { ticker, displayName, market, currency, price, change, changePercent: changePct },
+      })
+    } catch (error) {
+      console.error(`[price-fetcher] 캐시 갱신 실패 (${ticker}):`, error)
+    }
   }
 
-  return { ticker, displayName, price, currency, market, change, changePercent: changePct }
+  return {
+    ticker,
+    displayName,
+    price,
+    currency,
+    market,
+    change,
+    changePercent: changePct,
+    marketTime,
+    marketState,
+  }
 }
 
 /** yahoo-finance2 search API로 종목명 검색 (영문) */
