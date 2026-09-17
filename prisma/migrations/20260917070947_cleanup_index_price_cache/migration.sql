@@ -5,8 +5,10 @@
 -- refresh 대상이 아니라 영구 stale 로 남고, get_prices 가 실시간 조회에 실패하면 그 값을
 -- '[캐시]' 로 조용히 반환했다 → (읽기 지점 가드와 함께) 해당 행만 제거한다.
 --
--- Codex #501 P2: 보유/관심종목/활성 전략이 참조하는 지수 행은 refreshPrices() 가 정상
--- 갱신하는 유효 캐시이므로 삭제하지 않는다 (삭제 시 다음 refresh 까지 화면에 시세 공백).
+-- Codex #501 P2: 보유/관심종목/활성 전략(자기 티커 + cross_ticker)이 참조하는 지수 행은
+-- refreshPrices() 가 정상 갱신하는 유효 캐시이므로 삭제하지 않는다 (삭제 시 다음 refresh
+-- 까지 화면에 시세 공백). 활성 전략 자기 티커는 같은 PR 에서 refresh 집합에 추가됨
+-- (collectStrategyRefreshTickers) — 이 보존 집합과 refresh 집합은 항상 같아야 한다.
 --
 -- 스키마 변경 없음 (데이터 정리 전용). '^' 는 LIKE 의 와일드카드가 아니므로 prefix 매칭.
 DELETE FROM "PriceCache" pc

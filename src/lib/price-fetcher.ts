@@ -1,7 +1,7 @@
 import YahooFinance from 'yahoo-finance2'
 import { prisma } from './prisma'
 import { normalizeMarket } from './market-hours'
-import { collectCrossTickers } from './custom-strategy/evaluator'
+import { collectStrategyRefreshTickers } from './custom-strategy/evaluator'
 import { mergeCrossTickersIntoMeta, normalizeMarketTime } from './price-fetcher-utils'
 export { mergeCrossTickersIntoMeta } from './price-fetcher-utils'
 
@@ -193,11 +193,13 @@ async function doRefreshPrices(): Promise<RefreshResult> {
   // (SPY / VIX 등) 를 관심종목 등록 없이도 PriceCache 에 유지. 커스텀 전략 활성화된
   // 것만 대상. 메타는 mergeCrossTickersIntoMeta 로 placeholder 삽입 → upsert 시점에
   // quote.exchange 로 market 이 정확 값으로 자연 갱신.
+  // Codex #501 P2 (#499): 전략 자기 티커도 포함 — checkCustomStrategies 가 PriceCache 에서
+  // 읽으므로 보유·관심종목이 아닌 티커(지수 ^DJI 등)의 전략이 stale 로 평가되지 않게.
   const activeStrategies = await prisma.customStrategy.findMany({
     where: { isActive: true },
     select: { ticker: true, conditions: true },
   })
-  mergeCrossTickersIntoMeta(tickerMeta, collectCrossTickers(activeStrategies))
+  mergeCrossTickersIntoMeta(tickerMeta, collectStrategyRefreshTickers(activeStrategies))
 
   // FX 환율 추가
   tickerMeta.set(FX_TICKER, { displayName: 'USD/KRW', market: 'FX', currency: 'KRW' })
