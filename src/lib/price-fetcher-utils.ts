@@ -3,10 +3,21 @@
  * price-fetcher 본체 (Prisma / yahoo 인스턴스 top-level 생성) 에서 분리 (Codex #429 P2).
  */
 
+import { normalizeMarket } from './market-hours'
 export interface TickerMetaValue {
   displayName: string
   market: string
   currency: string
+  /**
+   * 보유·관심종목 메타가 아니라 티커 모양으로 추정한 placeholder (Codex #501 P2).
+   * refresh upsert 시 야후 quote 메타 (exchange/currency/shortName) 로 대체한다.
+   */
+  placeholder?: boolean
+}
+
+/** 한국 지수 티커 (`^KS11` 코스피, `^KQ11` 코스닥, `^KS200` 등) — 야후 `^KS`/`^KQ` prefix. */
+export function isKoreanIndexTicker(ticker: string): boolean {
+  return /^\^K[SQ]/i.test(ticker.trim())
 }
 
 /**
@@ -31,14 +42,46 @@ export function mergeCrossTickersIntoMeta(
 ): void {
   for (const t of crossTickers) {
     if (tickerMeta.has(t)) continue
-    const isKrx = t.endsWith('.KS') || t.endsWith('.KQ')
+    const isKr = t.endsWith('.KS') || t.endsWith('.KQ') || isKoreanIndexTicker(t)
     const isFx = t.endsWith('=X')
     tickerMeta.set(t, {
       displayName: t,
-      market: isKrx ? 'KR' : isFx ? 'FX' : 'US',
-      currency: isKrx ? 'KRW' : 'USD',
+      market: isKr ? 'KR' : isFx ? 'FX' : 'US',
+      currency: isKr ? 'KRW' : 'USD',
+      placeholder: true,
     })
   }
+}
+
+/** refresh upsert 에 쓰는 야후 quote 메타 필드 (필요한 것만). */
+export interface QuoteMetaLike {
+  exchange?: string | null
+  currency?: string | null
+  shortName?: string | null
+  longName?: string | null
+}
+
+/**
+ * refresh upsert 에 저장할 메타 확정 (Codex #501 P2).
+ *
+ * 보유·관심종목 메타는 사용자가 기록한 값이므로 그대로 쓴다. placeholder (전략 자기
+ * 티커 / cross_ticker 로만 유입) 는 티커 모양 추정이라 `^KS11` 같은 지수가 US/USD 로
+ * 저장될 수 있어, 야후 quote 의 exchange/currency/shortName 으로 대체한다. quote 의
+ * exchange 를 시장으로 해석할 수 없으면 (`OTHER`) placeholder 추정을 유지한다.
+ */
+export function resolveRefreshMeta(
+  meta: TickerMetaValue,
+  quote: QuoteMetaLike,
+  ticker: string,
+): { displayName: string; market: 'KR' | 'US' | 'FX' | 'OTHER'; currency: string } {
+  if (!meta.placeholder) {
+    return { displayName: meta.displayName, market: normalizeMarket(meta.market, ticker), currency: meta.currency }
+  }
+  const fromQuote = normalizeMarket(quote.exchange ?? '', ticker)
+  const market = fromQuote === 'OTHER' ? normalizeMarket(meta.market, ticker) : fromQuote
+  const currency = quote.currency?.trim() || meta.currency
+  const displayName = quote.shortName?.trim() || quote.longName?.trim() || meta.displayName
+  return { displayName, market, currency }
 }
 
 /**

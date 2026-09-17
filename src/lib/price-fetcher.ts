@@ -2,7 +2,7 @@ import YahooFinance from 'yahoo-finance2'
 import { prisma } from './prisma'
 import { normalizeMarket } from './market-hours'
 import { collectStrategyRefreshTickers } from './custom-strategy/evaluator'
-import { mergeCrossTickersIntoMeta, normalizeMarketTime } from './price-fetcher-utils'
+import { mergeCrossTickersIntoMeta, normalizeMarketTime, resolveRefreshMeta } from './price-fetcher-utils'
 export { mergeCrossTickersIntoMeta } from './price-fetcher-utils'
 
 const yahooFinance = new YahooFinance()
@@ -224,22 +224,25 @@ async function doRefreshPrices(): Promise<RefreshResult> {
       const change = quote.regularMarketChange != null ? Number(quote.regularMarketChange) : null
       const changePct = quote.regularMarketChangePercent != null ? Number(quote.regularMarketChangePercent) : null
 
-      const normalizedMarket = normalizeMarket(meta.market, ticker)
+      // Codex #501 P2: placeholder 메타 (전략 전용 지수 등) 는 quote 메타로 대체.
+      // currency 는 update 에도 포함 — 과거 placeholder 로 잘못 생성된 행이 자연 교정되도록.
+      const resolved = resolveRefreshMeta(meta, quote, ticker)
       await prisma.priceCache.upsert({
         where: { ticker },
         update: {
           price,
           change,
           changePercent: changePct,
-          displayName: meta.displayName,
-          market: normalizedMarket,
+          displayName: resolved.displayName,
+          market: resolved.market,
+          currency: resolved.currency,
         },
         create: {
           ticker,
-          displayName: meta.displayName,
-          market: normalizedMarket,
+          displayName: resolved.displayName,
+          market: resolved.market,
           price,
-          currency: meta.currency,
+          currency: resolved.currency,
           change,
           changePercent: changePct,
         },
