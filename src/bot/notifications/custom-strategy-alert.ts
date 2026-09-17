@@ -36,6 +36,7 @@ import {
   validateCondition,
   type Condition,
 } from '@/lib/custom-strategy/types'
+import { KST_OFFSET_MS } from '@/lib/kst-date'
 
 const CUSTOM_STRATEGY_ALERTS_KEY = 'custom_strategy_alerts'
 const CUSTOM_STRATEGY_ALERTS_LABEL = '커스텀 전략 알림 (on/off)'
@@ -73,7 +74,7 @@ async function isCustomStrategyAlertsEnabled(): Promise<boolean> {
 /** KST 오늘 date string (YYYY-MM-DD) */
 function todayKST(): string {
   const now = new Date()
-  const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000)
+  const kst = new Date(now.getTime() + KST_OFFSET_MS)
   return kst.toISOString().slice(0, 10)
 }
 
@@ -90,10 +91,10 @@ function shouldFire(
 
   if (frequency === 'daily') {
     // KST 기준 같은 날이면 skip
-    const last = new Date(lastTriggeredAt.getTime() + 9 * 60 * 60 * 1000)
+    const last = new Date(lastTriggeredAt.getTime() + KST_OFFSET_MS)
       .toISOString()
       .slice(0, 10)
-    const today = new Date(now.getTime() + 9 * 60 * 60 * 1000)
+    const today = new Date(now.getTime() + KST_OFFSET_MS)
       .toISOString()
       .slice(0, 10)
     return last !== today
