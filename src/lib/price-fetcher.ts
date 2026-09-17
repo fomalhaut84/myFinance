@@ -46,7 +46,7 @@ export interface FetchQuoteOptions {
   /**
    * PriceCache 적재 생략 (#499). 기본 false — 기존 호출자 (관심종목 warm-up 등) 동작 보존.
    *
-   * 지수 티커처럼 주가 갱신 cron 의 refresh 대상이 아닌 일회성 조회에만 호출자가 켠다.
+   * 호출자가 stale 캐시를 원치 않는 조회 (예: MCP get_prices 의 지수 조회) 에서 켠다.
    * (전역으로 `^` 를 막으면 관심종목에 지수를 등록한 경우 GET 이 PriceCache 만 읽어
    *  시세가 비는 회귀가 생긴다 — 사전 리뷰 P1.)
    */

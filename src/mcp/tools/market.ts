@@ -1,7 +1,7 @@
 import { prisma } from '@/lib/prisma'
 import { fetchQuote } from '@/lib/price-fetcher'
 import { isIndexTicker } from '@/lib/price-fetcher-utils'
-import { formatKstDateTime } from '@/lib/kst-date'
+import { formatKstDateTime, formatKstDateTimeFull } from '@/lib/kst-date'
 import { DEFAULT_FX_RATE_USD_KRW } from '@/lib/format'
 import { toolResult, toolError, formatQuoteValue, formatMarketStamp } from '../utils'
 
@@ -19,7 +19,7 @@ export async function getPrices(args: { tickers?: string[] }) {
     if (isExplicit) {
       const requestedTickers = args.tickers!
       const results = await Promise.allSettled(
-        // 지수는 PriceCache refresh 대상이 아니라 적재 생략 (#499).
+        // 지수는 이 도구에서 항상 캐시 적재 생략 — 실시간 실패 시 stale 값 대신 '조회 실패' (#499).
         requestedTickers.map((ticker) => fetchQuote(ticker, { skipCache: isIndexTicker(ticker) }))
       )
 
@@ -48,7 +48,7 @@ export async function getPrices(args: { tickers?: string[] }) {
           if (cached) {
             const priceStr = formatQuoteValue(ticker, cached.price, cached.currency)
             entries.push({
-              text: `- ${cached.displayName} (${ticker}): ${priceStr} [캐시 ${formatKstDateTime(cached.updatedAt)} 기록]`,
+              text: `- ${cached.displayName} (${ticker}): ${priceStr} [캐시 ${formatKstDateTimeFull(cached.updatedAt)} 기록]`,
               stamp: null,
             })
           } else {
@@ -115,7 +115,7 @@ export async function getPrices(args: { tickers?: string[] }) {
       (latest, p) => (p.updatedAt > latest ? p.updatedAt : latest),
       displayPrices[0].updatedAt
     )
-    lines.push(`\n갱신: ${formatKstDateTime(latestUpdate)}`)
+    lines.push(`\n갱신: ${formatKstDateTimeFull(latestUpdate)}`)
 
     return toolResult(lines.join('\n'))
   } catch (error) {
@@ -144,7 +144,7 @@ export async function getFxRate() {
         : ''
 
     return toolResult(
-      `USD/KRW: ${fx.price.toLocaleString('ko-KR')}원${changeStr}\n갱신: ${formatKstDateTime(fx.updatedAt)}`
+      `USD/KRW: ${fx.price.toLocaleString('ko-KR')}원${changeStr}\n갱신: ${formatKstDateTimeFull(fx.updatedAt)}`
     )
   } catch (error) {
     return toolError(error)

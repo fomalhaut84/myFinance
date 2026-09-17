@@ -5,6 +5,7 @@ import {
   kstDayDiff,
   formatKstDate,
   formatKstDateTime,
+  formatKstDateTimeFull,
 } from '../kst-date'
 
 describe('kstMidnightUtc', () => {
@@ -95,5 +96,15 @@ describe('formatKstDate / formatKstDateTime (#499)', () => {
     const d = new Date('2026-12-31T16:00:00Z')
     expect(formatKstDate(d)).toBe('2027-01-01')
     expect(formatKstDateTime(d)).toBe('01-01 01:00 KST')
+  })
+})
+
+describe('formatKstDateTimeFull (#499 사전 리뷰 P1)', () => {
+  it('연도를 포함해 YYYY-MM-DD HH:mm KST 로 표기', () => {
+    expect(formatKstDateTimeFull(new Date('2026-09-17T06:30:00Z'))).toBe('2026-09-17 15:30 KST')
+  })
+
+  it('UTC 연말 자정 직전은 KST 로 다음 해', () => {
+    expect(formatKstDateTimeFull(new Date('2025-12-31T15:00:00Z'))).toBe('2026-01-01 00:00 KST')
   })
 })

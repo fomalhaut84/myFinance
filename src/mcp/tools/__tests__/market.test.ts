@@ -152,7 +152,29 @@ describe('getPrices — 캐시 fallback 가드 (#499 사전 리뷰 P1)', () => {
 
     const text = (await getPrices({ tickers: ['AAPL'] })).content[0].text
 
-    expect(text).toContain('[캐시 09-17 15:30 KST 기록]')
+    expect(text).toContain('[캐시 2026-09-17 15:30 KST 기록]')
+  })
+
+  it('1년 넘게 갱신되지 않은 캐시 행은 연도가 드러나 최근 값으로 오인되지 않음 (사전 리뷰 P1)', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-09-17T06:40:00Z'))
+    vi.mocked(fetchQuote).mockRejectedValueOnce(new Error('network'))
+    vi.mocked(prisma.priceCache.findUnique).mockResolvedValueOnce({
+      ticker: 'TSLA',
+      displayName: 'Tesla, Inc.',
+      price: 180.5,
+      currency: 'USD',
+      market: 'US',
+      change: null,
+      changePercent: null,
+      // 보유·관심종목이 아닌 일회성 조회 행은 cron refresh 대상이 아니라 영구 stale 가능
+      updatedAt: new Date('2025-05-01T03:00:00Z'),
+    } as never)
+
+    const text = (await getPrices({ tickers: ['TSLA'] })).content[0].text
+
+    expect(text).toContain('[캐시 2025-05-01 12:00 KST 기록]')
+    expect(text).not.toContain('[캐시 05-01 12:00 KST 기록]')
   })
 })
 
@@ -202,7 +224,7 @@ describe('getPrices — 보유종목 전체 분기 갱신 시각 KST (#499)', ()
 
     const text = (await getPrices({})).content[0].text
 
-    expect(text).toContain('갱신: 09-18 07:15 KST')
+    expect(text).toContain('갱신: 2026-09-18 07:15 KST')
     expect(text).not.toContain('2026.09.17')
   })
 })

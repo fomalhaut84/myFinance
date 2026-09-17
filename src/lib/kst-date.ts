@@ -7,7 +7,7 @@
  */
 
 const DAY_MS = 24 * 60 * 60 * 1000
-/** KST = UTC+9. KST 관련 계산/표기는 이 상수 하나만 재사용한다 (중복 정의 금지). */
+/** KST = UTC+9. 신규 코드의 KST 계산/표기는 이 상수를 재사용한다 (새 중복 정의 금지). */
 export const KST_OFFSET_MS = 9 * 60 * 60 * 1000
 
 /**
@@ -49,8 +49,24 @@ export function formatKstDate(d: Date): string {
   return `${s.getUTCFullYear()}-${pad2(s.getUTCMonth() + 1)}-${pad2(s.getUTCDate())}`
 }
 
-/** KST 기준 시각을 `MM-DD HH:mm KST` 로 표기 (#499 — 시세 기준 시각 표기용). */
+const kstMonthDayTime = (s: Date) =>
+  `${pad2(s.getUTCMonth() + 1)}-${pad2(s.getUTCDate())} ${pad2(s.getUTCHours())}:${pad2(s.getUTCMinutes())} KST`
+
+/**
+ * KST 기준 시각을 `MM-DD HH:mm KST` 로 표기 (#499 — 라이브 시세 기준 시각·조회 시각용).
+ * 연도가 없으므로 "지금 근처" 가 보장되는 값에만 쓴다. 캐시처럼 오래됐을 수 있는
+ * 시각은 `formatKstDateTimeFull` 을 사용.
+ */
 export function formatKstDateTime(d: Date): string {
+  return kstMonthDayTime(kstShifted(d))
+}
+
+/**
+ * KST 기준 시각을 `YYYY-MM-DD HH:mm KST` 로 표기 (#499 사전 리뷰 P1).
+ * PriceCache 기록 시각처럼 몇 달 전일 수 있는 값은 연도가 없으면 최근 것처럼
+ * 읽히므로 (거짓 시각) 반드시 이 포맷을 쓴다.
+ */
+export function formatKstDateTimeFull(d: Date): string {
   const s = kstShifted(d)
-  return `${pad2(s.getUTCMonth() + 1)}-${pad2(s.getUTCDate())} ${pad2(s.getUTCHours())}:${pad2(s.getUTCMinutes())} KST`
+  return `${s.getUTCFullYear()}-${kstMonthDayTime(s)}`
 }
