@@ -182,3 +182,27 @@ describe('getPrices — 조회 시각 KST (#499 사전 리뷰 P1)', () => {
     expect(text).not.toContain('2026.09.17')
   })
 })
+
+describe('getPrices — 보유종목 전체 분기 갱신 시각 KST (#499)', () => {
+  it('PriceCache updatedAt 을 KST 로 표기 (UTC 날짜 밀림 없음)', async () => {
+    vi.mocked(prisma.holding.findMany).mockResolvedValueOnce([{ ticker: 'AAPL' }] as never)
+    vi.mocked(prisma.priceCache.findMany).mockResolvedValueOnce([
+      {
+        ticker: 'AAPL',
+        displayName: 'Apple Inc.',
+        price: 252.82,
+        currency: 'USD',
+        market: 'US',
+        change: 1.2,
+        changePercent: 0.48,
+        // 2026-09-17 22:15 UTC = 2026-09-18 07:15 KST
+        updatedAt: new Date('2026-09-17T22:15:00Z'),
+      },
+    ] as never)
+
+    const text = (await getPrices({})).content[0].text
+
+    expect(text).toContain('갱신: 09-18 07:15 KST')
+    expect(text).not.toContain('2026.09.17')
+  })
+})

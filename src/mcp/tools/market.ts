@@ -2,7 +2,7 @@ import { prisma } from '@/lib/prisma'
 import { fetchQuote } from '@/lib/price-fetcher'
 import { isIndexTicker } from '@/lib/price-fetcher-utils'
 import { formatKstDateTime } from '@/lib/kst-date'
-import { formatDate, DEFAULT_FX_RATE_USD_KRW } from '@/lib/format'
+import { DEFAULT_FX_RATE_USD_KRW } from '@/lib/format'
 import { toolResult, toolError, formatQuoteValue, formatMarketStamp } from '../utils'
 
 /**
@@ -115,7 +115,7 @@ export async function getPrices(args: { tickers?: string[] }) {
       (latest, p) => (p.updatedAt > latest ? p.updatedAt : latest),
       displayPrices[0].updatedAt
     )
-    lines.push(`\n갱신: ${formatDate(latestUpdate)}`)
+    lines.push(`\n갱신: ${formatKstDateTime(latestUpdate)}`)
 
     return toolResult(lines.join('\n'))
   } catch (error) {
@@ -144,7 +144,7 @@ export async function getFxRate() {
         : ''
 
     return toolResult(
-      `USD/KRW: ${fx.price.toLocaleString('ko-KR')}원${changeStr}\n갱신: ${formatDate(fx.updatedAt)}`
+      `USD/KRW: ${fx.price.toLocaleString('ko-KR')}원${changeStr}\n갱신: ${formatKstDateTime(fx.updatedAt)}`
     )
   } catch (error) {
     return toolError(error)
