@@ -57,6 +57,13 @@ describe('buildClosingPrompt (#499)', () => {
     }
   })
 
+  it('US 만 미국 현지 날짜 단서를 포함 (KST 어제 기사 과잉 억제 방지)', () => {
+    const us = buildClosingPrompt('US', KR_CLOSING_NOW)
+    const kr = buildClosingPrompt('KR', KR_CLOSING_NOW)
+    expect(us).toContain('미국 현지 날짜 기준')
+    expect(kr).not.toContain('미국 현지 날짜 기준')
+  })
+
   it('"데이터 부족" 표현 가드 지시를 포함', () => {
     expect(buildClosingPrompt('KR', KR_CLOSING_NOW)).toContain('데이터 부족')
     expect(buildClosingPrompt('KR', KR_CLOSING_NOW)).toContain('당일 뉴스 미확인')
