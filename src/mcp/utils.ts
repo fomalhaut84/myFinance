@@ -1,6 +1,5 @@
 import { prisma } from '@/lib/prisma'
-import { formatKRW, formatUSD, formatIndexPoint } from '@/lib/format'
-import { isIndexTicker } from '@/lib/price-fetcher-utils'
+import { formatKRW, formatUSD, formatQuoteValue as formatQuoteValueShared } from '@/lib/format'
 import { formatKstDateTimeFull } from '@/lib/kst-date'
 
 /**
@@ -96,9 +95,11 @@ export function formatMoney(amount: number, currency: string): string {
 /**
  * 시세 값 포맷 (#499). 지수 티커는 통화가 아니라 포인트로 표기한다.
  * 예) `^KS11` → "6,717.28", `AAPL` → "$252.82"
+ *
+ * 지수 판별 규칙 자체는 `@/lib/format` 의 공용 헬퍼에 있다 (#500 — 봇과 공유).
  */
 export function formatQuoteValue(ticker: string, value: number, currency: string): string {
-  return isIndexTicker(ticker) ? formatIndexPoint(value) : formatMoney(value, currency)
+  return formatQuoteValueShared(ticker, value, (v) => formatMoney(v, currency))
 }
 
 /**
