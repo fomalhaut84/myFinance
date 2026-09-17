@@ -2,7 +2,7 @@ import YahooFinance from 'yahoo-finance2'
 import { prisma } from './prisma'
 import { normalizeMarket } from './market-hours'
 import { collectCrossTickers } from './custom-strategy/evaluator'
-import { mergeCrossTickersIntoMeta, isIndexTicker, normalizeMarketTime } from './price-fetcher-utils'
+import { mergeCrossTickersIntoMeta, normalizeMarketTime } from './price-fetcher-utils'
 export { mergeCrossTickersIntoMeta } from './price-fetcher-utils'
 
 const yahooFinance = new YahooFinance()
@@ -40,11 +40,24 @@ export interface QuoteResult {
   marketState: string | null
 }
 
+/** `fetchQuote` 옵션 */
+export interface FetchQuoteOptions {
+  signal?: AbortSignal
+  /**
+   * PriceCache 적재 생략 (#499). 기본 false — 기존 호출자 (관심종목 warm-up 등) 동작 보존.
+   *
+   * 지수 티커처럼 주가 갱신 cron 의 refresh 대상이 아닌 일회성 조회에만 호출자가 켠다.
+   * (전역으로 `^` 를 막으면 관심종목에 지수를 등록한 경우 GET 이 PriceCache 만 읽어
+   *  시세가 비는 회귀가 생긴다 — 사전 리뷰 P1.)
+   */
+  skipCache?: boolean
+}
+
 /**
  * yahoo-finance2로 단일 종목 실시간 시세 조회.
- * 보유 종목이면 PriceCache도 갱신한다.
+ * `skipCache` 를 켜지 않으면 PriceCache도 갱신한다.
  */
-export async function fetchQuote(ticker: string, options?: { signal?: AbortSignal }): Promise<QuoteResult> {
+export async function fetchQuote(ticker: string, options?: FetchQuoteOptions): Promise<QuoteResult> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let quote: any
   try {
@@ -80,10 +93,10 @@ export async function fetchQuote(ticker: string, options?: { signal?: AbortSigna
   // PriceCache upsert — 존재하면 갱신, 없으면 생성 (fallback 조회 시 캐시 적재)
   // market은 update 분기에도 포함 — 기존 raw 코드가 신규 정규화 코드로 자연 수렴되도록 보장
   //
-  // #499: 지수 티커(^KS11 등)는 제외. 보유·관심종목이 아니라 주가 갱신 cron 의 refresh
-  // 대상이 아니므로, 캐시에 넣으면 영구 stale 행이 되어 실시간 실패 시 fallback 이
-  // 오래된 값을 조용히 반환한다. 적재하지 않으면 fallback 도 미스 → '조회 실패' 로 정직하게 표시.
-  if (!isIndexTicker(ticker)) {
+  // #499: `skipCache` 호출자 (get_prices 의 지수 조회) 는 적재하지 않는다. 지수는 주가 갱신
+  // cron 의 refresh 대상이 아니라서 캐시에 넣으면 영구 stale 행이 되고, 실시간 실패 시
+  // fallback 이 오래된 값을 조용히 반환한다. 미적재 → fallback 미스 → '조회 실패' 로 정직하게 표시.
+  if (!options?.skipCache) {
     try {
       await prisma.priceCache.upsert({
         where: { ticker },

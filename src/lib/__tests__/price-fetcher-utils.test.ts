@@ -92,6 +92,22 @@ describe('normalizeMarketTime (#499)', () => {
     expect(normalizeMarketTime(1789626600)?.toISOString()).toBe('2026-09-17T06:30:00.000Z')
   })
 
+  it('epoch milliseconds 도 같은 시각으로 해석 (단위 오해석 방어)', () => {
+    expect(normalizeMarketTime(1789626600000)?.toISOString()).toBe('2026-09-17T06:30:00.000Z')
+    expect(normalizeMarketTime(1789626600000)?.getTime()).toBe(normalizeMarketTime(1789626600)?.getTime())
+  })
+
+  it('sanity window 밖 (비현실적 과거/미래) 은 null', () => {
+    expect(normalizeMarketTime(1e18)).toBeNull()               // 서기 3만년대
+    expect(normalizeMarketTime(Date.parse('1970-01-02T00:00:00Z'))).toBeNull()  // 2000 이전
+    expect(normalizeMarketTime(Date.now() + 30 * 24 * 3600 * 1000)).toBeNull()  // 30일 미래
+  })
+
+  it('가까운 미래 (시계 스큐 허용 범위) 는 수용', () => {
+    const soon = Date.now() + 60 * 1000
+    expect(normalizeMarketTime(soon)?.getTime()).toBe(soon)
+  })
+
   it('ISO 문자열도 파싱', () => {
     expect(normalizeMarketTime('2026-09-17T06:30:00Z')?.toISOString()).toBe('2026-09-17T06:30:00.000Z')
   })

@@ -7,7 +7,8 @@
  */
 
 const DAY_MS = 24 * 60 * 60 * 1000
-const KST_OFFSET_MS = 9 * 60 * 60 * 1000
+/** KST = UTC+9. KST 관련 계산/표기는 이 상수 하나만 재사용한다 (중복 정의 금지). */
+export const KST_OFFSET_MS = 9 * 60 * 60 * 1000
 
 /**
  * `d` 가 속한 KST 캘린더 일의 자정 (KST 00:00) 을 UTC 타임스탬프 (ms) 로 반환.

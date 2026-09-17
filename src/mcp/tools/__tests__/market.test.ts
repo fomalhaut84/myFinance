@@ -6,7 +6,7 @@
  * 3) marketTime 이 없으면 거짓 시각을 만들지 않고 표기를 생략한다.
  */
 
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 
 vi.mock('@/lib/prisma', () => ({
   prisma: {
@@ -42,6 +42,10 @@ function kospiQuote(overrides: Record<string, unknown> = {}) {
 beforeEach(() => {
   vi.mocked(fetchQuote).mockReset()
   vi.mocked(prisma.priceCache.findUnique).mockReset()
+})
+
+afterEach(() => {
+  vi.useRealTimers()
 })
 
 describe('getPrices — 지수 티커 표기 (#499)', () => {
@@ -107,5 +111,74 @@ describe('getPrices — 지수 티커 표기 (#499)', () => {
     const text = (await getPrices({ tickers: ['^KS11'] })).content[0].text
 
     expect(text).toContain('^KS11: 조회 실패')
+  })
+})
+
+describe('getPrices — 캐시 fallback 가드 (#499 사전 리뷰 P1)', () => {
+  it('지수는 잔존 캐시 행이 있어도 읽지 않고 조회 실패', async () => {
+    vi.mocked(fetchQuote).mockRejectedValueOnce(new Error('network'))
+    // 구버전이 적재해 둔 stale 행이 남아 있는 상황
+    vi.mocked(prisma.priceCache.findUnique).mockResolvedValueOnce({
+      ticker: '^KS11',
+      displayName: 'KOSPI Composite Index',
+      price: 3200.11,
+      currency: 'KRW',
+      market: 'KR',
+      change: null,
+      changePercent: null,
+      updatedAt: new Date('2026-05-01T06:30:00Z'),
+    } as never)
+
+    const text = (await getPrices({ tickers: ['^KS11'] })).content[0].text
+
+    expect(text).toContain('^KS11: 조회 실패')
+    expect(text).not.toContain('[캐시')
+    expect(text).not.toContain('3,200.11')
+    expect(vi.mocked(prisma.priceCache.findUnique)).not.toHaveBeenCalled()
+  })
+
+  it('일반 종목 캐시 fallback 은 기록 시각을 KST 로 표기', async () => {
+    vi.mocked(fetchQuote).mockRejectedValueOnce(new Error('network'))
+    vi.mocked(prisma.priceCache.findUnique).mockResolvedValueOnce({
+      ticker: 'AAPL',
+      displayName: 'Apple Inc.',
+      price: 252.82,
+      currency: 'USD',
+      market: 'US',
+      change: null,
+      changePercent: null,
+      updatedAt: new Date('2026-09-17T06:30:00Z'),
+    } as never)
+
+    const text = (await getPrices({ tickers: ['AAPL'] })).content[0].text
+
+    expect(text).toContain('[캐시 09-17 15:30 KST 기록]')
+  })
+})
+
+describe('getPrices — 지수 조회는 캐시에 적재하지 않음 (#499 사전 리뷰 P1)', () => {
+  it('fetchQuote 에 skipCache 를 티커별로 전달', async () => {
+    vi.mocked(fetchQuote)
+      .mockResolvedValueOnce(kospiQuote())
+      .mockResolvedValueOnce(kospiQuote({ ticker: 'AAPL', displayName: 'Apple Inc.', currency: 'USD' }))
+
+    await getPrices({ tickers: ['^KS11', 'AAPL'] })
+
+    expect(vi.mocked(fetchQuote).mock.calls[0]).toEqual(['^KS11', { skipCache: true }])
+    expect(vi.mocked(fetchQuote).mock.calls[1]).toEqual(['AAPL', { skipCache: false }])
+  })
+})
+
+describe('getPrices — 조회 시각 KST (#499 사전 리뷰 P1)', () => {
+  it('미국장 클로징 시각 (전날 UTC) 에도 KST 날짜로 표기', async () => {
+    // 2026-09-17 22:15 UTC = 2026-09-18 07:15 KST (미국장 클로징 cron)
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-09-17T22:15:00Z'))
+    vi.mocked(fetchQuote).mockResolvedValueOnce(kospiQuote({ marketTime: null, marketState: null }))
+
+    const text = (await getPrices({ tickers: ['^KS11'] })).content[0].text
+
+    expect(text).toContain('조회 시각: 09-18 07:15 KST')
+    expect(text).not.toContain('2026.09.17')
   })
 })

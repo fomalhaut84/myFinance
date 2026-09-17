@@ -33,8 +33,8 @@ beforeEach(() => {
   vi.mocked(prisma.priceCache.upsert).mockResolvedValue({} as never)
 })
 
-describe('fetchQuote — 지수 티커 (#499)', () => {
-  it('지수는 PriceCache upsert 를 호출하지 않는다', async () => {
+describe('fetchQuote — skipCache 옵션 (#499)', () => {
+  it('skipCache: true 면 PriceCache upsert 를 호출하지 않는다', async () => {
     quoteMock.mockResolvedValueOnce({
       regularMarketPrice: 6717.28,
       currency: 'KRW',
@@ -44,10 +44,26 @@ describe('fetchQuote — 지수 티커 (#499)', () => {
       regularMarketTime: KR_CLOSE_EPOCH_SEC,
     })
 
-    const quote = await fetchQuote('^KS11')
+    const quote = await fetchQuote('^KS11', { skipCache: true })
 
     expect(vi.mocked(prisma.priceCache.upsert)).not.toHaveBeenCalled()
     expect(quote.price).toBe(6717.28)
+  })
+
+  it('옵션 없이 지수를 조회하면 기존대로 upsert (관심종목 warm-up 경로 보존)', async () => {
+    quoteMock.mockResolvedValueOnce({
+      regularMarketPrice: 6717.28,
+      currency: 'KRW',
+      exchange: 'KSC',
+      shortName: 'KOSPI Composite Index',
+      marketState: 'CLOSED',
+      regularMarketTime: KR_CLOSE_EPOCH_SEC,
+    })
+
+    await fetchQuote('^KS11')
+
+    expect(vi.mocked(prisma.priceCache.upsert)).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(prisma.priceCache.upsert).mock.calls[0][0].where).toEqual({ ticker: '^KS11' })
   })
 
   it('일반 종목은 기존대로 upsert 한다 (하위호환)', async () => {

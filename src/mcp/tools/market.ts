@@ -1,5 +1,7 @@
 import { prisma } from '@/lib/prisma'
 import { fetchQuote } from '@/lib/price-fetcher'
+import { isIndexTicker } from '@/lib/price-fetcher-utils'
+import { formatKstDateTime } from '@/lib/kst-date'
 import { formatDate, DEFAULT_FX_RATE_USD_KRW } from '@/lib/format'
 import { toolResult, toolError, formatQuoteValue, formatMarketStamp } from '../utils'
 
@@ -17,7 +19,8 @@ export async function getPrices(args: { tickers?: string[] }) {
     if (isExplicit) {
       const requestedTickers = args.tickers!
       const results = await Promise.allSettled(
-        requestedTickers.map((ticker) => fetchQuote(ticker))
+        // 지수는 PriceCache refresh 대상이 아니라 적재 생략 (#499).
+        requestedTickers.map((ticker) => fetchQuote(ticker, { skipCache: isIndexTicker(ticker) }))
       )
 
       // 종목별로 시세 기준 시각이 다를 수 있어 라인과 stamp 를 분리해 모은 뒤 조합 (#499)
@@ -36,12 +39,18 @@ export async function getPrices(args: { tickers?: string[] }) {
             stamp: formatMarketStamp(quote.marketTime, quote.marketState),
           })
         } else {
-          // 실시간 실패 → PriceCache fallback
-          // (지수 티커는 캐시에 적재하지 않으므로 여기서 미스 → '조회 실패')
-          const cached = await prisma.priceCache.findUnique({ where: { ticker } })
+          // 실시간 실패 → PriceCache fallback.
+          // 지수는 캐시를 아예 읽지 않는다 — 구버전이 적재한 잔존 행이 남아 있어도
+          // stale 값을 '[캐시]' 로 노출하지 않기 위해 읽기 지점에서도 가드 (사전 리뷰 P1).
+          const cached = isIndexTicker(ticker)
+            ? null
+            : await prisma.priceCache.findUnique({ where: { ticker } })
           if (cached) {
             const priceStr = formatQuoteValue(ticker, cached.price, cached.currency)
-            entries.push({ text: `- ${cached.displayName} (${ticker}): ${priceStr} [캐시]`, stamp: null })
+            entries.push({
+              text: `- ${cached.displayName} (${ticker}): ${priceStr} [캐시 ${formatKstDateTime(cached.updatedAt)} 기록]`,
+              stamp: null,
+            })
           } else {
             entries.push({ text: `- ${ticker}: 조회 실패`, stamp: null })
           }
@@ -65,7 +74,9 @@ export async function getPrices(args: { tickers?: string[] }) {
 
       const footer: string[] = []
       if (sharedStamp) footer.push(`시세 기준: ${sharedStamp}`)
-      footer.push(`조회 시각: ${formatDate(new Date())}`)
+      // 조회 시각도 KST — UTC 로 찍으면 미국장 클로징 (07:15 KST = 전날 22:15 UTC) 에서
+      // 시세 기준·조회 시각·프롬프트의 '오늘' 이 서로 다른 날짜가 된다 (사전 리뷰 P1).
+      footer.push(`조회 시각: ${formatKstDateTime(new Date())}`)
       lines.push(`\n${footer.join('\n')}`)
 
       return toolResult(lines.join('\n'))

@@ -50,25 +50,45 @@ export function isIndexTicker(ticker: string): boolean {
   return ticker.trim().startsWith('^')
 }
 
+/** 시세 시각으로 받아들일 수 있는 하한 (2000-01-01 UTC). */
+const MARKET_TIME_MIN_MS = Date.UTC(2000, 0, 1)
+/** 상한 여유 — 시계 오차/타임존 스큐 흡수용 7일. */
+const MARKET_TIME_FUTURE_TOLERANCE_MS = 7 * 24 * 60 * 60 * 1000
+/** epoch seconds / milliseconds 판별 임계값. 1e11 초 = 서기 5138년 → 그 이상은 ms 로 간주. */
+const EPOCH_MS_THRESHOLD = 1e11
+
 /**
  * yahoo-finance2 의 `regularMarketTime` 정규화 (#499).
  *
  * 라이브러리/응답 버전에 따라 `Date` 또는 epoch seconds (숫자) 로 오고,
- * 드물게 ISO 문자열로도 온다. 해석 불가하면 `null` — 거짓 시각을 만들지 않는다.
+ * 드물게 epoch milliseconds / ISO 문자열로도 온다. 해석 불가하면 `null` —
+ * 거짓 시각을 만들지 않는다.
+ *
+ * 숫자를 무조건 seconds 로 간주하면 ms 입력이 서기 5만년대로 튀는데, 표기 포맷
+ * (`MM-DD HH:mm KST`) 에 연도가 없어 그럴듯한 거짓 시각이 된다 (사전 리뷰 P1).
+ * → 크기로 seconds/ms 를 가르고, sanity window 밖은 null.
  */
 export function normalizeMarketTime(raw: unknown): Date | null {
+  const ms = toEpochMs(raw)
+  if (ms === null) return null
+  // 미래/과거로 비현실적인 값은 파싱 실패로 취급 (단위 오해석 방어).
+  if (ms < MARKET_TIME_MIN_MS) return null
+  if (ms > Date.now() + MARKET_TIME_FUTURE_TOLERANCE_MS) return null
+  return new Date(ms)
+}
+
+/** raw 값을 epoch milliseconds 로 환산. 해석 불가 시 null. */
+function toEpochMs(raw: unknown): number | null {
   if (raw instanceof Date) {
-    return Number.isNaN(raw.getTime()) ? null : raw
+    return Number.isNaN(raw.getTime()) ? null : raw.getTime()
   }
   if (typeof raw === 'number' && Number.isFinite(raw)) {
-    // epoch seconds 로 간주 (야후 raw 응답 규격). 0 이하는 무효로 취급.
     if (raw <= 0) return null
-    const d = new Date(raw * 1000)
-    return Number.isNaN(d.getTime()) ? null : d
+    return raw > EPOCH_MS_THRESHOLD ? raw : raw * 1000
   }
   if (typeof raw === 'string' && raw.trim() !== '') {
-    const d = new Date(raw)
-    return Number.isNaN(d.getTime()) ? null : d
+    const parsed = new Date(raw).getTime()
+    return Number.isNaN(parsed) ? null : parsed
   }
   return null
 }

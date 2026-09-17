@@ -101,12 +101,19 @@ export function formatQuoteValue(ticker: string, value: number, currency: string
   return isIndexTicker(ticker) ? formatIndexPoint(value) : formatMoney(value, currency)
 }
 
-/** 야후 `marketState` → 한국어 라벨. 미지의 값은 원문 그대로 노출 (#499) */
+/**
+ * 야후 `marketState` → 한국어 라벨. 미지의 값은 원문 그대로 노출 (#499).
+ *
+ * 실측: 정규장 전 AAPL 이 `PREPRE`, 마감 후 `^KS11` 이 `POST` 를 반환한다.
+ * 한국 지수엔 애프터마켓 개념이 없어 POST 계열은 '장 마감 후' 로 중립 표기.
+ */
 const MARKET_STATE_LABELS: Record<string, string> = {
   REGULAR: '장중',
   CLOSED: '마감',
   PRE: '프리마켓',
-  POST: '애프터마켓',
+  PREPRE: '장 시작 전',
+  POST: '장 마감 후',
+  POSTPOST: '장 마감 후',
 }
 
 /**
