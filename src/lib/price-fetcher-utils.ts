@@ -82,6 +82,14 @@ export function resolveRefreshMeta(
   return { displayName, market, currency }
 }
 
+/**
+ * 시세 소스가 제공하는 실제 종목명 (#510). 사용자 라벨(displayName)과 별도로 저장해
+ * 라벨이 엉뚱한 티커에 붙은 경우(472150.KS ← 'SOL 미국배당미국채혼합50')를 드러내는 데 쓴다.
+ */
+export function extractQuoteName(quote: QuoteMetaLike): string | null {
+  return quote.shortName?.trim() || quote.longName?.trim() || null
+}
+
 /** 시세 시각으로 받아들일 수 있는 하한 (2000-01-01 UTC). */
 const MARKET_TIME_MIN_MS = Date.UTC(2000, 0, 1)
 /** 상한 여유 — 시계 오차/타임존 스큐 흡수용 7일. */
