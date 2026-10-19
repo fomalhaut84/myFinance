@@ -418,3 +418,13 @@
 - [ ] **36-A**: 뉴스 API 도입 결정 — 조사 완료 (`docs/specs/435-news-api-decision.md`), 17차에서 결정
 - [ ] **36-B**: NewsCache + fetcher + cron
 - [ ] **36-C**: `news_keyword` 조건
+
+---
+
+# 유지보수 모드 (2026-10-19~)
+
+> 18차 마일스톤(v0.16.0) + 패치 릴리즈 v0.16.1~v0.16.8 이후 신규 기능 개발 중단.
+> 후속 개발은 pleiades (myFinance × myFitness 통합 플랫폼) 저장소로 이관. 이 저장소는 운영 + 보안/장애 hotfix 만.
+
+- 미완료 항목(34-C, 36-A~C 뉴스 조건)은 여기서 진행하지 않는다 — pleiades 로드맵에서 재검토
+- 잔여 보안: npm audit `braces <=3.0.3` 전이 7건 (패치 없음 · tailwind 3 / eslint-config-next 경유). 패치 공개 시 `overrides` 로 hotfix
