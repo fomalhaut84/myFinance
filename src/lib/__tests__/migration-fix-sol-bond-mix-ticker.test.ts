@@ -74,6 +74,15 @@ describe('fix_sol_bond_mix_ticker migration (#510)', () => {
     expect(statements[quarantineIdx]).toContain(`WHERE "ticker" = ${WRONG} AND "displayName" = ${LABEL}`)
   })
 
+  it('정정을 건너뛴 옛 관심종목도 격리 라벨로 바꾼다 — 관심종목 메타 경유 캐시 재오염 차단 (Codex #511 P2)', () => {
+    const idx = statements.findIndex(
+      (s) => s.startsWith('UPDATE "Watchlist" SET "displayName"') && s.includes(QUARANTINE),
+    )
+    expect(idx).toBeGreaterThan(statements.findIndex((s) => s.startsWith('UPDATE "Watchlist" w SET "ticker"')))
+    expect(statements[idx]).toContain(`WHERE "ticker" = ${WRONG} AND "displayName" = ${LABEL}`)
+    expect(statements.some((s) => s.startsWith('DELETE FROM "Watchlist"'))).toBe(false)
+  })
+
   it('충돌 판정·경고는 격리 라벨도 인식한다 (재실행 시 충돌 계좌 거래가 옮겨지지 않게)', () => {
     expect(loadSql()).toMatch(new RegExp(`DO \\$\\$[\\s\\S]*${QUARANTINE.replace(/[[\]#]/g, '\\$&')}[\\s\\S]*END \\$\\$;`))
   })
