@@ -27,12 +27,14 @@ describe('drop_quarantined_sol_watchlist migration (#510, Codex #511 P2)', () =>
   const statements = loadStatements()
   const idx = (prefix: string) => statements.findIndex((s) => s.startsWith(prefix))
 
-  it('삭제 전에 옛 행 memo 를 490490.KS 행으로 옮긴다 (이전 알림 설정 보존)', () => {
+  it('삭제 전에 옛 행 strategy·memo 를 490490.KS 행으로 옮긴다 (이전 설정 보존 · Codex #514 P2)', () => {
     expect(idx('UPDATE "Watchlist" keep')).toBeGreaterThanOrEqual(0)
     expect(idx('UPDATE "Watchlist" keep')).toBeLessThan(idx('DELETE FROM "Watchlist"'))
     const move = statements[idx('UPDATE "Watchlist" keep')]
     expect(move).toContain(`keep."ticker" = '490490.KS'`)
     expect(move).toContain(`stale."displayName" = ${QUARANTINE}`)
+    expect(move).toContain(`coalesce(stale."strategy", '-')`)
+    expect(move).toContain(`coalesce(stale."memo", '-')`)
   })
 
   it('관심종목 삭제는 격리 라벨 행에만 걸린다 (멱등 · 정상 472150.KS 관심종목 보존)', () => {
