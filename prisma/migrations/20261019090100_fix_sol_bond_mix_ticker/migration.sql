@@ -9,89 +9,60 @@
 -- 의 티커를 함께 맞춘다 (보유만 고치면 거래 기반 재계산·세금 집계에서 종목이 둘로 갈라진다).
 -- 제외: AlertHistory (발송 당시 기록), CustomStrategy (라벨 컬럼이 없어 오매칭 여부 판별 불가),
 -- 과거 스냅샷의 price/valueKRW (당시 잘못된 시세로 계산된 값 — 별도 판단).
---
--- 충돌 계좌: 같은 계좌에 잘못된 보유(472150.KS + 라벨)와 정답 보유(490490.KS)가 둘 다 있으면
--- (수동 정정 중 신규 생성 등) 그 계좌는 보유·거래·배당·스냅샷을 전부 건너뛴다. 일부만 옮기면 옛 보유가
--- 거래 없이 남아 이중 집계되거나, 스냅샷 티커가 엇갈려 종목별 기여도가 왜곡된다 (Codex #511 P2).
--- 평균단가 병합은 거래 이력 재계산이 필요해 SQL 로 하지 않는다 — 경고 로그 후 수동 병합.
--- 대신 남은 옛 보유·관심종목의 라벨을 격리 라벨로 바꾼다. 그대로 두면 주가 갱신이 그 라벨을 472150.KS 캐시 행에
--- 다시 써서 이름 매칭이 잘못된 티커로 되돌아간다 (Codex #511 P2). 충돌 판정은 두 라벨 모두 인식해
--- 재실행에도 같은 계좌를 계속 충돌로 본다.
 
+-- 0. 보유 충돌 가드: 같은 계좌에 잘못된 보유(472150.KS + 라벨)와 정답 보유(490490.KS)가 공존하면
+--    데이터를 바꾸기 전에 중단한다. 이 상태는 평균단가 병합(거래 이력 재계산)이 필요해 SQL 로 안전하게
+--    정정할 수 없고, 부분 격리는 거래·스냅샷·전략 알림 등 잘못된 티커를 계속 참조하는 경로를 남긴다
+--    (Codex #511 P2 × 3 라운드). 실서버는 2026-10-19 확인 결과 충돌 없음 (보유 이미 수동 정정).
+--    중단 시: 해당 계좌를 수동 병합 → `prisma migrate resolve --rolled-back <이 마이그레이션>` → 재배포.
 DO $$
 DECLARE
   conflict_accounts TEXT;
 BEGIN
   SELECT string_agg(DISTINCT h."accountId", ', ') INTO conflict_accounts
   FROM "Holding" h
-  WHERE h."ticker" = '472150.KS'
-    AND h."displayName" IN ('SOL 미국배당미국채혼합50', 'SOL 미국배당미국채혼합50 [#510 병합 필요]')
+  WHERE h."ticker" = '472150.KS' AND h."displayName" = 'SOL 미국배당미국채혼합50'
     AND EXISTS (SELECT 1 FROM "Holding" x WHERE x."accountId" = h."accountId" AND x."ticker" = '490490.KS');
   IF conflict_accounts IS NOT NULL THEN
-    RAISE WARNING '#510: 472150.KS/490490.KS 보유 충돌 계좌 건너뜀 (수동 병합 필요): %', conflict_accounts;
+    RAISE EXCEPTION '#510: 472150.KS/490490.KS 보유 충돌 계좌 — 수동 병합 후 재실행 필요: %', conflict_accounts;
   END IF;
 END $$;
 
--- 1. 거래 / 배당: 충돌 계좌 제외 (보유 정정과 같은 집합을 유지)
-UPDATE "Trade" t SET "ticker" = '490490.KS'
-WHERE t."ticker" = '472150.KS' AND t."displayName" = 'SOL 미국배당미국채혼합50'
-  AND NOT (
-    EXISTS (SELECT 1 FROM "Holding" x WHERE x."accountId" = t."accountId" AND x."ticker" = '490490.KS')
-    AND EXISTS (
-      SELECT 1 FROM "Holding" y
-      WHERE y."accountId" = t."accountId" AND y."ticker" = '472150.KS'
-        AND y."displayName" IN ('SOL 미국배당미국채혼합50', 'SOL 미국배당미국채혼합50 [#510 병합 필요]')
-    )
-  );
-
-UPDATE "Dividend" d SET "ticker" = '490490.KS'
-WHERE d."ticker" = '472150.KS' AND d."displayName" = 'SOL 미국배당미국채혼합50'
-  AND NOT (
-    EXISTS (SELECT 1 FROM "Holding" x WHERE x."accountId" = d."accountId" AND x."ticker" = '490490.KS')
-    AND EXISTS (
-      SELECT 1 FROM "Holding" y
-      WHERE y."accountId" = d."accountId" AND y."ticker" = '472150.KS'
-        AND y."displayName" IN ('SOL 미국배당미국채혼합50', 'SOL 미국배당미국채혼합50 [#510 병합 필요]')
-    )
-  );
-
--- 2. 자산 스냅샷: 계좌는 PortfolioSnapshot 경유. 충돌 계좌 제외 (라이브 보유와 티커가 엇갈리지 않게)
-UPDATE "HoldingSnapshot" hs SET "ticker" = '490490.KS'
-FROM "PortfolioSnapshot" ps
-WHERE ps."id" = hs."portfolioSnapshotId"
-  AND hs."ticker" = '472150.KS' AND hs."displayName" = 'SOL 미국배당미국채혼합50'
-  AND NOT (
-    EXISTS (SELECT 1 FROM "Holding" x WHERE x."accountId" = ps."accountId" AND x."ticker" = '490490.KS')
-    AND EXISTS (
-      SELECT 1 FROM "Holding" y
-      WHERE y."accountId" = ps."accountId" AND y."ticker" = '472150.KS'
-        AND y."displayName" IN ('SOL 미국배당미국채혼합50', 'SOL 미국배당미국채혼합50 [#510 병합 필요]')
-    )
-  );
-
--- 3. 보유: (accountId, ticker) 유니크 — 충돌 계좌는 건너뜀 (위 경고)
-UPDATE "Holding" h SET "ticker" = '490490.KS'
-WHERE h."ticker" = '472150.KS' AND h."displayName" = 'SOL 미국배당미국채혼합50'
-  AND NOT EXISTS (
-    SELECT 1 FROM "Holding" x WHERE x."accountId" = h."accountId" AND x."ticker" = '490490.KS'
-  );
-
--- 4. 충돌로 남은 옛 보유 격리: 라벨을 바꿔 이름 매칭·캐시 라벨 재오염 경로에서 뺀다 (3 이후라 충돌 행만 남음)
-UPDATE "Holding" SET "displayName" = 'SOL 미국배당미국채혼합50 [#510 병합 필요]'
+-- 1. 거래 / 배당 / 자산 스냅샷: 유니크 제약 없음. 0 의 가드로 충돌 계좌가 없음이 보장된다
+UPDATE "Trade" SET "ticker" = '490490.KS'
 WHERE "ticker" = '472150.KS' AND "displayName" = 'SOL 미국배당미국채혼합50';
 
--- 5. 관심종목: ticker 유니크
+UPDATE "Dividend" SET "ticker" = '490490.KS'
+WHERE "ticker" = '472150.KS' AND "displayName" = 'SOL 미국배당미국채혼합50';
+
+UPDATE "HoldingSnapshot" SET "ticker" = '490490.KS'
+WHERE "ticker" = '472150.KS' AND "displayName" = 'SOL 미국배당미국채혼합50';
+
+-- 2. 보유: (accountId, ticker) 유니크 — 0 의 가드로 충돌 없음
+UPDATE "Holding" SET "ticker" = '490490.KS'
+WHERE "ticker" = '472150.KS' AND "displayName" = 'SOL 미국배당미국채혼합50';
+
+-- 3. 관심종목: ticker 유니크. 490490.KS 가 없으면 그대로 정정
 UPDATE "Watchlist" w SET "ticker" = '490490.KS'
 WHERE w."ticker" = '472150.KS' AND w."displayName" = 'SOL 미국배당미국채혼합50'
   AND NOT EXISTS (SELECT 1 FROM "Watchlist" x WHERE x."ticker" = '490490.KS');
 
--- 5-1. 490490.KS 관심종목이 이미 있어 남은 옛 행도 보유(4)와 같이 라벨 격리 — 주가 갱신이 관심종목 메타로
---      SOL 라벨을 472150.KS 캐시 행에 다시 쓰는 경로 차단 (Codex #511 P2). 목표가·매수구간 설정 보존을 위해
---      삭제하지 않는다.
-UPDATE "Watchlist" SET "displayName" = 'SOL 미국배당미국채혼합50 [#510 병합 필요]'
+-- 3-1. 490490.KS 관심종목이 이미 있어 남은 옛 행: 알림을 멈추고 설정값은 memo 에 보존한 뒤 라벨 격리.
+--      - 알림 기준값(targetBuy/entryLow/entryHigh)을 그대로 두면 TIGER 시세로 매수 알림이 계속 평가된다 (Codex #511 P2)
+--      - 라벨을 그대로 두면 주가 갱신이 관심종목 메타로 SOL 라벨을 472150.KS 캐시 행에 다시 쓴다 (Codex #511 P2)
+--      - 기준값이 어느 시세를 보고 정한 것인지 알 수 없어 490490.KS 행으로 자동 병합하지 않는다
+UPDATE "Watchlist" SET
+  "displayName" = 'SOL 미국배당미국채혼합50 [#510 병합 필요]',
+  "memo" = concat_ws(E'\n', "memo",
+    '[#510] 티커 오류로 알림 중지. 이전 설정: targetBuy=' || coalesce("targetBuy"::text, '-')
+      || ', entryLow=' || coalesce("entryLow"::text, '-')
+      || ', entryHigh=' || coalesce("entryHigh"::text, '-')),
+  "targetBuy" = NULL,
+  "entryLow" = NULL,
+  "entryHigh" = NULL
 WHERE "ticker" = '472150.KS' AND "displayName" = 'SOL 미국배당미국채혼합50';
 
--- 6. 시세 캐시: 잘못된 라벨이 붙은 472150.KS 행은 이름 매칭의 전파 경로였다.
+-- 4. 시세 캐시: 잘못된 라벨이 붙은 472150.KS 행은 이름 매칭의 전파 경로였다.
 --    더 이상 참조하는 보유/관심종목/활성 전략이 없으면 삭제 (490490.KS 는 다음 주가 갱신에서 생성),
 --    아직 참조가 남아 있으면 라벨만 실제 종목명으로 교정해 이름 매칭에서 빠지게 한다.
 DELETE FROM "PriceCache" pc

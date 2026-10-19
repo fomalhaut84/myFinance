@@ -27,15 +27,15 @@
 
 - [x] Holding · Trade · Dividend · HoldingSnapshot · Watchlist 의 `472150.KS` + 해당 라벨 행을 `490490.KS` 로 치환
 - [x] 멱등 — 서버 DB 일부 수동 정정 상태에서도 안전 (모든 문장이 잘못된 티커 + 라벨 조합에만 매칭)
-- [x] 충돌 계좌 (같은 계좌에 잘못된 보유와 490490.KS 보유가 공존) 는 보유·거래·배당·스냅샷을 **모두** 건너뜀 +
-      `RAISE WARNING` (일부만 옮기면 이중 집계·종목별 기여도 왜곡 — Codex #511 P2). 평균단가 병합은 수동 처리
-- [x] 충돌로 남은 옛 보유는 라벨을 `SOL 미국배당미국채혼합50 [#510 병합 필요]` 로 격리 — 그대로 두면 주가 갱신이 라벨을
-      472150.KS 캐시 행에 다시 써서 이름 매칭이 잘못된 티커로 되돌아간다 (Codex #511 P2). 충돌 판정은 격리 라벨도 인식
-- [x] 490490.KS 관심종목이 이미 있어 정정을 건너뛴 옛 관심종목 행도 같은 격리 라벨로 (관심종목 메타 경유 재오염 —
-      Codex #511 2차 P2). 목표가·매수구간 설정 보존을 위해 삭제하지 않음
-- [x] 거래·배당·스냅샷 정정을 보유 정정보다 먼저 실행 (보유가 바뀌면 충돌 판정 근거가 사라짐)
-- [x] 로컬 Postgres 임시 스키마에서 상태별 (전부 미정정 / 보유만 수동 정정 = 실서버 2026-10-19 상태 / 충돌 / 정상 TIGER 보유) × 2회 실행 검증
+- [x] **보유 충돌 가드** — 같은 계좌에 잘못된 보유와 490490.KS 보유가 공존하면 DML 전에 `RAISE EXCEPTION` 으로 중단.
+      평균단가 병합은 거래 재계산이 필요하고, 부분 격리는 거래·스냅샷·전략 알림·캐시 라벨 등 잘못된 티커를 참조하는
+      경로를 계속 남겼다 (Codex #511 P2 3 라운드 → fail-fast 로 스코프 축소). 실서버는 2026-10-19 확인 결과 충돌 없음.
+      중단 시: 수동 병합 → `npx prisma migrate resolve --rolled-back 20261019090100_fix_sol_bond_mix_ticker` → 재배포
+- [x] **관심종목 충돌** (490490.KS 관심종목이 이미 있음 — 실서버 미확인이라 중단 대신 처리): 옛 행의 알림 기준값
+      (`targetBuy`/`entryLow`/`entryHigh`) 을 memo 에 보존 후 비워 TIGER 시세 알림 평가 중지, 라벨을
+      `[#510 병합 필요]` 로 격리해 캐시 라벨 재오염 차단. 기준값이 어느 시세 기준인지 몰라 자동 병합하지 않음
 - [x] PriceCache 의 잘못된 라벨 행: 참조 없으면 삭제, 남아 있으면 라벨을 실제 종목명으로 교정
+- [x] 로컬 Postgres 임시 스키마 검증 — 실서버 상태(보유 수동 정정 + 소담 시드 거래만 잔존) + 관심종목 충돌 × 2회, 보유 충돌 중단
 
 ### B. 실제 종목명 보존 (`20261019090000_add_price_cache_quote_name`)
 
@@ -55,7 +55,7 @@
 ## 3. 테스트
 
 - `src/bot/utils/__tests__/trade-price-check.test.ts` — 실제 오매칭 수치 재현 (10,640 vs 16,200 → 경고), 임계 경계, 캐시 없음
-- `src/lib/__tests__/migration-fix-sol-bond-mix-ticker.test.ts` — 멱등 조건, 테이블 범위, 유니크 충돌 가드, 캐시 삭제 조건
+- `src/lib/__tests__/migration-fix-sol-bond-mix-ticker.test.ts` — 보유 충돌 fail-fast 가드 위치, 멱등 조건, 테이블 범위, 관심종목 알림 중지·격리, 캐시 삭제 조건
 - `src/lib/__tests__/price-fetcher-utils.test.ts` — `extractQuoteName`
 
 ## 4. 배포 후 확인
@@ -64,15 +64,15 @@
 -- 잔여 오류 0건이어야 함
 SELECT 'Holding' t, count(*) FROM "Holding" WHERE "ticker"='472150.KS' AND "displayName"='SOL 미국배당미국채혼합50'
 UNION ALL SELECT 'Trade', count(*) FROM "Trade" WHERE "ticker"='472150.KS' AND "displayName"='SOL 미국배당미국채혼합50';
--- 계좌별 보유 중복 없음 (충돌 skip 발생 여부 — migrate 로그의 '#510' WARNING 과 함께 확인)
+-- 계좌별 보유 중복 없음 (보유 충돌이면 마이그레이션이 '#510' EXCEPTION 으로 중단됨)
 SELECT a."name", h."ticker", h."shares" FROM "Holding" h JOIN "Account" a ON a."id"=h."accountId"
 WHERE h."ticker" IN ('472150.KS','490490.KS');
 -- 커스텀 전략이 472150.KS 를 가리키는지 (라벨이 없어 마이그레이션 대상 외 — 있으면 수동 판단)
 SELECT "id", "name", "ticker", "isActive" FROM "CustomStrategy" WHERE "ticker" = '472150.KS';
 ```
 
-충돌 계좌 수동 병합: 그 계좌의 472150.KS(SOL 라벨) 거래·배당·스냅샷 티커를 490490.KS 로 바꾸고 옛 Holding 삭제 →
-웹 거래 화면에서 거래 하나를 수정·저장해 `recalcHolding` 재계산을 태운다.
+보유 충돌로 중단된 경우 수동 병합: 그 계좌의 472150.KS(SOL 라벨) 거래·배당·스냅샷 티커를 490490.KS 로 바꾸고 옛 Holding
+삭제 → 웹 거래 화면에서 거래 하나를 수정·저장해 `recalcHolding` 재계산 → migrate resolve 후 재배포.
 
 ## 5. 제외
 
