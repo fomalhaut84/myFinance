@@ -18,7 +18,6 @@ export interface TickerMetaValue {
   placeholder?: boolean
 }
 
-
 /**
  * Pure — 활성 전략의 크로스 티커를 tickerMeta 에 병합 (Phase 34-B follow-up, Codex #428 x2 P2 반영).
  * 이미 등록된 티커 (홀딩·관심종목) 는 그대로. 신규 항목만 placeholder 로 삽입.
@@ -82,7 +81,6 @@ export function resolveRefreshMeta(
   const displayName = quote.shortName?.trim() || quote.longName?.trim() || meta.displayName
   return { displayName, market, currency }
 }
-
 
 /** 시세 시각으로 받아들일 수 있는 하한 (2000-01-01 UTC). */
 const MARKET_TIME_MIN_MS = Date.UTC(2000, 0, 1)
