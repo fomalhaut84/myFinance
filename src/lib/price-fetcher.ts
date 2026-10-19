@@ -106,7 +106,8 @@ export async function fetchQuote(ticker: string, options?: FetchQuoteOptions): P
     try {
       await prisma.priceCache.upsert({
         where: { ticker },
-        update: { price, change, changePercent: changePct, market, quoteName },
+        // #510: 이름 없는 quote 가 기존 실제 종목명을 null 로 지우지 않게 있을 때만 갱신
+        update: { price, change, changePercent: changePct, market, ...(quoteName ? { quoteName } : {}) },
         create: { ticker, displayName, quoteName, market, currency, price, change, changePercent: changePct },
       })
     } catch (error) {
@@ -242,7 +243,7 @@ async function doRefreshPrices(): Promise<RefreshResult> {
           change,
           changePercent: changePct,
           displayName: resolved.displayName,
-          quoteName,
+          ...(quoteName ? { quoteName } : {}),
           market: resolved.market,
           currency: resolved.currency,
         },

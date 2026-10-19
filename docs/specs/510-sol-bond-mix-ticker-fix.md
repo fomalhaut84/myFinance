@@ -27,13 +27,17 @@
 
 - [x] Holding · Trade · Dividend · HoldingSnapshot · Watchlist 의 `472150.KS` + 해당 라벨 행을 `490490.KS` 로 치환
 - [x] 멱등 — 서버 DB 일부 수동 정정 상태에서도 안전 (모든 문장이 잘못된 티커 + 라벨 조합에만 매칭)
-- [x] 유니크 충돌 (같은 계좌에 490490.KS 보유 / 관심종목 이미 존재) 시 건너뜀 — 자동 병합 금지
+- [x] 충돌 계좌 (같은 계좌에 잘못된 보유와 490490.KS 보유가 공존) 는 보유·거래·배당을 **모두** 건너뜀 + `RAISE WARNING`
+      (거래만 옮기면 옛 보유가 거래 없이 남아 이중 집계). 평균단가 병합은 거래 재계산이 필요해 수동 처리. 이 상태에선
+      이름 매칭이 두 행에 걸려 봇이 티커를 되묻는다 (오매칭 대신 안전하게 실패)
+- [x] 거래·배당 정정을 보유 정정보다 먼저 실행 (보유가 바뀌면 충돌 판정 근거가 사라짐)
+- [x] 로컬 Postgres 임시 스키마에서 4개 상태 (전부 미정정 / 보유만 수동 정정 / 충돌 / 정상 TIGER 보유) × 2회 실행 검증
 - [x] PriceCache 의 잘못된 라벨 행: 참조 없으면 삭제, 남아 있으면 라벨을 실제 종목명으로 교정
 
 ### B. 실제 종목명 보존 (`20261019090000_add_price_cache_quote_name`)
 
 - [x] `PriceCache.quoteName` (nullable) — Yahoo shortName/longName. 라벨(displayName)과 분리 저장
-- [x] `fetchQuote` / `refreshPrices` upsert 양쪽에서 채움 (`extractQuoteName`)
+- [x] `fetchQuote` / `refreshPrices` upsert 양쪽에서 채움 (`extractQuoteName`). 이름 없는 quote 는 기존 값을 지우지 않음
 
 ### C. 확인 단계 대조 (`src/bot/utils/trade-price-check.ts`)
 
@@ -57,14 +61,20 @@
 -- 잔여 오류 0건이어야 함
 SELECT 'Holding' t, count(*) FROM "Holding" WHERE "ticker"='472150.KS' AND "displayName"='SOL 미국배당미국채혼합50'
 UNION ALL SELECT 'Trade', count(*) FROM "Trade" WHERE "ticker"='472150.KS' AND "displayName"='SOL 미국배당미국채혼합50';
--- 계좌별 보유 중복 없음 (충돌 skip 발생 여부)
+-- 계좌별 보유 중복 없음 (충돌 skip 발생 여부 — migrate 로그의 '#510' WARNING 과 함께 확인)
 SELECT a."name", h."ticker", h."shares" FROM "Holding" h JOIN "Account" a ON a."id"=h."accountId"
 WHERE h."ticker" IN ('472150.KS','490490.KS');
+-- 커스텀 전략이 472150.KS 를 가리키는지 (라벨이 없어 마이그레이션 대상 외 — 있으면 수동 판단)
+SELECT "id", "name", "ticker", "isActive" FROM "CustomStrategy" WHERE "ticker" = '472150.KS';
 ```
+
+충돌 계좌 수동 병합: 그 계좌의 472150.KS(SOL 라벨) 거래·배당 티커를 490490.KS 로 바꾸고 옛 Holding 삭제 →
+웹 거래 화면에서 거래 하나를 수정·저장해 `recalcHolding` 재계산을 태운다.
 
 ## 5. 제외
 
 - 과거 HoldingSnapshot 의 `price`/`valueKRW` 재계산 — 당시 잘못된 시세로 계산됐지만 날짜별 490490.KS 과거 시세 백필이
   필요해 별도 판단
+- CustomStrategy — 라벨 컬럼이 없어 SOL 의도인지 TIGER 의도인지 SQL 로 판별 불가 (§4 확인 쿼리)
 - 웹 거래 폼 (`TradeForm`) — 계좌 보유 종목 선택 또는 티커 직접 입력이라 이름 → 티커 매칭 경로가 없음
 - KRX ETF 마스터 대조 — `KrxStock` 은 상장법인 목록만 수집해 ETF 가 없음

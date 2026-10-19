@@ -17,12 +17,17 @@ const SQL_PATH = join(
 const WRONG = `'472150.KS'`
 const LABEL = `'SOL 미국배당미국채혼합50'`
 
-function loadStatements(): string[] {
-  const raw = readFileSync(SQL_PATH, 'utf8')
-  return raw
+function loadSql(): string {
+  return readFileSync(SQL_PATH, 'utf8')
     .split('\n')
     .filter((line) => !line.trim().startsWith('--'))
     .join('\n')
+}
+
+/** 경고용 DO 블록을 뺀 DML 문장들 */
+function loadStatements(): string[] {
+  return loadSql()
+    .replace(/DO \$\$[\s\S]*?END \$\$;/, '')
     .split(';')
     .map((s) => s.trim())
     .filter(Boolean)
@@ -49,6 +54,24 @@ describe('fix_sol_bond_mix_ticker migration (#510)', () => {
     expect(holding).toMatch(/NOT EXISTS \([\s\S]*"accountId" = h\."accountId"[\s\S]*'490490\.KS'/)
     const watchlist = statements.find((s) => s.startsWith('UPDATE "Watchlist"'))!
     expect(watchlist).toMatch(/NOT EXISTS \([\s\S]*'490490\.KS'/)
+  })
+
+  it('충돌 계좌(잘못된 보유 + 정답 보유 공존)는 거래·배당도 건너뛴다 — 이중 집계 방지', () => {
+    for (const table of ['Trade', 'Dividend']) {
+      const sql = statements.find((s) => s.startsWith(`UPDATE "${table}"`))!
+      expect(sql).toMatch(/AND NOT \(\s*EXISTS \(SELECT 1 FROM "Holding" x WHERE x\."accountId"/)
+      expect(sql).toMatch(/y\."ticker" = '472150\.KS' AND y\."displayName" = 'SOL 미국배당미국채혼합50'/)
+    }
+  })
+
+  it('거래·배당 정정이 보유 정정보다 먼저 실행된다 (보유가 바뀌면 충돌 판정이 사라지므로)', () => {
+    const idx = (prefix: string) => statements.findIndex((s) => s.startsWith(prefix))
+    expect(idx('UPDATE "Trade"')).toBeLessThan(idx('UPDATE "Holding"'))
+    expect(idx('UPDATE "Dividend"')).toBeLessThan(idx('UPDATE "Holding"'))
+  })
+
+  it('충돌 계좌는 RAISE WARNING 으로 migrate 로그에 남긴다', () => {
+    expect(loadSql()).toMatch(/DO \$\$[\s\S]*RAISE WARNING '#510[\s\S]*END \$\$;/)
   })
 
   it('잘못된 라벨의 PriceCache 행은 참조가 없을 때만 삭제한다', () => {
